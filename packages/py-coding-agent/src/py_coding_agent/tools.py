@@ -314,3 +314,67 @@ class ShellTools:
         """
         cmd = f"git diff {path}" if path else "git diff"
         return self.run_command(cmd)
+
+    @tool(description="Git commit changes")
+    def git_commit(self, message: str, add_all: bool = False) -> str:
+        """Commit changes to git.
+
+        Args:
+            message: Commit message
+            add_all: Add all changes first
+
+        Returns:
+            Commit output
+        """
+        if add_all:
+            self.run_command("git add -A")
+
+        # Escape message for shell
+        import shlex
+
+        safe_message = shlex.quote(message)
+        return self.run_command(f"git commit -m {safe_message}")
+
+    @tool(description="Git push changes")
+    def git_push(self, remote: str = "origin", branch: Optional[str] = None) -> str:
+        """Push changes to remote.
+
+        Args:
+            remote: Remote name
+            branch: Branch name (current if None)
+
+        Returns:
+            Push output
+        """
+        if branch:
+            return self.run_command(f"git push {remote} {branch}")
+        else:
+            return self.run_command(f"git push {remote}")
+
+    @tool(description="Create git branch")
+    def git_branch(self, branch_name: str, checkout: bool = True) -> str:
+        """Create a new git branch.
+
+        Args:
+            branch_name: Branch name
+            checkout: Checkout after creating
+
+        Returns:
+            Command output
+        """
+        if checkout:
+            return self.run_command(f"git checkout -b {branch_name}")
+        else:
+            return self.run_command(f"git branch {branch_name}")
+
+    @tool(description="Get git log")
+    def git_log(self, limit: int = 10) -> str:
+        """Get recent git commits.
+
+        Args:
+            limit: Number of commits
+
+        Returns:
+            Git log output
+        """
+        return self.run_command(f"git log --oneline -n {limit}")

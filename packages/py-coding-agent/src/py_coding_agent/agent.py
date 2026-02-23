@@ -8,6 +8,7 @@ from py_agent_core import Agent, Session, ExtensionManager, SkillManager, Contex
 from py_tui import ChatUI
 
 from .tools import FileTools, CodeTools, ShellTools
+from .file_reference import FileReferenceParser
 
 
 class CodingAgent:
@@ -93,6 +94,9 @@ class CodingAgent:
         self.prompt_manager.discover_prompts([])
         if len(self.prompt_manager) > 0:
             print(f"✓ Loaded {len(self.prompt_manager)} prompt templates")
+
+        # Initialize file reference parser
+        self.file_ref_parser = FileReferenceParser(self.workspace)
 
         # Create UI
         self.ui = ChatUI(title="Coding Agent", show_timestamps=False)
@@ -181,8 +185,25 @@ When generating code, provide clean, well-documented, production-ready code.
                     self.ui.system(f"📝 Queued follow-up message: {followup_msg[:50]}...")
                     continue
 
+                # Check for file references
+                if "@" in user_input:
+                    preview = self.file_ref_parser.get_reference_preview(user_input)
+                    if preview:
+                        self.ui.system(preview)
+                        
+                        # Expand references
+                        expanded_input = self.file_ref_parser.expand_references(user_input)
+                        
+                        # Show expansion if significant
+                        if len(expanded_input) > len(user_input) + 100:
+                            added = len(expanded_input) - len(user_input)
+                            self.ui.system(f"→ Added {added} chars from files")
+                        
+                        # Use expanded input
+                        user_input = expanded_input
+
                 # Display user message
-                self.ui.user(user_input)
+                self.ui.user(user_input[:200] + "..." if len(user_input) > 200 else user_input)
 
                 # Get agent response (with queue support)
                 response = self.agent.run(user_input)
@@ -299,6 +320,11 @@ Tools: {len(self.agent.registry)}
 
         elif cmd.startswith("/share"):
             self._share_session()
+
+        elif cmd.startswith("/model"):
+            parts = cmd.split(maxsplit=1)
+            new_model = parts[1] if len(parts) > 1 else None
+            self._switch_model(new_model)
 
         elif cmd.startswith("/login"):
             self._login()
@@ -519,8 +545,9 @@ Cost: ${info['metadata'].get('cost', 0.0):.4f}
 /prompts    - List prompt templates
 /template   - Expand a template
 
-**Authentication:**
+**Model & Auth:**
 
+/model [provider/model] - Switch LLM model
 /login      - OAuth login (subscription accounts)
 /logout <provider> - Logout from provider
 
@@ -537,6 +564,15 @@ While agent is working, you can queue messages:
   >>message    - Follow-up (wait until agent finishes)
 
 Use /queue to see queued messages.
+
+**File References:**
+
+Use @filename to auto-include file contents:
+  @src/main.py - Include main.py in your message
+  @README.md - Include README
+  @test.py and @utils.py - Multiple files
+
+Files are automatically read and added to context!
 
 **Features:**
 
@@ -649,6 +685,60 @@ Use /queue to see queued messages.
             self.ui.system(f"  Open in browser: file://{exported.absolute()}")
         except Exception as e:
             self.ui.error(f"Export failed: {e}")
+
+    def _switch_model(self, model_name: Optional[str]):
+        """Switch LLM model.
+
+        Args:
+            model_name: New model name (format: provider/model)
+        """
+        if not model_name:
+            # Show current model
+            current = f"{self.agent.llm.config.provider}/{self.agent.llm.config.model}"
+            self.ui.panel(
+                f"""
+**Current Model**
+
+Provider: {self.agent.llm.config.provider}
+Model: {self.agent.llm.config.model}
+Full: {current}
+
+**Switch Model**:
+  /model openai/gpt-4
+  /model anthropic/claude-3-sonnet
+  /model groq/llama-3.1-70b
+
+**Available Providers**:
+  openai, anthropic, google, azure, groq,
+  mistral, openrouter, bedrock, xai, cerebras,
+  cohere, perplexity, deepseek, together
+            """,
+                title="Model",
+            )
+            return
+
+        # Parse provider/model
+        if "/" in model_name:
+            provider, model = model_name.split("/", 1)
+        else:
+            # Assume same provider
+            provider = self.agent.llm.config.provider
+            model = model_name
+
+        try:
+            # Create new LLM
+            from py_ai import LLM
+
+            new_llm = LLM(provider=provider, model=model)
+
+            # Update agent
+            self.agent.llm = new_llm
+            self.llm = new_llm
+
+            self.ui.system(f"✓ Switched to {provider}/{model}")
+
+        except Exception as e:
+            self.ui.error(f"Failed to switch model: {e}")
 
     def _login(self):
         """Login to a provider via OAuth."""
