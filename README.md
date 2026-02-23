@@ -12,7 +12,7 @@ Python equivalent of [pi-mono](https://github.com/badlogic/pi-mono), providing t
 | **[py-agent-core](packages/py-agent-core)** | ✅ Ready | Agent runtime with tool calling and state management |
 | **[py-coding-agent](packages/py-coding-agent)** | ✅ Ready | Interactive coding agent CLI |
 | **[py-tui](packages/py-tui)** | ✅ Ready | Terminal UI library with rich formatting |
-| **[py-web-ui](packages/py-web-ui)** | 🚧 Planned | Web components for AI chat interfaces |
+| **[py-web-ui](packages/py-web-ui)** | ✅ Ready | Web UI components with FastAPI backend |
 
 ## Installation
 
