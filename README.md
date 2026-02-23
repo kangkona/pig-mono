@@ -45,15 +45,16 @@ pip install -e ".[dev]"
 
 **Web UI** (easiest):
 ```bash
-export OPENAI_API_KEY=your-key
-py-webui
+# OpenRouter gives you access to 100+ models with one API key
+export OPENROUTER_API_KEY=your-key
+py-webui --provider openrouter --model openai/gpt-4o-mini
 # Open http://localhost:8000
 ```
 
 **Coding Agent** (powerful):
 ```bash
-export OPENAI_API_KEY=your-key
-py-code
+export OPENROUTER_API_KEY=your-key
+py-code --provider openrouter --model anthropic/claude-3.5-sonnet
 
 # Try these features:
 > Review @src/main.py for bugs          # @file references
@@ -142,12 +143,24 @@ bot.start()
 
 ### Automation
 ```bash
+# Use OpenRouter for cost-effective automation
+export OPENROUTER_API_KEY=your-key
+
 # JSON mode for CI/CD
-echo '{"message": "Review this code"}' | py-code --mode json
+echo '{"message": "Review this code"}' | py-code --provider openrouter --mode json
 
 # RPC mode for integration
-py-code --mode rpc < requests.jsonl > responses.jsonl
+py-code --provider openrouter --mode rpc < requests.jsonl > responses.jsonl
 ```
+
+### Why OpenRouter?
+
+- **100+ Models**: Access OpenAI, Anthropic, Google, Meta, and more with one API key
+- **Cost Effective**: Pay only for what you use, often cheaper than direct APIs
+- **No Rate Limits**: Higher throughput than individual providers
+- **Easy Switching**: Try different models without managing multiple keys
+
+Get your key at: https://openrouter.ai
 
 ---
 

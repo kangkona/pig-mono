@@ -6,7 +6,22 @@ Get started with py-mono in 5 minutes!
 
 - Python 3.10 or higher
 - pip
+- OpenRouter API key (recommended) or any LLM provider API key
 - (Optional) virtualenv or conda
+
+### Get OpenRouter API Key (Recommended)
+
+OpenRouter gives you access to 100+ models with one API key:
+
+1. Visit https://openrouter.ai
+2. Sign up and get your API key
+3. You can now use OpenAI, Anthropic, Google, Meta models and more!
+
+**Why OpenRouter?**
+- One API key for all models
+- Often cheaper than direct APIs
+- No rate limits
+- Easy model switching
 
 ## Installation
 
@@ -44,12 +59,19 @@ Create a file `test.py`:
 from py_ai import LLM
 import os
 
-# Initialize with your API key
+# Initialize with OpenRouter (recommended)
 llm = LLM(
-    provider="openai",
-    api_key=os.getenv("OPENAI_API_KEY"),
-    model="gpt-3.5-turbo"
+    provider="openrouter",
+    api_key=os.getenv("OPENROUTER_API_KEY"),
+    model="openai/gpt-4o-mini"  # or any model on OpenRouter
 )
+
+# Or use OpenAI directly
+# llm = LLM(
+#     provider="openai",
+#     api_key=os.getenv("OPENAI_API_KEY"),
+#     model="gpt-3.5-turbo"
+# )
 
 # Simple completion
 response = llm.complete("What is the capital of France?")
@@ -65,8 +87,15 @@ print()
 Run it:
 
 ```bash
-export OPENAI_API_KEY="your-api-key-here"
+export OPENROUTER_API_KEY="your-openrouter-key"
 python test.py
+
+# Available models on OpenRouter:
+# - openai/gpt-4o
+# - anthropic/claude-3.5-sonnet
+# - google/gemini-pro
+# - meta-llama/llama-3.1-70b
+# - And 100+ more!
 ```
 
 ### Running Tests
