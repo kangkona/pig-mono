@@ -13,6 +13,7 @@ from .prompts import PromptTemplate, PromptManager
 from .message_queue import MessageQueue, MessageType, QueuedMessage
 from .export import SessionExporter
 from .share import GistSharer
+from .output_modes import JSONOutputMode, RPCMode, OutputModeManager
 
 __version__ = "0.0.1"
 
@@ -41,4 +42,7 @@ __all__ = [
     "QueuedMessage",
     "SessionExporter",
     "GistSharer",
+    "JSONOutputMode",
+    "RPCMode",
+    "OutputModeManager",
 ]

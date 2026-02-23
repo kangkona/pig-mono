@@ -29,6 +29,7 @@ def main(
     session_name: Optional[str] = typer.Option(None, "--session", "-s", help="Session name"),
     no_extensions: bool = typer.Option(False, "--no-extensions", help="Disable extensions"),
     no_skills: bool = typer.Option(False, "--no-skills", help="Disable skills"),
+    mode: str = typer.Option("interactive", "--mode", help="Output mode: interactive, json, rpc"),
 ):
     """Start interactive coding agent."""
     # Get API key
@@ -111,11 +112,139 @@ def main(
     if agent.extension_manager and len(agent.extension_manager.extensions) > 0:
         console.print(f"Extensions: [cyan]{len(agent.extension_manager.extensions)} loaded[/cyan]")
     
-    console.print()
-    console.print("[dim]Type /help for commands, /exit to quit[/dim]")
-    console.print()
+    # Handle different output modes
+    if mode == "json":
+        console.print("[cyan]JSON mode enabled[/cyan]")
+        console.print("[dim]Outputting JSON events to stdout[/dim]")
+        run_json_mode(agent)
+    elif mode == "rpc":
+        console.print("[cyan]RPC mode enabled[/cyan]")
+        console.print("[dim]Listening on stdin/stdout[/dim]")
+        run_rpc_mode(agent)
+    else:
+        console.print()
+        console.print("[dim]Type /help for commands, /exit to quit[/dim]")
+        console.print()
+        agent.run_interactive()
 
-    agent.run_interactive()
+
+def run_json_mode(agent):
+    """Run agent in JSON output mode.
+    
+    Args:
+        agent: CodingAgent instance
+    """
+    from py_agent_core import JSONOutputMode
+    
+    json_out = JSONOutputMode()
+    
+    # Read from stdin if piped, otherwise interactive
+    import select
+    
+    if select.select([sys.stdin], [], [], 0.0)[0]:
+        # Input available, read line
+        for line in sys.stdin:
+            line = line.strip()
+            if not line:
+                continue
+            
+            try:
+                # Parse input
+                data = json.loads(line)
+                message = data.get("message") or data.get("content")
+                
+                if not message:
+                    json_out.error("No message in request")
+                    continue
+                
+                # Send message event
+                json_out.message("user", message)
+                
+                # Get response
+                response = agent.agent.run(message)
+                
+                # Send response
+                json_out.message("assistant", response.content)
+                json_out.done(response.content)
+                
+            except json.JSONDecodeError as e:
+                json_out.error(f"Invalid JSON: {e}")
+            except Exception as e:
+                json_out.error(f"Error: {e}")
+    else:
+        # Interactive JSON mode
+        json_out.emit_event("ready", {"agent": "py-code", "mode": "json"})
+        
+        while True:
+            try:
+                user_input = input()
+                if not user_input:
+                    continue
+                
+                json_out.message("user", user_input)
+                response = agent.agent.run(user_input)
+                json_out.message("assistant", response.content)
+                json_out.done()
+                
+            except (KeyboardInterrupt, EOFError):
+                json_out.emit_event("shutdown", {})
+                break
+
+
+def run_rpc_mode(agent):
+    """Run agent in RPC mode.
+    
+    Args:
+        agent: CodingAgent instance
+    """
+    from py_agent_core import RPCMode
+    
+    rpc = RPCMode()
+    
+    def handle_request(method: str, params: dict) -> Any:
+        """Handle RPC requests.
+        
+        Args:
+            method: RPC method name
+            params: Method parameters
+            
+        Returns:
+            Method result
+        """
+        if method == "complete":
+            message = params.get("message")
+            if not message:
+                raise ValueError("Missing 'message' parameter")
+            
+            response = agent.agent.run(message)
+            return {"content": response.content, "model": agent.agent.llm.config.model}
+        
+        elif method == "stream":
+            message = params.get("message")
+            if not message:
+                raise ValueError("Missing 'message' parameter")
+            
+            # Stream tokens as events
+            for chunk in agent.agent.llm.stream(message):
+                rpc.send_event("token", {"content": chunk.content})
+            
+            return {"done": True}
+        
+        elif method == "ping":
+            return {"pong": True}
+        
+        elif method == "status":
+            return {
+                "model": agent.agent.llm.config.model,
+                "provider": agent.agent.llm.config.provider,
+                "tools": len(agent.agent.registry),
+            }
+        
+        else:
+            raise ValueError(f"Unknown method: {method}")
+    
+    # Run server
+    rpc.run_server(handle_request)
 
 
 @app.command()
