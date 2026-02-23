@@ -20,9 +20,10 @@ One agent, multiple messaging platforms. Write once, deploy everywhere.
 | **Slack** | ✅ Ready | Enterprise (Global) |
 | **Discord** | ✅ Ready | Developer Communities |
 | **Telegram** | ✅ Ready | Personal & Groups |
-| WhatsApp | 🔜 Coming | Personal Communication |
-| Feishu (飞书) | 🔜 Coming | Enterprise (China) |
+| **WhatsApp** | ✅ Ready | Personal Communication |
+| **Feishu (飞书)** | ✅ Ready | Enterprise (China) |
 | Matrix | 🔜 Coming | Open Federation |
+| WeChat | 🔜 Future | China Social |
 
 ## Installation
 
