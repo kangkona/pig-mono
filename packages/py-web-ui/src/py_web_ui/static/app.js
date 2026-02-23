@@ -5,8 +5,10 @@ class ChatApp {
         this.messageInput = document.getElementById('messageInput');
         this.sendBtn = document.getElementById('sendBtn');
         this.clearBtn = document.getElementById('clearBtn');
+        this.fileInput = document.getElementById('fileInput');
         
         this.isStreaming = false;
+        this.uploadedFiles = [];
         
         this.init();
     }
@@ -29,8 +31,73 @@ class ChatApp {
             this.messageInput.style.height = this.messageInput.scrollHeight + 'px';
         });
         
+        // File upload
+        if (this.fileInput) {
+            this.fileInput.addEventListener('change', (e) => this.handleFileSelect(e));
+        }
+        
+        // Paste handling for images
+        this.messageInput.addEventListener('paste', (e) => this.handlePaste(e));
+        
         // Load history
         this.loadHistory();
+    }
+    
+    async handleFileSelect(event) {
+        const files = event.target.files;
+        if (!files || files.length === 0) return;
+        
+        for (const file of files) {
+            await this.uploadFile(file);
+        }
+    }
+    
+    async handlePaste(event) {
+        const items = event.clipboardData?.items;
+        if (!items) return;
+        
+        for (const item of items) {
+            if (item.type.indexOf('image') !== -1) {
+                event.preventDefault();
+                const file = item.getAsFile();
+                if (file) {
+                    await this.uploadFile(file);
+                }
+            }
+        }
+    }
+    
+    async uploadFile(file) {
+        const formData = new FormData();
+        formData.append('file', file);
+        
+        try {
+            const response = await fetch('/api/upload', {
+                method: 'POST',
+                body: formData,
+            });
+            
+            const data = await response.json();
+            
+            if (data.status === 'ok') {
+                this.uploadedFiles.push({
+                    filename: data.filename,
+                    path: data.path,
+                });
+                this.showUploadSuccess(file.name);
+            }
+        } catch (error) {
+            console.error('Upload failed:', error);
+        }
+    }
+    
+    showUploadSuccess(filename) {
+        const notification = document.createElement('div');
+        notification.style.cssText = 'position: fixed; top: 20px; right: 20px; background: #4caf50; color: white; padding: 1rem; border-radius: 4px; box-shadow: 0 2px 8px rgba(0,0,0,0.2);';
+        notification.textContent = `✓ Uploaded: ${filename}`;
+        document.body.appendChild(notification);
+        
+        setTimeout(() => notification.remove(), 3000);
     }
     
     async sendMessage() {

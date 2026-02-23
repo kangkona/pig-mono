@@ -238,6 +238,24 @@ header h1 {
     transform: none;
 }
 
+.attach-btn {
+    padding: 0.75rem;
+    background: transparent;
+    color: var(--text-secondary);
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+}
+
+.attach-btn:hover {
+    background: var(--surface);
+    color: var(--primary-color);
+}
+
 /* Mobile responsive */
 @media (max-width: 768px) {
     .container {

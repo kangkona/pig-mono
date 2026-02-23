@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 from typing import AsyncIterator, Optional
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, UploadFile, File, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -111,6 +111,91 @@ class ChatServer:
             if self.agent:
                 self.agent.clear_history()
             return {"status": "ok"}
+
+        @self.app.post("/api/upload")
+        async def upload_file(file: UploadFile = File(...)):
+            """Handle file upload."""
+            try:
+                content = await file.read()
+                filename = file.filename
+
+                # Store uploaded file (simplified - production would store properly)
+                upload_dir = Path(".uploads")
+                upload_dir.mkdir(exist_ok=True)
+
+                file_path = upload_dir / filename
+                file_path.write_bytes(content)
+
+                return {
+                    "status": "ok",
+                    "filename": filename,
+                    "size": len(content),
+                    "path": str(file_path),
+                }
+            except Exception as e:
+                return {"status": "error", "error": str(e)}
+
+        @self.app.websocket("/ws")
+        async def websocket_endpoint(websocket: WebSocket):
+            """WebSocket endpoint for real-time chat."""
+            await websocket.accept()
+
+            try:
+                while True:
+                    # Receive message
+                    data = await websocket.receive_json()
+                    message = data.get("message", "")
+
+                    if not message:
+                        continue
+
+                    # Add to history
+                    self.history.append(ChatMessage(role="user", content=message))
+
+                    # Send acknowledgment
+                    await websocket.send_json({"type": "received"})
+
+                    # Get response
+                    if self.agent:
+                        response = self.agent.run(message)
+                        content = response.content
+                    elif self.llm:
+                        # Check if streaming
+                        if hasattr(self.llm, "stream"):
+                            # Stream via WebSocket
+                            full_content = ""
+                            for chunk in self.llm.stream(message):
+                                await websocket.send_json({
+                                    "type": "token",
+                                    "content": chunk.content,
+                                })
+                                full_content += chunk.content
+                            content = full_content
+                        else:
+                            response = self.llm.complete(message)
+                            content = response.content
+                            await websocket.send_json({
+                                "type": "token",
+                                "content": content,
+                            })
+                    else:
+                        content = "No LLM configured"
+                        await websocket.send_json({
+                            "type": "token",
+                            "content": content,
+                        })
+
+                    # Add to history
+                    if content:
+                        self.history.append(ChatMessage(role="assistant", content=content))
+
+                    # Send done
+                    await websocket.send_json({"type": "done"})
+
+            except WebSocketDisconnect:
+                pass
+            except Exception as e:
+                await websocket.send_json({"type": "error", "error": str(e)})
 
     async def _stream_response(self, message: str) -> AsyncIterator[str]:
         """Stream response as SSE.
