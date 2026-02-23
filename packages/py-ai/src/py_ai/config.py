@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 class Config(BaseModel):
     """Configuration for LLM client."""
 
-    provider: Literal["openai", "anthropic", "google"] = "openai"
+    provider: Literal["openai", "anthropic", "google", "azure"] = "openai"
     model: str = "gpt-4"
     api_key: Optional[str] = None
     temperature: float = Field(default=0.7, ge=0.0, le=2.0)

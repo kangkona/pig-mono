@@ -40,11 +40,13 @@ class LLM:
         from .providers.openai import OpenAIProvider
         from .providers.anthropic import AnthropicProvider
         from .providers.google import GoogleProvider
+        from .providers.azure import AzureOpenAIProvider
 
         provider_map = {
             "openai": OpenAIProvider,
             "anthropic": AnthropicProvider,
             "google": GoogleProvider,
+            "azure": AzureOpenAIProvider,
         }
 
         provider_class = provider_map.get(self.config.provider)
