@@ -14,13 +14,50 @@ Python equivalent of [pi-mono](https://github.com/badlogic/pi-mono), providing t
 | **[py-tui](packages/py-tui)** | ✅ Ready | Terminal UI library with rich formatting |
 | **[py-web-ui](packages/py-web-ui)** | ✅ Ready | Web UI components with FastAPI backend |
 
+## Quick Demo
+
+### Web UI (Easiest!)
+```bash
+# Install and run
+pip install -e packages/py-web-ui packages/py-ai
+export OPENAI_API_KEY=your-key
+py-webui
+# Open http://localhost:8000 in browser
+```
+
+### Agent with Tools
+```python
+from py_ai import LLM
+from py_agent_core import Agent, tool
+
+@tool(description="Get current time")
+def get_time() -> str:
+    from datetime import datetime
+    return datetime.now().strftime("%H:%M:%S")
+
+agent = Agent(llm=LLM(), tools=[get_time])
+agent.run("What time is it?")
+```
+
+### Terminal UI
+```python
+from py_tui import ChatUI
+
+chat = ChatUI(title="My Bot")
+chat.user("Hello!")
+chat.assistant("Hi there!")
+```
+
 ## Installation
 
 ```bash
 # Install from source
 git clone <repo-url>
 cd py-mono
-pip install -e .
+pip install -e ".[dev]"
+
+# Install all packages
+./scripts/install-dev.sh
 
 # Or install specific package
 pip install -e packages/py-ai
