@@ -40,10 +40,10 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/yourusername/py-mono"
-Documentation = "https://github.com/yourusername/py-mono#readme"
-Repository = "https://github.com/yourusername/py-mono"
-Issues = "https://github.com/yourusername/py-mono/issues"
+Homepage = "https://github.com/kangkona/py-mono"
+Documentation = "https://github.com/kangkona/py-mono#readme"
+Repository = "https://github.com/kangkona/py-mono"
+Issues = "https://github.com/kangkona/py-mono/issues"
 
 [tool.hatch.build.targets.wheel]
 packages = ["packages"]
