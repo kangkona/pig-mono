@@ -49,14 +49,14 @@ pip install -e ".[dev]"
 ```bash
 # OpenRouter gives you access to 100+ models with one API key
 export OPENROUTER_API_KEY=your-key
-py-webui --provider openrouter --model stepfun/step-3.5-flash:free
+py-webui --provider openrouter --model moonshotai/kimi-k2.5
 # Open http://localhost:8000
 ```
 
 **Coding Agent** (powerful):
 ```bash
 export OPENROUTER_API_KEY=your-key
-py-code --provider openrouter --model stepfun/step-3.5-flash:free
+py-code --provider openrouter --model moonshotai/kimi-k2.5
 
 # Try these features:
 > Review @src/main.py for bugs          # @file references
@@ -115,10 +115,8 @@ bot.start()  # All platforms running!
 ## 📖 Documentation
 
 - **[Quick Start](QUICKSTART.md)** - Get started in 5 minutes
-- **[Architecture](ARCHITECTURE.md)** - System design and patterns
 - **[Testing Guide](TESTING.md)** - How to run and write tests
 - **[Contributing](CONTRIBUTING.md)** - Contribution guidelines
-- **[Comparison](APPLE_TO_APPLE_COMPARISON.md)** - py-mono vs pi-mono
 
 ---
 
