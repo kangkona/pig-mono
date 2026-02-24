@@ -30,11 +30,26 @@ jobs:
 
     - name: Install packages
       run: |
-        for pkg in packages/*/; do
-          if [ -f "$pkg/pyproject.toml" ]; then
-            pip install -e "$pkg"
-          fi
-        done
+        # Install in dependency order with --no-deps to avoid
+        # PyPI lookup failures for local inter-package deps.
+        # Third-party deps are pulled in by the root ".[dev]" install
+        # and by explicit pip install of each package's extras below.
+
+        # 1) Leaf packages (no local deps)
+        pip install --no-deps -e packages/py-ai
+        pip install --no-deps -e packages/py-tui
+
+        # 2) Packages depending on py-ai
+        pip install --no-deps -e packages/py-agent-core
+        pip install --no-deps -e packages/py-web-ui
+
+        # 3) Packages depending on py-ai + py-agent-core + py-tui
+        pip install --no-deps -e packages/py-coding-agent
+        pip install --no-deps -e packages/py-messenger
+
+        # Install all third-party dependencies
+        pip install openai anthropic pydantic rich prompt-toolkit \
+          typer fastapi uvicorn jinja2 python-multipart
       shell: bash
 
     - name: Run linting
