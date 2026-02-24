@@ -21,6 +21,11 @@ dependencies = [
     "python-dotenv>=1.0.0",
 ]
 
+[project.urls]
+Homepage = "https://github.com/kangkona/py-mono"
+Repository = "https://github.com/kangkona/py-mono"
+Issues = "https://github.com/kangkona/py-mono/issues"
+
 [project.optional-dependencies]
 slack = [
     "slack-sdk>=3.26.0",

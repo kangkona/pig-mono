@@ -19,6 +19,11 @@ dependencies = [
     "typing-extensions>=4.9.0",
 ]
 
+[project.urls]
+Homepage = "https://github.com/kangkona/py-mono"
+Repository = "https://github.com/kangkona/py-mono"
+Issues = "https://github.com/kangkona/py-mono/issues"
+
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0.0",
