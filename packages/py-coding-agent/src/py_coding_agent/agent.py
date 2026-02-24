@@ -145,14 +145,25 @@ When generating code, provide clean, well-documented, production-ready code.
 
         return prompt
 
-    # All slash commands for tab completion
-    COMMANDS = [
+    # Base slash commands for tab completion
+    BASE_COMMANDS = [
         "/help", "/exit", "/quit", "/clear", "/files", "/status",
         "/tree", "/fork", "/compact", "/session", "/sessions",
-        "/skills", "/skill:", "/extensions", "/prompts", "/reload",
+        "/skills", "/extensions", "/prompts", "/reload",
         "/config", "/queue", "/export", "/share", "/model",
         "/login", "/logout",
     ]
+
+    def _build_commands(self) -> list[str]:
+        """Build full command list including dynamic /skill: entries."""
+        commands = list(self.BASE_COMMANDS)
+        if self.skill_manager:
+            for skill in self.skill_manager.list_skills():
+                commands.append(f"/skill:{skill.name}")
+        if self.prompt_manager:
+            for name in self.prompt_manager.list_templates():
+                commands.append(f"/{name}")
+        return commands
 
     def run_interactive(self) -> None:
         """Run interactive chat session."""
@@ -162,7 +173,7 @@ When generating code, provide clean, well-documented, production-ready code.
         # Set up interactive prompt with completion and history
         history_file = str(self.workspace / ".sessions" / ".input_history")
         prompt = InteractivePrompt(
-            commands=self.COMMANDS,
+            commands=self._build_commands(),
             workspace=str(self.workspace),
             history_file=history_file,
         )
