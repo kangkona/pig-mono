@@ -94,12 +94,12 @@ class ExtensionAPI:
 
         return decorator
 
-    def on(self, event: str, handler: Callable) -> None:
-        """Register an event handler.
+    def on(self, event: str, handler: Callable = None) -> None:
+        """Register an event handler. Can be used as decorator or direct call.
 
         Args:
             event: Event name
-            handler: Event handler function
+            handler: Event handler function (optional if used as decorator)
 
         Events:
             - tool_call_start: Before tool execution
@@ -114,10 +114,16 @@ class ExtensionAPI:
             def on_tool_start(event, context):
                 print(f"Tool {event['tool_name']} starting")
         """
-        if event not in self._event_handlers:
-            self._event_handlers[event] = []
+        def _register(h: Callable) -> Callable:
+            if event not in self._event_handlers:
+                self._event_handlers[event] = []
+            self._event_handlers[event].append(h)
+            return h
 
-        self._event_handlers[event].append(handler)
+        if handler is not None:
+            _register(handler)
+        else:
+            return _register
 
     def emit(self, event: str, data: dict[str, Any]) -> None:
         """Emit an event.

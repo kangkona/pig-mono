@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 class Message(BaseModel):
     """A message in a conversation."""
 
-    role: Literal["system", "user", "assistant"]
+    role: Literal["system", "user", "assistant", "tool"]
     content: str
     metadata: Optional[dict[str, Any]] = None
 
@@ -20,6 +20,7 @@ class Response(BaseModel):
     model: str
     usage: Optional[dict[str, int]] = None
     finish_reason: Optional[str] = None
+    tool_calls: Optional[list[dict[str, Any]]] = None
     metadata: Optional[dict[str, Any]] = None
 
 

@@ -40,7 +40,7 @@ def test_server_creation_with_cors(mock_llm):
     server = ChatServer(llm=mock_llm, cors=True)
     # CORS middleware should be added
     assert any(
-        m.__class__.__name__ == "CORSMiddleware"
+        m.cls.__name__ == "CORSMiddleware"
         for m in server.app.user_middleware
     )
 

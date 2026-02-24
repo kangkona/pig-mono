@@ -5,6 +5,7 @@ from typing import Optional
 
 from py_ai import LLM
 from py_agent_core import Agent, Session, ExtensionManager, SkillManager, ContextManager, PromptManager, SessionManager
+from py_agent_core.tools import Tool
 from py_tui import ChatUI
 
 from .tools import FileTools, CodeTools, ShellTools
@@ -55,13 +56,24 @@ class CodingAgent:
         code_tools = CodeTools()
         shell_tools = ShellTools()
 
-        # Get all tool methods
+        # Get all tool methods (descriptor protocol auto-binds self)
         tools = []
-        for tool_class in [file_tools, code_tools, shell_tools]:
-            for attr_name in dir(tool_class):
-                attr = getattr(tool_class, attr_name)
-                if hasattr(attr, "execute"):  # Check if it's a Tool
+        for tool_instance in [file_tools, code_tools, shell_tools]:
+            for attr_name in dir(tool_instance):
+                attr = getattr(tool_instance, attr_name)
+                if isinstance(attr, Tool):
                     tools.append(attr)
+
+        # Initialize context manager (needed by _get_system_prompt)
+        self.context_manager = ContextManager(self.workspace)
+
+        # Initialize skill manager
+        self.skill_manager = None
+        if enable_skills:
+            self.skill_manager = SkillManager()
+            self.skill_manager.discover_skills([])
+            if len(self.skill_manager) > 0:
+                print(f"✓ Loaded {len(self.skill_manager)} skills")
 
         # Create agent
         self.agent = Agent(
@@ -77,17 +89,6 @@ class CodingAgent:
         if enable_extensions:
             self.extension_manager = ExtensionManager(self.agent)
             self._load_extensions()
-
-        # Initialize skill manager
-        self.skill_manager = None
-        if enable_skills:
-            self.skill_manager = SkillManager()
-            self.skill_manager.discover_skills([])
-            if len(self.skill_manager) > 0:
-                print(f"✓ Loaded {len(self.skill_manager)} skills")
-
-        # Initialize context manager
-        self.context_manager = ContextManager(self.workspace)
 
         # Initialize prompt manager
         self.prompt_manager = PromptManager()
@@ -343,7 +344,6 @@ Tools: {len(self.agent.registry)}
                 self._expand_prompt(template_name, args_str)
                 return
 
-        else:
             # Try extension commands
             if self.extension_manager:
                 ext_cmd = cmd.lstrip("/").split()[0]

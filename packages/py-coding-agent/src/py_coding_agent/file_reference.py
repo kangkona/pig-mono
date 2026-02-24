@@ -42,6 +42,14 @@ class FileReferenceParser:
         # Try as relative to workspace
         file_path = self.workspace / reference
 
+        # Security: ensure within workspace (check before reading)
+        try:
+            resolved = file_path.resolve()
+            if not str(resolved).startswith(str(self.workspace.resolve())):
+                return False, file_path, f"File outside workspace: {reference}"
+        except Exception as e:
+            return False, file_path, f"Error resolving path: {e}"
+
         if not file_path.exists():
             # Try without leading path components
             name = Path(reference).name
@@ -52,14 +60,6 @@ class FileReferenceParser:
                 file_path = matches[0]  # Use first match
             else:
                 return False, file_path, f"File not found: {reference}"
-
-        # Security: ensure within workspace
-        try:
-            file_path = file_path.resolve()
-            if not str(file_path).startswith(str(self.workspace.resolve())):
-                return False, file_path, f"File outside workspace: {reference}"
-        except Exception as e:
-            return False, file_path, f"Error resolving path: {e}"
 
         # Read file
         try:

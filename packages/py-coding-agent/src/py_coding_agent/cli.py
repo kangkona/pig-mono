@@ -14,12 +14,14 @@ app = typer.Typer(
     name="py-code",
     help="Interactive coding agent CLI",
     add_completion=False,
+    invoke_without_command=True,
 )
 console = Console()
 
 
-@app.command()
+@app.callback(invoke_without_command=True)
 def main(
+    ctx: typer.Context,
     model: Optional[str] = typer.Option(None, "--model", "-m", help="LLM model to use"),
     provider: str = typer.Option("openai", "--provider", "-p", help="LLM provider"),
     workspace: Path = typer.Option(".", "--path", "-w", help="Workspace directory"),
@@ -32,6 +34,8 @@ def main(
     mode: str = typer.Option("interactive", "--mode", help="Output mode: interactive, json, rpc"),
 ):
     """Start interactive coding agent."""
+    if ctx.invoked_subcommand is not None:
+        return
     # Get API key
     api_key = os.getenv(f"{provider.upper()}_API_KEY")
     if not api_key:

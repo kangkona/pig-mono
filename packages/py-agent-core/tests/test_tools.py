@@ -41,7 +41,7 @@ def test_tool_error_handling():
         raise ValueError("Test error")
     
     t = Tool(func=failing_func)
-    with pytest.raises(RuntimeError, match="Tool my_func failed"):
+    with pytest.raises(RuntimeError, match="Tool failing_func failed"):
         t.execute(x=1)
 
 

@@ -114,7 +114,8 @@ def test_coding_agent_handle_clear_command(mock_llm, temp_workspace):
 def test_coding_agent_handle_help_command(mock_llm, temp_workspace):
     """Test handling help command."""
     agent = CodingAgent(llm=mock_llm, workspace=str(temp_workspace))
-    
+    agent.ui = Mock()
+
     # Should not raise
     agent._handle_command("/help")
     agent.ui.panel.assert_called()
@@ -124,26 +125,29 @@ def test_coding_agent_handle_files_command(mock_llm, temp_workspace):
     """Test handling files command."""
     # Create some test files
     (temp_workspace / "test.txt").write_text("content")
-    
+
     agent = CodingAgent(llm=mock_llm, workspace=str(temp_workspace))
+    agent.ui = Mock()
     agent._handle_command("/files")
-    
+
     agent.ui.panel.assert_called()
 
 
 def test_coding_agent_handle_status_command(mock_llm, temp_workspace):
     """Test handling status command."""
     agent = CodingAgent(llm=mock_llm, workspace=str(temp_workspace))
+    agent.ui = Mock()
     agent._handle_command("/status")
-    
+
     agent.ui.panel.assert_called()
 
 
 def test_coding_agent_handle_unknown_command(mock_llm, temp_workspace):
     """Test handling unknown command."""
     agent = CodingAgent(llm=mock_llm, workspace=str(temp_workspace))
+    agent.ui = Mock()
     agent._handle_command("/unknown")
-    
+
     agent.ui.error.assert_called()
 
 

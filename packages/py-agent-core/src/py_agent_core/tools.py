@@ -29,6 +29,24 @@ class Tool:
         self.description = description or (func.__doc__ or "").strip()
         self.params_model = params_model or self._create_params_model(func)
 
+    def __set_name__(self, owner, name):
+        """Called when the Tool is assigned as a class attribute."""
+        self._attr_name = name
+
+    def __get__(self, obj, objtype=None):
+        """Descriptor protocol: bind self to the instance when accessed on an object."""
+        if obj is None:
+            return self
+        # Return a bound copy of this Tool
+        import functools
+        bound = Tool(
+            func=functools.partial(self.func, obj),
+            name=self.name,
+            description=self.description,
+            params_model=self.params_model,
+        )
+        return bound
+
     def _create_params_model(self, func: Callable) -> Type[BaseModel]:
         """Create Pydantic model from function signature."""
         sig = inspect.signature(func)

@@ -53,14 +53,14 @@ class OAuthCallbackHandler(BaseHTTPRequestHandler):
                 self.send_header("Content-type", "text/html")
                 self.end_headers()
                 self.wfile.write(
-                    b"""
+                    """
                     <html>
                     <body style="font-family: sans-serif; text-align: center; padding: 50px;">
-                        <h1 style="color: green;">✓ Authentication Successful!</h1>
+                        <h1 style="color: green;">&#10003; Authentication Successful!</h1>
                         <p>You can close this window and return to the terminal.</p>
                     </body>
                     </html>
-                    """
+                    """.encode()
                 )
             else:
                 self.send_response(400)

@@ -1,8 +1,11 @@
 """Google Gemini provider implementation."""
 
+import warnings
 from typing import AsyncIterator, Iterator, Optional
 
-import google.generativeai as genai
+with warnings.catch_warnings():
+    warnings.simplefilter("ignore", FutureWarning)
+    import google.generativeai as genai
 
 from ..config import Config
 from ..models import Message, Response, StreamChunk

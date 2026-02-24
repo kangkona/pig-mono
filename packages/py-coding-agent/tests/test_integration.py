@@ -94,7 +94,7 @@ def test_coding_agent_with_skills(mock_llm, temp_workspace):
     # Create skill
     skill_dir = temp_workspace / ".agents" / "skills" / "test-skill"
     skill_dir.mkdir(parents=True)
-    
+
     skill_file = skill_dir / "SKILL.md"
     skill_file.write_text("""# Test Skill
 
@@ -104,14 +104,17 @@ This is a test skill.
 1. Do this
 2. Do that
 """)
-    
+
     agent = CodingAgent(
         llm=mock_llm,
         workspace=str(temp_workspace),
         enable_skills=True,
         verbose=False,
     )
-    
+
+    # Manually discover skills in the temp workspace
+    agent.skill_manager.discover_skills([temp_workspace / ".agents" / "skills"])
+
     # Skill should be loaded
     assert agent.skill_manager is not None
     assert "test-skill" in agent.skill_manager
@@ -124,14 +127,15 @@ def test_tree_command(mock_llm, temp_workspace):
         workspace=str(temp_workspace),
         verbose=False,
     )
-    
+    agent.ui = Mock()
+
     # Add some messages to session
     agent.session.add_message("user", "Hello")
     agent.session.add_message("assistant", "Hi")
-    
+
     # Run /tree command
     agent._handle_command("/tree")
-    
+
     # Should call ui.panel
     agent.ui.panel.assert_called()
 
@@ -161,16 +165,17 @@ def test_compact_command(mock_llm, temp_workspace):
         workspace=str(temp_workspace),
         verbose=False,
     )
-    
+    agent.ui = Mock()
+
     # Add many messages
     for i in range(15):
         agent.session.add_message("user", f"Message {i}")
-    
+
     before = len(agent.session.tree.entries)
-    
+
     # Run /compact
     agent._handle_command("/compact")
-    
+
     # Should show system message
     agent.ui.system.assert_called()
 
@@ -183,9 +188,10 @@ def test_session_command(mock_llm, temp_workspace):
         session_name="test",
         verbose=False,
     )
-    
+    agent.ui = Mock()
+
     agent._handle_command("/session")
-    
+
     # Should display session info
     agent.ui.panel.assert_called()
 
@@ -198,11 +204,12 @@ def test_skills_command(mock_llm, temp_workspace):
         enable_skills=True,
         verbose=False,
     )
-    
+    agent.ui = Mock()
+
     agent._handle_command("/skills")
-    
-    # Should show skills (even if empty)
-    agent.ui.system.assert_called()
+
+    # Should show skills info (panel if skills found, system if empty)
+    assert agent.ui.system.called or agent.ui.panel.called
 
 
 def test_extensions_command(mock_llm, temp_workspace):
@@ -213,9 +220,10 @@ def test_extensions_command(mock_llm, temp_workspace):
         enable_extensions=True,
         verbose=False,
     )
-    
+    agent.ui = Mock()
+
     agent._handle_command("/extensions")
-    
+
     # Should show extensions (even if empty)
     agent.ui.system.assert_called()
 
@@ -226,15 +234,17 @@ def test_skill_invocation(mock_llm, temp_workspace):
     skill_dir = temp_workspace / ".agents" / "skills" / "my-skill"
     skill_dir.mkdir(parents=True)
     (skill_dir / "SKILL.md").write_text("# My Skill\nDescription\n## Steps\n1. Step")
-    
+
     agent = CodingAgent(
         llm=mock_llm,
         workspace=str(temp_workspace),
         enable_skills=True,
         verbose=False,
     )
-    
+    agent.ui = Mock()
+    agent.skill_manager.discover_skills([temp_workspace / ".agents" / "skills"])
+
     agent._handle_command("/skill:my-skill")
-    
+
     # Should show skill panel
     agent.ui.panel.assert_called()

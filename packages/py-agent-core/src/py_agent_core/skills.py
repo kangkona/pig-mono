@@ -20,8 +20,20 @@ class Skill:
         self.content = content
 
         # Parse skill metadata
+        self.title = self._extract_title()
         self.description = self._extract_description()
         self.steps = self._extract_steps()
+
+    def _extract_title(self) -> str:
+        """Extract title from skill content.
+
+        Returns:
+            Skill title (from first # heading, or name)
+        """
+        for line in self.content.split("\n"):
+            if line.startswith("# "):
+                return line[2:].strip()
+        return self.name
 
     def _extract_description(self) -> str:
         """Extract description from skill content.
@@ -72,8 +84,7 @@ class Skill:
                 if line and (
                     line.startswith("-")
                     or line.startswith("*")
-                    or line.startswith("1.")
-                    or line.startswith("2.")
+                    or (len(line) > 1 and line[0].isdigit() and "." in line.split()[0])
                 ):
                     # Remove list markers
                     step = line.lstrip("-*0123456789. ")
@@ -88,7 +99,7 @@ class Skill:
         Returns:
             Skill as prompt text
         """
-        prompt = f"# Skill: {self.name}\n\n"
+        prompt = f"# Skill: {self.name} — {self.title}\n\n"
         prompt += f"{self.description}\n\n"
 
         if self.steps:
@@ -116,23 +127,23 @@ class SkillManager:
             directories: List of directories to search
 
         Looks for:
-        - ~/.agents/skills/
-        - .agents/skills/
-        - .pi/skills/
         - Any provided directories
+        - If no directories provided, also searches standard paths:
+          ~/.agents/skills/, .agents/skills/, .pi/skills/
         """
         search_paths = []
 
-        # Add standard paths
-        home = Path.home()
-        if (home / ".agents" / "skills").exists():
-            search_paths.append(home / ".agents" / "skills")
+        # Only add standard paths when no explicit directories given
+        if not directories:
+            home = Path.home()
+            if (home / ".agents" / "skills").exists():
+                search_paths.append(home / ".agents" / "skills")
 
-        cwd = Path.cwd()
-        if (cwd / ".agents" / "skills").exists():
-            search_paths.append(cwd / ".agents" / "skills")
-        if (cwd / ".pi" / "skills").exists():
-            search_paths.append(cwd / ".pi" / "skills")
+            cwd = Path.cwd()
+            if (cwd / ".agents" / "skills").exists():
+                search_paths.append(cwd / ".agents" / "skills")
+            if (cwd / ".pi" / "skills").exists():
+                search_paths.append(cwd / ".pi" / "skills")
 
         # Add provided directories
         search_paths.extend([Path(d) for d in directories])
