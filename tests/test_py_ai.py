@@ -15,7 +15,7 @@ def test_package_imports():
     assert Response is not None
 
 
-@patch("pig_llm.client.OpenAIProvider")
+@patch("pig_llm.providers.openai.OpenAIProvider")
 def test_basic_integration(mock_provider):
     """Test basic LLM integration."""
     from pig_llm import LLM, Config

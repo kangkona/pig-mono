@@ -9,7 +9,7 @@ def test_ai_to_agent_integration():
     from pig_llm import LLM
 
     # Mock LLM
-    with patch("pig_llm.client.OpenAIProvider"):
+    with patch("pig_llm.providers.openai.OpenAIProvider"):
         llm = LLM(provider="openai", api_key="test")
 
         @tool
@@ -27,7 +27,7 @@ def test_agent_to_tui_integration():
     from pig_agent_core import Agent
     from pig_tui import ChatUI
 
-    with patch("pig_llm.client.OpenAIProvider"):
+    with patch("pig_llm.providers.openai.OpenAIProvider"):
         from pig_llm import LLM
 
         llm = LLM(provider="openai", api_key="test")
@@ -48,7 +48,7 @@ def test_agent_to_webui_integration():
     from pig_agent_core import Agent
     from pig_web_ui import ChatServer
 
-    with patch("pig_llm.client.OpenAIProvider"):
+    with patch("pig_llm.providers.openai.OpenAIProvider"):
         from pig_llm import LLM
 
         llm = LLM(provider="openai", api_key="test")
@@ -71,7 +71,7 @@ def test_full_stack_integration():
         return x * 2
 
     # Create LLM and agent
-    with patch("pig_llm.client.OpenAIProvider"):
+    with patch("pig_llm.providers.openai.OpenAIProvider"):
         llm = LLM(provider="openai", api_key="test")
         agent = Agent(
             name="TestAgent",
