@@ -8,6 +8,7 @@ class TestNewProviders:
 
     def test_bedrock_import(self):
         """Test Bedrock provider import."""
+        pytest.importorskip("boto3")
         from pig_llm.providers.bedrock import BedrockProvider
 
         assert BedrockProvider is not None
@@ -26,6 +27,7 @@ class TestNewProviders:
 
     def test_cohere_import(self):
         """Test Cohere provider import."""
+        pytest.importorskip("cohere")
         from pig_llm.providers.cohere import CohereProvider
 
         assert CohereProvider is not None
