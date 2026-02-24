@@ -1,11 +1,19 @@
 """Advanced TUI components."""
 
+from pathlib import Path
 from typing import List, Optional, Callable
 from prompt_toolkit import prompt as pt_prompt
 from prompt_toolkit.completion import Completer, Completion
 from prompt_toolkit.validation import Validator, ValidationError
 from rich.console import Console
 from rich.table import Table
+
+# Directories to skip during file completion
+_IGNORE_DIRS = {
+    ".git", "__pycache__", "node_modules", ".venv", "venv",
+    ".tox", ".mypy_cache", ".pytest_cache", ".ruff_cache",
+    "dist", "build", ".eggs", "*.egg-info", "htmlcov",
+}
 
 
 class AutoCompleter(Completer):
@@ -81,6 +89,69 @@ class FileCompleter(Completer):
                         )
         except Exception:
             pass
+
+
+class PyCodeCompleter(Completer):
+    """Context-aware completer for interactive coding agent.
+
+    Handles:
+    - /command tab completion
+    - @file reference completion
+    """
+
+    def __init__(self, commands: List[str], workspace: str = "."):
+        self.commands = sorted(commands)
+        self.workspace = Path(workspace)
+
+    def _iter_workspace_files(self, prefix: str = ""):
+        """Yield relative file paths in workspace, skipping ignored dirs."""
+        try:
+            base = self.workspace / prefix if prefix else self.workspace
+            if not base.exists():
+                return
+            for item in sorted(base.iterdir()):
+                if item.name.startswith(".") or item.name in _IGNORE_DIRS:
+                    continue
+                rel = str(item.relative_to(self.workspace))
+                if item.is_dir():
+                    yield rel + "/"
+                else:
+                    yield rel
+        except OSError:
+            pass
+
+    def get_completions(self, document, complete_event):
+        text = document.text_before_cursor
+
+        # Slash command completion
+        if text.startswith("/"):
+            for cmd in self.commands:
+                if cmd.startswith(text):
+                    yield Completion(cmd, start_position=-len(text))
+            return
+
+        # @file reference completion
+        at_pos = text.rfind("@")
+        if at_pos >= 0:
+            partial = text[at_pos + 1:]
+            # Determine directory prefix for narrowing search
+            if "/" in partial:
+                dir_prefix = partial.rsplit("/", 1)[0]
+                file_prefix = partial.rsplit("/", 1)[1]
+            else:
+                dir_prefix = ""
+                file_prefix = partial
+
+            for rel_path in self._iter_workspace_files(dir_prefix):
+                name = rel_path.rsplit("/", 1)[-1] if "/" in rel_path else rel_path
+                full_rel = rel_path
+                if full_rel.startswith(partial) or name.startswith(file_prefix):
+                    yield Completion(
+                        full_rel,
+                        start_position=-len(partial),
+                        display=full_rel,
+                    )
+
 
 
 class MultiSelect:

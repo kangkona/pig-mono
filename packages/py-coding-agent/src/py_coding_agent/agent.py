@@ -6,7 +6,7 @@ from typing import Optional
 from py_ai import LLM
 from py_agent_core import Agent, Session, ExtensionManager, SkillManager, ContextManager, PromptManager, SessionManager
 from py_agent_core.tools import Tool
-from py_tui import ChatUI
+from py_tui import ChatUI, InteractivePrompt
 
 from .tools import FileTools, CodeTools, ShellTools
 from .file_reference import FileReferenceParser
@@ -145,10 +145,27 @@ When generating code, provide clean, well-documented, production-ready code.
 
         return prompt
 
+    # All slash commands for tab completion
+    COMMANDS = [
+        "/help", "/exit", "/quit", "/clear", "/files", "/status",
+        "/tree", "/fork", "/compact", "/session", "/sessions",
+        "/skills", "/skill:", "/extensions", "/prompts", "/reload",
+        "/config", "/queue", "/export", "/share", "/model",
+        "/login", "/logout",
+    ]
+
     def run_interactive(self) -> None:
         """Run interactive chat session."""
         self.ui.system(f"Workspace: {self.workspace}")
         self.ui.separator()
+
+        # Set up interactive prompt with completion and history
+        history_file = str(self.workspace / ".sessions" / ".input_history")
+        prompt = InteractivePrompt(
+            commands=self.COMMANDS,
+            workspace=str(self.workspace),
+            history_file=history_file,
+        )
 
         try:
             while True:
@@ -158,10 +175,13 @@ When generating code, provide clean, well-documented, production-ready code.
                     if "Queued" in queue_status:
                         self.ui.system(f"📬 {queue_status}")
 
-                # Get user input
-                from py_tui import Prompt
-                prompt = Prompt()
-                user_input = prompt.ask("\n[cyan]You[/]")
+                # Get user input with tab completion
+                try:
+                    user_input = prompt.ask("You> ")
+                except KeyboardInterrupt:
+                    continue
+                except EOFError:
+                    break
 
                 if not user_input:
                     continue
@@ -218,14 +238,15 @@ When generating code, provide clean, well-documented, production-ready code.
                     self.session.add_message("assistant", response.content)
 
         except KeyboardInterrupt:
-            # Check if there are queued messages
+            pass
+        finally:
+            # Clean up queued messages
             if self.agent.message_queue:
                 cleared = self.agent.message_queue.clear()
                 if cleared:
                     self.ui.system(f"\nCleared {len(cleared)} queued messages")
             self.ui.system("\nGoodbye!")
-        except EOFError:
-            self.ui.system("\nGoodbye!")
+
 
     def _handle_command(self, command: str) -> None:
         """Handle slash commands.
