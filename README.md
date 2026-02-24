@@ -2,7 +2,7 @@
 
 > **Python Monorepo for AI Agents** - A comprehensive toolkit inspired by [pi-mono](https://github.com/badlogic/pi-mono)
 >
-> *Also playfully known as "**pig-mono**" (🐷) - 虾仁猪心 (a Chinese pun meaning "utterly devastating"), our tribute to pi-mono while bringing these excellent ideas to the Python ecosystem*
+> *Named "**pig-mono**" (🐷) - 虾仁猪心 (a Chinese pun meaning "utterly devastating"), our tribute to pi-mono while bringing these excellent ideas to the Python ecosystem*
 
 [![Python Version](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
@@ -275,7 +275,7 @@ pig-mono (affectionately called "pig-mono" 🐷 by the community) brings these c
 
 ### Why "pig-mono"?
 
-It's a playful Chinese pun: "虾仁猪心" (xiā rén zhū xīn), which sounds like "杀人诛心" (shā rén zhū xīn) - meaning to utterly defeat someone not just physically but mentally.
+The name comes from a playful Chinese pun: "虾仁猪心" (xiā rén zhū xīn), which sounds like "杀人诛心" (shā rén zhū xīn) - meaning to utterly defeat someone not just physically but mentally.
 
 Our tribute to pi-mono: We aim to match it feature-for-feature while adding unique Python-ecosystem value! 🐷💪
 
