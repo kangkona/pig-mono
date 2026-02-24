@@ -14,9 +14,9 @@ authors = [
 ]
 
 dependencies = [
-    "py-ai>=0.0.1",
-    "py-agent-core>=0.0.1",
-    "py-tui>=0.0.1",
+    "py-mono-ai>=0.0.1",
+    "py-mono-agent-core>=0.0.1",
+    "py-mono-tui>=0.0.1",
     "typer>=0.12.0",
     "rich>=13.7.0",
 ]

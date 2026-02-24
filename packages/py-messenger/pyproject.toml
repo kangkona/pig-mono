@@ -14,8 +14,8 @@ authors = [
 ]
 
 dependencies = [
-    "py-ai>=0.0.1",
-    "py-agent-core>=0.0.1",
+    "py-mono-ai>=0.0.1",
+    "py-mono-agent-core>=0.0.1",
     "pydantic>=2.6.0",
     "httpx>=0.26.0",
     "python-dotenv>=1.0.0",

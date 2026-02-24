@@ -14,7 +14,7 @@ authors = [
 ]
 
 dependencies = [
-    "py-ai>=0.0.1",
+    "py-mono-ai>=0.0.1",
     "pydantic>=2.6.0",
     "rich>=13.7.0",
     "typing-extensions>=4.9.0",

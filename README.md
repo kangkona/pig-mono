@@ -23,12 +23,12 @@ Build AI agents and LLM applications with a powerful, modular Python toolkit. py
 
 | Package | Description | Status |
 |---------|-------------|--------|
-| **[py-ai](packages/py-ai)** | Unified LLM API for 14 providers | ✅ Ready |
-| **[py-agent-core](packages/py-agent-core)** | Agent runtime with tools, sessions, extensions | ✅ Ready |
-| **[py-tui](packages/py-tui)** | Terminal UI with rich formatting | ✅ Ready |
-| **[py-web-ui](packages/py-web-ui)** | Web chat interface with FastAPI | ✅ Ready |
-| **[py-coding-agent](packages/py-coding-agent)** | Interactive coding assistant CLI | ✅ Ready |
-| **[py-messenger](packages/py-messenger)** | Multi-platform bot framework | ✅ Ready |
+| **[py-mono-ai](packages/py-ai)** | Unified LLM API for 14 providers | ✅ Ready |
+| **[py-mono-agent-core](packages/py-agent-core)** | Agent runtime with tools, sessions, extensions | ✅ Ready |
+| **[py-mono-tui](packages/py-tui)** | Terminal UI with rich formatting | ✅ Ready |
+| **[py-mono-web-ui](packages/py-web-ui)** | Web chat interface with FastAPI | ✅ Ready |
+| **[py-mono-coding-agent](packages/py-coding-agent)** | Interactive coding assistant CLI | ✅ Ready |
+| **[py-mono-messenger](packages/py-messenger)** | Multi-platform bot framework | ✅ Ready |
 
 ---
 
@@ -36,10 +36,25 @@ Build AI agents and LLM applications with a powerful, modular Python toolkit. py
 
 ### Installation
 
+Install individual packages from PyPI:
+
+```bash
+# Using uv (recommended)
+uv pip install py-mono-ai py-mono-agent-core py-mono-coding-agent
+
+# Using pipx (for CLI tools)
+pipx install py-mono-coding-agent
+
+# Using pip
+pip install py-mono-ai py-mono-agent-core
+```
+
+For development from source:
+
 ```bash
 git clone https://github.com/kangkona/py-mono.git
 cd py-mono
-pip install -e ".[dev]"
+uv pip install -e ".[dev]"
 ./scripts/install-dev.sh
 ```
 
@@ -69,10 +84,10 @@ py-code --provider openrouter --model moonshotai/kimi-k2.5
 **Multi-Platform Bot** ([setup guide](packages/py-messenger/README.md)):
 ```python
 import os
-from py_messenger import MessengerBot
-from py_messenger.adapters import SlackAdapter
-from py_agent_core import Agent
-from py_ai import LLM
+from py_mono_messenger import MessengerBot
+from py_mono_messenger.adapters import SlackAdapter
+from py_mono_agent_core import Agent
+from py_mono_ai import LLM
 
 agent = Agent(llm=LLM(provider="openrouter", model="moonshotai/kimi-k2.5",
                        api_key=os.environ["OPENROUTER_API_KEY"]))
@@ -197,14 +212,14 @@ Get your key at: https://openrouter.ai
 
 ```
 Infrastructure Layer
-├── py-ai (LLM abstraction)
-├── py-agent-core (Agent runtime)
-├── py-tui (Terminal UI)
-└── py-web-ui (Web UI)
+├── py-mono-ai (LLM abstraction)
+├── py-mono-agent-core (Agent runtime)
+├── py-mono-tui (Terminal UI)
+└── py-mono-web-ui (Web UI)
 
 Application Layer
-├── py-coding-agent (CLI assistant)
-└── py-messenger (Multi-platform bots)
+├── py-mono-coding-agent (CLI assistant)
+└── py-mono-messenger (Multi-platform bots)
 ```
 
 ---
@@ -213,7 +228,7 @@ Application Layer
 
 ```bash
 # Install dependencies
-pip install -e ".[dev]"
+uv pip install -e ".[dev]"
 ./scripts/install-dev.sh
 
 # Run tests
