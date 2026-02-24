@@ -1,16 +1,16 @@
-"""Integration tests for py-mono packages."""
+"""Integration tests for pig-mono packages."""
 
 import pytest
 from unittest.mock import Mock, patch
 
 
 def test_ai_to_agent_integration():
-    """Test py-ai integration with py-agent-core."""
-    from py_ai import LLM
-    from py_agent_core import Agent, tool
+    """Test pig-ai integration with pig-agent-core."""
+    from pig_llm import LLM
+    from pig_agent_core import Agent, tool
     
     # Mock LLM
-    with patch('py_ai.client.OpenAIProvider'):
+    with patch('pig_llm.client.OpenAIProvider'):
         llm = LLM(provider="openai", api_key="test")
         
         @tool
@@ -24,12 +24,12 @@ def test_ai_to_agent_integration():
 
 
 def test_agent_to_tui_integration():
-    """Test py-agent-core integration with py-tui."""
-    from py_agent_core import Agent
-    from py_tui import ChatUI
+    """Test pig-agent-core integration with pig-tui."""
+    from pig_agent_core import Agent
+    from pig_tui import ChatUI
     
-    with patch('py_ai.client.OpenAIProvider'):
-        from py_ai import LLM
+    with patch('pig_llm.client.OpenAIProvider'):
+        from pig_llm import LLM
         llm = LLM(provider="openai", api_key="test")
         agent = Agent(llm=llm)
     
@@ -44,12 +44,12 @@ def test_agent_to_tui_integration():
 
 
 def test_agent_to_webui_integration():
-    """Test py-agent-core integration with py-web-ui."""
-    from py_agent_core import Agent
-    from py_web_ui import ChatServer
+    """Test pig-agent-core integration with pig-web-ui."""
+    from pig_agent_core import Agent
+    from pig_web_ui import ChatServer
     
-    with patch('py_ai.client.OpenAIProvider'):
-        from py_ai import LLM
+    with patch('pig_llm.client.OpenAIProvider'):
+        from pig_llm import LLM
         llm = LLM(provider="openai", api_key="test")
         agent = Agent(llm=llm)
     
@@ -60,9 +60,9 @@ def test_agent_to_webui_integration():
 
 def test_full_stack_integration():
     """Test full stack integration."""
-    from py_ai import LLM
-    from py_agent_core import Agent, tool
-    from py_web_ui import ChatServer
+    from pig_llm import LLM
+    from pig_agent_core import Agent, tool
+    from pig_web_ui import ChatServer
     
     # Create tool
     @tool(description="Double a number")
@@ -70,7 +70,7 @@ def test_full_stack_integration():
         return x * 2
     
     # Create LLM and agent
-    with patch('py_ai.client.OpenAIProvider'):
+    with patch('pig_llm.client.OpenAIProvider'):
         llm = LLM(provider="openai", api_key="test")
         agent = Agent(
             name="TestAgent",
@@ -89,9 +89,9 @@ def test_full_stack_integration():
 
 def test_data_model_compatibility():
     """Test data models are compatible across packages."""
-    from py_ai.models import Message, Response
-    from py_agent_core.models import AgentState
-    from py_web_ui.models import ChatMessage
+    from pig_llm.models import Message, Response
+    from pig_agent_core.models import AgentState
+    from pig_web_ui.models import ChatMessage
     
     # Test Message creation
     msg = Message(role="user", content="Hello")

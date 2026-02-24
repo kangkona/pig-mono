@@ -1,0 +1,45 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "pig-coding-agent"
+version = "0.0.2"
+description = "Interactive coding agent CLI"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.10"
+authors = [
+    { name = "Kangkona", email = "kangkona@gmail.com" }
+]
+
+dependencies = [
+    "pig-llm>=0.0.1",
+    "pig-agent-core>=0.0.1",
+    "pig-tui>=0.0.1",
+    "typer>=0.12.0",
+    "rich>=13.7.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/kangkona/pig-mono"
+Repository = "https://github.com/kangkona/pig-mono"
+Issues = "https://github.com/kangkona/pig-mono/issues"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-cov>=4.1.0",
+]
+
+[project.scripts]
+pig-code = "pig_coding_agent.cli:app"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/pig_coding_agent"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "/src",
+    "/tests",
+]

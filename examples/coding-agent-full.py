@@ -122,14 +122,14 @@ def main():
         print("To start:")
         print(f"  cd {workspace}")
         print("  export OPENAI_API_KEY=your-key")
-        print("  py-code")
+        print("  pig-code")
         return
-    
+
     # Start agent
     print("Starting agent...")
     print("(Set OPENAI_API_KEY first to actually run)")
     print()
-    print(f"Command: cd {workspace} && py-code")
+    print(f"Command: cd {workspace} && pig-code")
 
 
 if __name__ == "__main__":

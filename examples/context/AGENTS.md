@@ -2,7 +2,7 @@
 
 This file provides project-specific context to the coding agent.
 
-## Project: py-mono
+## Project: pig-mono
 
 This is a Python monorepo for AI agent development, inspired by pi-mono.
 
@@ -16,10 +16,10 @@ This is a Python monorepo for AI agent development, inspired by pi-mono.
 
 ### Project Structure
 ```
-py-mono/
+pig-mono/
 ├── packages/          # Monorepo packages
-│   ├── py-ai/        # LLM API
-│   ├── py-agent-core/ # Agent runtime
+│   ├── pig-llm/        # LLM API
+│   ├── pig-agent-core/ # Agent runtime
 │   └── ...
 ├── tests/            # Integration tests
 └── examples/         # Usage examples
@@ -40,7 +40,7 @@ py-mono/
 
 ### Adding a New Tool
 ```python
-from py_agent_core import tool
+from pig_agent_core import tool
 
 @tool(description="Tool description")
 def my_tool(arg: str) -> str:

@@ -1,7 +1,7 @@
-# py-mono
+# pig-mono
 
 > **Python Monorepo for AI Agents** - A comprehensive toolkit inspired by [pi-mono](https://github.com/badlogic/pi-mono)
-> 
+>
 > *Also playfully known as "**pig-mono**" (🐷) - 虾仁猪心 (a Chinese pun meaning "utterly devastating"), our tribute to pi-mono while bringing these excellent ideas to the Python ecosystem*
 
 [![Python Version](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
@@ -9,7 +9,7 @@
 [![Code style: ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)](https://github.com/astral-sh/ruff)
 [![Test Coverage](https://img.shields.io/badge/coverage-84%25-green.svg)](TESTING.md)
 
-Build AI agents and LLM applications with a powerful, modular Python toolkit. py-mono provides everything you need: unified LLM APIs, agent runtime, session management, extensions, skills, and multi-platform messaging bots.
+Build AI agents and LLM applications with a powerful, modular Python toolkit. pig-mono provides everything you need: unified LLM APIs, agent runtime, session management, extensions, skills, and multi-platform messaging bots.
 
 **🌟 Unique Features:**
 - **Multi-Platform Bots**: Support for Slack, Discord, Telegram, WhatsApp, and Feishu (vs pi-mono's Slack-only)
@@ -23,12 +23,12 @@ Build AI agents and LLM applications with a powerful, modular Python toolkit. py
 
 | Package | Description | Status |
 |---------|-------------|--------|
-| **[py-mono-ai](packages/py-ai)** | Unified LLM API for 14 providers | ✅ Ready |
-| **[py-mono-agent-core](packages/py-agent-core)** | Agent runtime with tools, sessions, extensions | ✅ Ready |
-| **[py-mono-tui](packages/py-tui)** | Terminal UI with rich formatting | ✅ Ready |
-| **[py-mono-web-ui](packages/py-web-ui)** | Web chat interface with FastAPI | ✅ Ready |
-| **[py-mono-coding-agent](packages/py-coding-agent)** | Interactive coding assistant CLI | ✅ Ready |
-| **[py-mono-messenger](packages/py-messenger)** | Multi-platform bot framework | ✅ Ready |
+| **[pig-llm](packages/pig-llm)** | Unified LLM API for 14 providers | ✅ Ready |
+| **[pig-agent-core](packages/pig-agent-core)** | Agent runtime with tools, sessions, extensions | ✅ Ready |
+| **[pig-tui](packages/pig-tui)** | Terminal UI with rich formatting | ✅ Ready |
+| **[pig-web-ui](packages/pig-web-ui)** | Web chat interface with FastAPI | ✅ Ready |
+| **[pig-coding-agent](packages/pig-coding-agent)** | Interactive coding assistant CLI | ✅ Ready |
+| **[pig-messenger](packages/pig-messenger)** | Multi-platform bot framework | ✅ Ready |
 
 ---
 
@@ -40,20 +40,20 @@ Install individual packages from PyPI:
 
 ```bash
 # Using uv (recommended)
-uv pip install py-mono-ai py-mono-agent-core py-mono-coding-agent
+uv pip install pig-llm pig-agent-core pig-coding-agent
 
 # Using pipx (for CLI tools)
-pipx install py-mono-coding-agent
+pipx install pig-coding-agent
 
 # Using pip
-pip install py-mono-ai py-mono-agent-core
+pip install pig-llm pig-agent-core
 ```
 
 For development from source:
 
 ```bash
-git clone https://github.com/kangkona/py-mono.git
-cd py-mono
+git clone https://github.com/kangkona/pig-mono.git
+cd pig-mono
 uv pip install -e ".[dev]"
 ./scripts/install-dev.sh
 ```
@@ -62,16 +62,23 @@ uv pip install -e ".[dev]"
 
 **Web UI** (easiest):
 ```bash
-# OpenRouter gives you access to 100+ models with one API key
+# Install
+uv pip install pig-web-ui
+# or: pipx install pig-web-ui
+
 export OPENROUTER_API_KEY=your-key
-py-webui --provider openrouter --model moonshotai/kimi-k2.5
+pig-webui --provider openrouter --model moonshotai/kimi-k2.5
 # Open http://localhost:8000
 ```
 
 **Coding Agent** (powerful):
 ```bash
+# Install
+uv pip install pig-coding-agent
+# or: pipx install pig-coding-agent
+
 export OPENROUTER_API_KEY=your-key
-py-code --provider openrouter --model moonshotai/kimi-k2.5
+pig-code --provider openrouter --model moonshotai/kimi-k2.5
 
 # Try these features:
 > Review @src/main.py for bugs          # @file references
@@ -81,13 +88,13 @@ py-code --provider openrouter --model moonshotai/kimi-k2.5
 !Stop and explain what you're doing      # Interrupt with steering
 ```
 
-**Multi-Platform Bot** ([setup guide](packages/py-messenger/README.md)):
+**Multi-Platform Bot** ([setup guide](packages/pig-messenger/README.md)):
 ```python
 import os
-from py_mono_messenger import MessengerBot
-from py_mono_messenger.adapters import SlackAdapter
-from py_mono_agent_core import Agent
-from py_mono_ai import LLM
+from pig_messenger import MessengerBot
+from pig_messenger.adapters import SlackAdapter
+from pig_agent_core import Agent
+from pig_llm import LLM
 
 agent = Agent(llm=LLM(provider="openrouter", model="moonshotai/kimi-k2.5",
                        api_key=os.environ["OPENROUTER_API_KEY"]))
@@ -133,7 +140,7 @@ bot.start()
 ## 📖 Documentation
 
 - **[Quick Start](QUICKSTART.md)** - Get started in 5 minutes
-- **[Messenger Bot](packages/py-messenger/README.md)** - Slack/Discord/Telegram bot setup
+- **[Messenger Bot](packages/pig-messenger/README.md)** - Slack/Discord/Telegram bot setup
 - **[Testing Guide](TESTING.md)** - How to run and write tests
 - **[Contributing](CONTRIBUTING.md)** - Contribution guidelines
 
@@ -143,7 +150,7 @@ bot.start()
 
 ### Code Development
 ```bash
-py-code --session my-project
+pig-code --session my-project
 
 > Create a FastAPI web server with authentication
 > @src/main.py - Review this code
@@ -166,10 +173,10 @@ bot.start()
 export OPENROUTER_API_KEY=your-key
 
 # JSON mode for CI/CD
-echo '{"message": "Review this code"}' | py-code --provider openrouter --mode json
+echo '{"message": "Review this code"}' | pig-code --provider openrouter --mode json
 
 # RPC mode for integration
-py-code --provider openrouter --mode rpc < requests.jsonl > responses.jsonl
+pig-code --provider openrouter --mode rpc < requests.jsonl > responses.jsonl
 ```
 
 ### Why OpenRouter?
@@ -195,8 +202,8 @@ Get your key at: https://openrouter.ai
 
 ## 🆚 vs pi-mono
 
-| Feature | pi-mono | py-mono |
-|---------|---------|---------|
+| Feature | pi-mono | pig-mono |
+|---------|---------|----------|
 | **Core Development** | ✅ | ✅ 99.5%+ |
 | **LLM Providers** | 17 | 14 (all major ones) |
 | **Messaging Platforms** | 1 (Slack) | **5 (Slack, Discord, Telegram, WhatsApp, Feishu)** 🌟 |
@@ -204,7 +211,7 @@ Get your key at: https://openrouter.ai
 | **Documentation** | Excellent | **More comprehensive** |
 | **Language** | TypeScript | Python |
 
-**py-mono achieves 99.5%+ feature parity with pi-mono and exceeds it in multi-platform support!**
+**pig-mono achieves 99.5%+ feature parity with pi-mono and exceeds it in multi-platform support!**
 
 ---
 
@@ -212,14 +219,14 @@ Get your key at: https://openrouter.ai
 
 ```
 Infrastructure Layer
-├── py-mono-ai (LLM abstraction)
-├── py-mono-agent-core (Agent runtime)
-├── py-mono-tui (Terminal UI)
-└── py-mono-web-ui (Web UI)
+├── pig-llm (LLM abstraction)
+├── pig-agent-core (Agent runtime)
+├── pig-tui (Terminal UI)
+└── pig-web-ui (Web UI)
 
 Application Layer
-├── py-mono-coding-agent (CLI assistant)
-└── py-mono-messenger (Multi-platform bots)
+├── pig-coding-agent (CLI assistant)
+└── pig-messenger (Multi-platform bots)
 ```
 
 ---
@@ -238,8 +245,8 @@ uv pip install -e ".[dev]"
 ./scripts/lint.sh
 
 # Run coding agent from source
-cd packages/py-coding-agent
-python -m py_coding_agent.cli
+cd packages/pig-coding-agent
+python -m pig_coding_agent.cli
 ```
 
 ---
@@ -264,11 +271,11 @@ MIT License - see [LICENSE](LICENSE) for details
 
 Inspired by [badlogic/pi-mono](https://github.com/badlogic/pi-mono) - an excellent TypeScript AI agent toolkit.
 
-py-mono (affectionately called "pig-mono" 🐷 by the community) brings these concepts to the Python ecosystem with additional innovations like multi-platform messaging support.
+pig-mono (affectionately called "pig-mono" 🐷 by the community) brings these concepts to the Python ecosystem with additional innovations like multi-platform messaging support.
 
 ### Why "pig-mono"?
 
-It's a playful Chinese pun: "虾仁猪心" (xiā rén zhū xīn), which sounds like "杀人诛心" (shā rén zhū xīn) - meaning to utterly defeat someone not just physically but mentally. 
+It's a playful Chinese pun: "虾仁猪心" (xiā rén zhū xīn), which sounds like "杀人诛心" (shā rén zhū xīn) - meaning to utterly defeat someone not just physically but mentally.
 
 Our tribute to pi-mono: We aim to match it feature-for-feature while adding unique Python-ecosystem value! 🐷💪
 
@@ -276,9 +283,9 @@ Our tribute to pi-mono: We aim to match it feature-for-feature while adding uniq
 
 ## ⭐ Star History
 
-If you find py-mono useful, please star the repository!
+If you find pig-mono useful, please star the repository!
 
-[![Star History Chart](https://api.star-history.com/svg?repos=kangkona/py-mono&type=Date)](https://star-history.com/#kangkona/py-mono&Date)
+[![Star History Chart](https://api.star-history.com/svg?repos=kangkona/pig-mono&type=Date)](https://star-history.com/#kangkona/pig-mono&Date)
 
 ---
 

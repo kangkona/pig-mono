@@ -1,7 +1,7 @@
 """Session management example."""
 
 from pathlib import Path
-from py_agent_core import Session
+from pig_agent_core import Session
 
 
 def main():

@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "py-mono"
+name = "pig-mono"
 version = "0.0.1"
 description = "Python monorepo toolkit for AI agents and LLM applications"
 readme = "README.md"
@@ -40,10 +40,10 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/kangkona/py-mono"
-Documentation = "https://github.com/kangkona/py-mono#readme"
-Repository = "https://github.com/kangkona/py-mono"
-Issues = "https://github.com/kangkona/py-mono/issues"
+Homepage = "https://github.com/kangkona/pig-mono"
+Documentation = "https://github.com/kangkona/pig-mono#readme"
+Repository = "https://github.com/kangkona/pig-mono"
+Issues = "https://github.com/kangkona/pig-mono/issues"
 
 [tool.hatch.build.targets.wheel]
 packages = ["packages"]

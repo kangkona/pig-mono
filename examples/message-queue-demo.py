@@ -1,6 +1,6 @@
 """Message queue demonstration."""
 
-from py_agent_core import Agent, MessageQueue
+from pig_agent_core import Agent, MessageQueue
 from unittest.mock import Mock
 
 
@@ -74,7 +74,7 @@ def demo_message_queue():
     
     print("✓ Message queue demo complete!")
     print()
-    print("In py-code:")
+    print("In pig-code:")
     print("  While agent is working:")
     print("    !Stop and explain         → Steering (interrupts)")
     print("    >>Then add error handling → Follow-up (waits)")

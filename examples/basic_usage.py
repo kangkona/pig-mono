@@ -1,7 +1,7 @@
 """Basic usage example for py-ai."""
 
 import os
-from py_ai import LLM
+from pig_llm import LLM
 
 def main():
     """Run basic examples."""

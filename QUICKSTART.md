@@ -1,6 +1,6 @@
 # Quick Start Guide
 
-Get started with py-mono in 5 minutes!
+Get started with pig-mono in 5 minutes!
 
 ## Prerequisites
 
@@ -29,7 +29,7 @@ OpenRouter gives you access to 100+ models with one API key:
 
 ```bash
 git clone <repo-url>
-cd py-mono
+cd pig-mono
 ```
 
 ### 2. Create a virtual environment (recommended)
@@ -51,12 +51,12 @@ pip install -e ".[dev]"
 
 ## First Steps
 
-### Using py-ai
+### Using pig-llm
 
 Create a file `test.py`:
 
 ```python
-from py_ai import LLM
+from pig_llm import LLM
 import os
 
 # Initialize with OpenRouter (recommended)
@@ -105,7 +105,7 @@ python test.py
 ./scripts/test.sh
 
 # Run specific test
-pytest tests/test_py_ai.py -v
+pytest tests/test_pig_llm.py -v
 
 # Run with coverage
 pytest --cov=packages --cov-report=html
@@ -135,13 +135,13 @@ Check the `examples/` directory for more:
 ## Project Structure
 
 ```
-py-mono/
+pig-mono/
 ├── packages/
-│   ├── py-ai/              # ✅ Ready to use
-│   ├── py-agent-core/      # 🚧 Coming soon
-│   ├── py-coding-agent/    # 🚧 Coming soon
-│   ├── py-tui/             # 🚧 Coming soon
-│   └── py-web-ui/          # 🚧 Coming soon
+│   ├── pig-llm/              # ✅ Ready to use
+│   ├── pig-agent-core/      # 🚧 Coming soon
+│   ├── pig-coding-agent/    # 🚧 Coming soon
+│   ├── pig-tui/             # 🚧 Coming soon
+│   └── pig-web-ui/          # 🚧 Coming soon
 ├── examples/               # Usage examples
 ├── tests/                  # Tests
 └── scripts/                # Utility scripts

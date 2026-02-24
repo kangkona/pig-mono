@@ -4,7 +4,7 @@
 set -e
 
 echo "==================================="
-echo "Running py-mono Test Suite"
+echo "Running pig-mono Test Suite"
 echo "==================================="
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

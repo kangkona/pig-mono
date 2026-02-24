@@ -2,28 +2,28 @@
 
 ## Overview
 
-py-mono has comprehensive test coverage across all packages with unit tests, integration tests, and CI/CD automation.
+pig-mono has comprehensive test coverage across all packages with unit tests, integration tests, and CI/CD automation.
 
 ## Test Structure
 
 ```
-py-mono/
+pig-mono/
 ├── tests/                      # Integration tests
 │   └── test_integration.py
 ├── packages/
-│   ├── py-ai/tests/           # py-ai unit tests
+│   ├── pig-llm/tests/           # pig-llm unit tests
 │   │   ├── test_models.py
 │   │   ├── test_config.py
 │   │   └── test_client.py
-│   ├── py-agent-core/tests/   # py-agent-core unit tests
+│   ├── pig-agent-core/tests/   # pig-agent-core unit tests
 │   │   ├── test_tools.py
 │   │   ├── test_registry.py
 │   │   └── test_agent.py
-│   ├── py-tui/tests/          # py-tui unit tests
+│   ├── pig-tui/tests/          # pig-tui unit tests
 │   │   ├── test_theme.py
 │   │   ├── test_console.py
 │   │   └── test_chat.py
-│   └── py-web-ui/tests/       # py-web-ui unit tests
+│   └── pig-web-ui/tests/       # pig-web-ui unit tests
 │       ├── test_models.py
 │       └── test_server.py
 └── pytest.ini                  # Pytest configuration
@@ -49,13 +49,13 @@ open htmlcov/index.html
 
 ```bash
 # Test specific package
-pytest packages/py-ai/tests/
+pytest packages/pig-llm/tests/
 
 # Test specific file
-pytest packages/py-ai/tests/test_models.py
+pytest packages/pig-llm/tests/test_models.py
 
 # Test specific function
-pytest packages/py-ai/tests/test_models.py::test_message_creation
+pytest packages/pig-llm/tests/test_models.py::test_message_creation
 ```
 
 ### Test Categories
@@ -77,10 +77,10 @@ pytest -m "not slow"
 
 | Package | Tests | Coverage |
 |---------|-------|----------|
-| py-ai | 12+ tests | ~85% |
-| py-agent-core | 15+ tests | ~80% |
-| py-tui | 10+ tests | ~75% |
-| py-web-ui | 8+ tests | ~70% |
+| pig-llm | 12+ tests | ~85% |
+| pig-agent-core | 15+ tests | ~80% |
+| pig-tui | 10+ tests | ~75% |
+| pig-web-ui | 8+ tests | ~70% |
 | Integration | 5+ tests | N/A |
 
 ### Total: 50+ tests
@@ -90,11 +90,11 @@ pytest -m "not slow"
 ### Unit Test Example
 
 ```python
-# packages/py-ai/tests/test_models.py
+# packages/pig-llm/tests/test_models.py
 
 def test_message_creation():
     """Test message creation."""
-    from py_ai.models import Message
+    from pig_llm.models import Message
     
     msg = Message(role="user", content="Hello")
     assert msg.role == "user"
@@ -107,9 +107,9 @@ def test_message_creation():
 # tests/test_integration.py
 
 def test_ai_to_agent_integration():
-    """Test py-ai integration with py-agent-core."""
-    from py_ai import LLM
-    from py_agent_core import Agent
+    """Test pig-llm integration with pig-agent-core."""
+    from pig_llm import LLM
+    from pig_agent_core import Agent
     
     llm = LLM(provider="openai", api_key="test")
     agent = Agent(llm=llm)
@@ -371,8 +371,8 @@ Includes:
 ## Coverage Goals
 
 Target coverage by package:
-- Core packages (py-ai, py-agent-core): >80%
-- UI packages (py-tui, py-web-ui): >70%
+- Core packages (pig-llm, pig-agent-core): >80%
+- UI packages (pig-tui, pig-web-ui): >70%
 - Integration tests: Cover main workflows
 
 ## Troubleshooting

@@ -147,7 +147,7 @@ def main():
     print("To use:")
     print(f"  cd {workspace}")
     print("  export OPENAI_API_KEY=your-key")
-    print("  py-code")
+    print("  pig-code")
     print("=" * 60)
 
 

@@ -7,11 +7,11 @@
 
 set -e
 
-echo "Installing py-mono packages in development mode..."
+echo "Installing pig-mono packages in development mode..."
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(dirname "$SCRIPT_DIR")"
-VENVS_DIR="$HOME/.local/py-mono-venvs"
+VENVS_DIR="$HOME/.local/pig-mono-venvs"
 BIN_DIR="$HOME/.local/bin"
 
 cd "$REPO_ROOT"
@@ -19,7 +19,7 @@ cd "$REPO_ROOT"
 mkdir -p "$VENVS_DIR" "$BIN_DIR"
 
 # All local library packages (installed as editable into every venv)
-LOCAL_PKGS="-e packages/py-ai -e packages/py-tui -e packages/py-agent-core"
+LOCAL_PKGS="-e packages/pig-llm -e packages/pig-tui -e packages/pig-agent-core"
 
 install_pkg() {
     local name="$1"
@@ -46,13 +46,13 @@ install_pkg() {
 }
 
 # Uninstall old pipx versions if they exist
-for pkg in py-web-ui py-coding-agent py-messenger; do
+for pkg in pig-web-ui pig-coding-agent pig-messenger; do
     pipx uninstall "$pkg" 2>/dev/null || true
 done
 
-install_pkg py-web-ui      packages/py-web-ui      py-webui
-install_pkg py-coding-agent packages/py-coding-agent py-code
-install_pkg py-messenger    packages/py-messenger    py-messenger
+install_pkg pig-web-ui      packages/pig-web-ui      pig-webui
+install_pkg pig-coding-agent packages/pig-coding-agent pig-code
+install_pkg pig-messenger    packages/pig-messenger    pig-messenger
 
 echo "✓ All packages installed successfully!"
 echo "Make sure $BIN_DIR is in your PATH."

@@ -2,9 +2,9 @@
 
 import os
 from datetime import datetime
-from py_ai import LLM
-from py_agent_core import Agent, tool
-from py_web_ui import ChatServer
+from pig_llm import LLM
+from pig_agent_core import Agent, tool
+from pig_web_ui import ChatServer
 
 
 @tool(description="Get current time")

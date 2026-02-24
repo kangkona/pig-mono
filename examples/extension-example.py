@@ -1,7 +1,7 @@
 """Extension system example."""
 
-from py_agent_core import Agent, ExtensionAPI, ExtensionManager
-from py_ai import LLM
+from pig_agent_core import Agent, ExtensionAPI, ExtensionManager
+from pig_llm import LLM
 from unittest.mock import Mock
 
 

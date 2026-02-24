@@ -25,13 +25,13 @@ def demo_json_mode():
     
     print("Usage:")
     print("  # Pipe input")
-    print('  echo \'{"message": "Hello"}\' | py-code --mode json')
+    print('  echo \'{"message": "Hello"}\' | pig-code --mode json')
     print()
     print("  # Process output")
-    print("  py-code --mode json | jq '.type'")
+    print("  pig-code --mode json | jq '.type'")
     print()
     print("  # Integration")
-    print("  py-code --mode json < requests.jsonl > responses.jsonl")
+    print("  pig-code --mode json < requests.jsonl > responses.jsonl")
     print()
 
 
@@ -63,10 +63,10 @@ def demo_rpc_mode():
     
     print("Usage:")
     print("  # Start RPC server")
-    print("  py-code --mode rpc")
+    print("  pig-code --mode rpc")
     print()
     print("  # Send request")
-    print('  echo \'{"id":1,"method":"complete","params":{"message":"Hi"}}\' | py-code --mode rpc')
+    print('  echo \'{"id":1,"method":"complete","params":{"message":"Hi"}}\' | pig-code --mode rpc')
     print()
     
     print("Example integration (Python):")
@@ -76,7 +76,7 @@ import subprocess
 
 # Start RPC process
 proc = subprocess.Popen(
-    ['py-code', '--mode', 'rpc'],
+    ['pig-code', '--mode', 'rpc'],
     stdin=subprocess.PIPE,
     stdout=subprocess.PIPE,
     text=True
@@ -114,14 +114,14 @@ def demo_integration():
 {"message": "Explain Rust"}
 
 # Process
-cat requests.jsonl | py-code --mode json | grep '"type":"message"' > results.jsonl
+cat requests.jsonl | pig-code --mode json | grep '"type":"message"' > results.jsonl
     """)
     
     print("\n2. CI/CD Integration (RPC mode):")
     print("""
 # In your CI script
 echo '{"id":1,"method":"complete","params":{"message":"Review this code"}}' \\
-  | py-code --mode rpc \\
+  | pig-code --mode rpc \\
   | jq -r '.result.content'
     """)
     
@@ -132,7 +132,7 @@ import json
 
 def ask_agent(question):
     proc = subprocess.run(
-        ['py-code', '--mode', 'json'],
+        ['pig-code', '--mode', 'json'],
         input=json.dumps({"message": question}),
         capture_output=True,
         text=True
@@ -159,8 +159,8 @@ def main():
     print()
     print("=" * 60)
     print("Try it yourself:")
-    print("  py-code --mode json")
-    print("  py-code --mode rpc")
+    print("  pig-code --mode json")
+    print("  pig-code --mode rpc")
     print("=" * 60)
 
 

@@ -1,7 +1,7 @@
 """Skills system example."""
 
 from pathlib import Path
-from py_agent_core import SkillManager
+from pig_agent_core import SkillManager
 
 
 def create_sample_skill():

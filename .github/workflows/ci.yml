@@ -36,16 +36,16 @@ jobs:
         # and by explicit pip install of each package's extras below.
 
         # 1) Leaf packages (no local deps)
-        pip install --no-deps -e packages/py-ai
-        pip install --no-deps -e packages/py-tui
+        pip install --no-deps -e packages/pig-llm
+        pip install --no-deps -e packages/pig-tui
 
-        # 2) Packages depending on py-ai
-        pip install --no-deps -e packages/py-agent-core
-        pip install --no-deps -e packages/py-web-ui
+        # 2) Packages depending on pig-llm
+        pip install --no-deps -e packages/pig-agent-core
+        pip install --no-deps -e packages/pig-web-ui
 
-        # 3) Packages depending on py-ai + py-agent-core + py-tui
-        pip install --no-deps -e packages/py-coding-agent
-        pip install --no-deps -e packages/py-messenger
+        # 3) Packages depending on pig-llm + pig-agent-core + pig-tui
+        pip install --no-deps -e packages/pig-coding-agent
+        pip install --no-deps -e packages/pig-messenger
 
         # Install all third-party dependencies
         pip install openai anthropic pydantic rich prompt-toolkit \

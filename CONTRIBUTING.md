@@ -1,6 +1,6 @@
-# Contributing to py-mono
+# Contributing to pig-mono
 
-Thank you for your interest in contributing to py-mono!
+Thank you for your interest in contributing to pig-mono!
 
 ## Getting Started
 
@@ -41,7 +41,7 @@ Thank you for your interest in contributing to py-mono!
 ./scripts/test.sh
 
 # Run specific test file
-pytest tests/test_py_ai.py
+pytest tests/test_pig_llm.py
 
 # Run with coverage
 pytest --cov=packages --cov-report=html
@@ -63,10 +63,10 @@ mypy packages/
 ## Project Structure
 
 ```
-py-mono/
+pig-mono/
 ├── packages/          # Monorepo packages
-│   ├── py-ai/        # LLM API wrapper
-│   ├── py-agent-core/ # Agent runtime
+│   ├── pig-llm/        # LLM API wrapper
+│   ├── pig-agent-core/ # Agent runtime
 │   └── ...
 ├── scripts/          # Build and utility scripts
 ├── tests/            # Integration tests
@@ -90,19 +90,19 @@ py-mono/
 
 ## Package-Specific Guidelines
 
-### py-ai (LLM API)
+### pig-llm (LLM API)
 - New providers must implement the Provider interface
 - Include both sync and async methods
 - Add usage tracking
 - Document model names and capabilities
 
-### py-agent-core (Agent Runtime)
+### pig-agent-core (Agent Runtime)
 - Maintain backward compatibility
 - Extensions must be sandboxed
 - Sessions must be serializable
 - Events should be documented
 
-### py-messenger (Multi-Platform)
+### pig-messenger (Multi-Platform)
 - New adapters must implement MessagePlatform
 - Convert to UniversalMessage format
 - Handle platform-specific features gracefully
