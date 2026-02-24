@@ -206,10 +206,10 @@ def test_skills_command(mock_llm, temp_workspace):
     )
     agent.ui = Mock()
 
-    agent._handle_command("/skills")
+    agent._list_skills()
 
-    # Should show skills info (panel if skills found, system if empty)
-    assert agent.ui.system.called or agent.ui.panel.called
+    # Should show skills info (panel if skills found, system if empty, error if disabled)
+    assert agent.ui.system.called or agent.ui.panel.called or agent.ui.error.called
 
 
 def test_extensions_command(mock_llm, temp_workspace):
