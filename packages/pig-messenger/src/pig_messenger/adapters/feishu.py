@@ -1,6 +1,7 @@
 """Feishu (飞书/Lark) platform adapter."""
 
 import json
+import re
 from datetime import datetime
 from pathlib import Path
 
@@ -225,7 +226,9 @@ class FeishuAdapter(MessagePlatform):
             channel_id=message.get("chat_id", ""),
             user_id=event.get("sender", {}).get("sender_id", {}).get("open_id", ""),
             username=event.get("sender", {}).get("sender_id", {}).get("user_id", ""),
-            text=json.loads(message.get("content", "{}")).get("text", ""),
+            text=re.sub(
+                r"@_user_\d+", "", json.loads(message.get("content", "{}")).get("text", "")
+            ).strip(),
             timestamp=datetime.fromtimestamp(int(event.get("create_time", 0)) / 1000),
             is_mention=message.get("mentions") is not None,
             raw_data=event,

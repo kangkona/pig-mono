@@ -21,7 +21,7 @@ One agent, multiple messaging platforms. Write once, deploy everywhere.
 | **Discord** | ✅ Ready | Developer Communities |
 | **Telegram** | ✅ Ready | Personal & Groups |
 | **WhatsApp** | ✅ Ready | Personal Communication |
-| **Feishu (飞书)** | ✅ Ready | Enterprise (China) |
+| **Feishu (飞书)** | ✅ Tested | Enterprise (China) |
 
 ## Installation
 
@@ -160,11 +160,46 @@ bot.add_platform(adapter)
 1. Go to [飞书开放平台](https://open.feishu.cn/app) → Create Custom App
 2. **Enable Bot**: App Features → Bot → Enable bot capability (required before adding messaging permissions)
 3. In **Credentials & Basic Info**, get your **App ID** and **App Secret**
-4. **Permissions**: Add `im:message`, `im:message:send_as_bot`, `im:resource`, `im:chat:readonly`
-5. **Event Subscriptions**: Subscribe to `im.message.receive_v1` event, configure your callback URL
-6. Get the **Verification Token** and **Encrypt Key** from Event Subscriptions page
-7. Publish the app version and have admin approve it
-8. Add the bot to a group chat or send it a direct message to start
+4. **Permissions**: Add `im:message`, `im:message:send_as_bot`, `im:resource`, `im:chat:readonly` (required for group chats)
+5. **Event Subscriptions**: Choose **长连接 (Long Connection)** mode (recommended, no webhook needed), subscribe to `im.message.receive_v1`
+6. Publish the app version and have admin approve it
+7. Add the bot to a group chat or send it a direct message to start
+
+**Option A: SDK Long Connection (recommended)**
+
+No webhook server or ngrok needed. Install `lark-oapi` and use the built-in WebSocket client:
+
+```bash
+pip install lark-oapi
+```
+
+```python
+import lark_oapi as lark
+from lark_oapi.api.im.v1 import P2ImMessageReceiveV1
+
+def on_message(data: P2ImMessageReceiveV1):
+    print(data.event.message.content)
+
+event_handler = (
+    lark.EventDispatcherHandler.builder("", "")
+    .register_p2_im_message_receive_v1(on_message)
+    .build()
+)
+
+ws_client = lark.ws.Client(
+    app_id="cli_xxx",
+    app_secret="xxx",
+    event_handler=event_handler,
+    log_level=lark.LogLevel.INFO,
+)
+ws_client.start()
+```
+
+See [examples/feishu_bot.py](examples/feishu_bot.py) for a complete echo bot example.
+
+**Option B: Webhook Callback**
+
+If you prefer the webhook approach, set up a FastAPI/Flask server and configure the callback URL in Feishu Admin. See [examples/feishu_webhook_server.py](examples/feishu_webhook_server.py).
 
 ```python
 from pig_messenger.adapters import FeishuAdapter
@@ -177,8 +212,6 @@ adapter = FeishuAdapter(
 )
 bot.add_platform(adapter)
 ```
-
-> **Note**: Feishu requires you to run your own event callback server and call `adapter.handle_event(payload)` when receiving events. Supports both `chat_id` (group) and `open_id` (direct message) addressing.
 
 ## Advanced Usage
 
@@ -278,8 +311,9 @@ bot.add_platform(MyPlatformAdapter(api_key="..."))
 ## Testing
 
 ```bash
-# Unit tests (no Slack credentials needed)
+# Unit tests (no credentials needed)
 pytest packages/pig-messenger/tests/test_slack_adapter.py -v
+pytest packages/pig-messenger/tests/test_feishu_adapter.py -v
 ```
 
 ## License

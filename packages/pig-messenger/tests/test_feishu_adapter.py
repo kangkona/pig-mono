@@ -79,7 +79,7 @@ def feishu_event_mention():
         "message": {
             "message_id": "om_msg002",
             "chat_id": "oc_chat002",
-            "content": json.dumps({"text": "review this code"}),
+            "content": json.dumps({"text": "@_user_1 review this code"}),
             "mentions": [{"key": "@_all", "id": {"open_id": "ou_bot"}}],
         },
         "create_time": "1700000001000",
