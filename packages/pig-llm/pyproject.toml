@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "pig-llm"
-version = "0.0.1"
+version = "0.0.2"
 description = "Unified multi-provider LLM API (OpenAI, Anthropic, Google, etc.)"
 readme = "README.md"
 license = { text = "MIT" }
