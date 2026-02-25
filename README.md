@@ -182,15 +182,6 @@ echo '{"message": "Review this code"}' | pig-code --provider openrouter --mode j
 pig-code --provider openrouter --mode rpc < requests.jsonl > responses.jsonl
 ```
 
-### Why OpenRouter?
-
-- **100+ Models**: Access OpenAI, Anthropic, Google, Meta, and more with one API key
-- **Cost Effective**: Pay only for what you use, often cheaper than direct APIs
-- **No Rate Limits**: Higher throughput than individual providers
-- **Easy Switching**: Try different models without managing multiple keys
-
-Get your key at: https://openrouter.ai
-
 ---
 
 ## 📊 Project Stats
