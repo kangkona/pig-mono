@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "pig-messenger"
-version = "0.0.2"
+version = "0.0.3"
 description = "Universal multi-platform bot framework"
 readme = "README.md"
 license = { text = "MIT" }
@@ -41,7 +41,7 @@ telegram = [
     "python-telegram-bot>=20.7",
 ]
 feishu = [
-    "feishu-sdk>=0.0.1",
+    "lark-oapi>=1.5.0",
 ]
 all = [
     "pig-messenger[slack,discord,whatsapp,telegram,feishu]"
