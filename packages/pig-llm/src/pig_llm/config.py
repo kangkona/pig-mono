@@ -1,29 +1,12 @@
 """Configuration for LLM clients."""
 
-from typing import Literal
-
 from pydantic import BaseModel, Field
 
 
 class Config(BaseModel):
     """Configuration for LLM client."""
 
-    provider: Literal[
-        "openai",
-        "anthropic",
-        "google",
-        "azure",
-        "groq",
-        "mistral",
-        "openrouter",
-        "bedrock",
-        "xai",
-        "cerebras",
-        "cohere",
-        "perplexity",
-        "deepseek",
-        "together",
-    ] = "openai"
+    provider: str = "openai"
     model: str = "gpt-4"
     api_key: str | None = None
     temperature: float = Field(default=0.7, ge=0.0, le=2.0)

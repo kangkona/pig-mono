@@ -34,6 +34,9 @@ def main(
     no_extensions: bool = typer.Option(False, "--no-extensions", help="Disable extensions"),
     no_skills: bool = typer.Option(False, "--no-skills", help="Disable skills"),
     mode: str = typer.Option("interactive", "--mode", help="Output mode: interactive, json, rpc"),
+    base_url: str | None = typer.Option(
+        None, "--base-url", help="Custom API base URL (for custom providers)"
+    ),
 ):
     """Start interactive coding agent."""
     if ctx.invoked_subcommand is not None:
@@ -50,6 +53,7 @@ def main(
         provider=provider,
         api_key=api_key,
         model=model or ("gpt-3.5-turbo" if provider == "openai" else None),
+        base_url=base_url,
     )
 
     # Handle session loading

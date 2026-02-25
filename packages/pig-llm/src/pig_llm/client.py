@@ -55,15 +55,23 @@ class LLM:
     def _init_provider(self):
         """Initialize the provider client."""
         entry = self._PROVIDER_MAP.get(self.config.provider)
-        if not entry:
-            raise ValueError(f"Unknown provider: {self.config.provider}")
+        if entry:
+            module_name, class_name = entry
+            import importlib
 
-        module_name, class_name = entry
-        import importlib
+            mod = importlib.import_module(f".providers.{module_name}", package="pig_llm")
+            provider_class = getattr(mod, class_name)
+            return provider_class(self.config)
 
-        mod = importlib.import_module(f".providers.{module_name}", package="pig_llm")
-        provider_class = getattr(mod, class_name)
-        return provider_class(self.config)
+        # Unknown provider → OpenAI-compatible with base_url
+        if not self.config.base_url:
+            raise ValueError(
+                f"Unknown provider '{self.config.provider}'. "
+                f"Provide base_url for OpenAI-compatible custom providers."
+            )
+        from .providers.openai import OpenAIProvider
+
+        return OpenAIProvider(self.config)
 
     def complete(
         self,
