@@ -158,11 +158,13 @@ bot.add_platform(adapter)
 ### Feishu (飞书)
 
 1. Go to [飞书开放平台](https://open.feishu.cn/app) → Create Custom App
-2. In **Credentials & Basic Info**, get your **App ID** and **App Secret**
-3. **Permissions**: Add `im:message`, `im:message:send_as_bot`, `im:resource`, `im:chat:readonly`
-4. **Event Subscriptions**: Subscribe to `im.message.receive_v1` event, configure your callback URL
-5. Get the **Verification Token** and **Encrypt Key** from Event Subscriptions page
-6. Publish the app version and have admin approve it
+2. **Enable Bot**: App Features → Bot → Enable bot capability (required before adding messaging permissions)
+3. In **Credentials & Basic Info**, get your **App ID** and **App Secret**
+4. **Permissions**: Add `im:message`, `im:message:send_as_bot`, `im:resource`, `im:chat:readonly`
+5. **Event Subscriptions**: Subscribe to `im.message.receive_v1` event, configure your callback URL
+6. Get the **Verification Token** and **Encrypt Key** from Event Subscriptions page
+7. Publish the app version and have admin approve it
+8. Add the bot to a group chat or send it a direct message to start
 
 ```python
 from pig_messenger.adapters import FeishuAdapter
