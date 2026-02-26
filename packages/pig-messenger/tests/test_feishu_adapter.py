@@ -558,3 +558,161 @@ class TestFeishuSDKMode:
         assert len(captured) == 1
         assert captured[0].is_mention is True
         assert captured[0].text == "review this"
+
+
+# ---------------------------------------------------------------------------
+# Card messages
+# ---------------------------------------------------------------------------
+
+
+class TestBuildCardContent:
+    def test_structure(self):
+        adapter, _ = _make_adapter()
+        card = adapter._build_card_content("hello **world**")
+        assert card == {
+            "elements": [{"tag": "markdown", "content": "hello **world**"}],
+        }
+
+
+class TestSendCard:
+    def _setup(self):
+        adapter, client = _make_adapter()
+        adapter.tenant_access_token = "t-token"
+        return adapter, client
+
+    def test_send_card_http(self):
+        adapter, client = self._setup()
+        client.post.return_value = _mock_response({"data": {"message_id": "om_card001"}})
+
+        msg_id = asyncio.run(adapter.send_card("oc_chat001", "hello card"))
+
+        assert msg_id == "om_card001"
+        call_kwargs = client.post.call_args
+        payload = call_kwargs[1]["json"]
+        assert payload["msg_type"] == "interactive"
+        content = json.loads(payload["content"])
+        assert content["elements"][0]["tag"] == "markdown"
+        assert content["elements"][0]["content"] == "hello card"
+
+    def test_send_card_http_open_id(self):
+        adapter, client = self._setup()
+        client.post.return_value = _mock_response({"data": {"message_id": "om_card002"}})
+
+        asyncio.run(adapter.send_card("ou_user001", "hi"))
+
+        call_kwargs = client.post.call_args
+        assert call_kwargs[1]["params"]["receive_id_type"] == "open_id"
+
+
+class TestUpdateCard:
+    def _setup(self):
+        adapter, client = _make_adapter()
+        adapter.tenant_access_token = "t-token"
+        return adapter, client
+
+    def test_update_card_http(self):
+        adapter, client = self._setup()
+        client.patch.return_value = _mock_response({})
+
+        asyncio.run(adapter.update_card("om_card001", "updated text"))
+
+        client.patch.assert_called_once()
+        call_args = client.patch.call_args
+        assert "om_card001" in call_args[0][0]
+        payload = call_args[1]["json"]
+        content = json.loads(payload["content"])
+        assert content["elements"][0]["content"] == "updated text"
+        assert call_args[1]["headers"]["Authorization"] == "Bearer t-token"
+
+
+class TestCardSDKMode:
+    """Tests for card operations in SDK mode."""
+
+    def _make_sdk_adapter(self):
+        import sys
+
+        mock_lark = _mock_lark_module()
+        saved = sys.modules.get("lark_oapi")
+        sys.modules["lark_oapi"] = mock_lark
+        try:
+            adapter = FeishuAdapter(
+                app_id="cli_sdk_id",
+                app_secret="sdk_secret",
+                use_ws=True,
+            )
+        finally:
+            if saved is None:
+                sys.modules.pop("lark_oapi", None)
+            else:
+                sys.modules["lark_oapi"] = saved
+        return adapter, mock_lark
+
+    def test_send_card_sdk(self):
+        adapter, _ = self._make_sdk_adapter()
+        mock_resp = MagicMock()
+        mock_resp.success.return_value = True
+        mock_resp.data.message_id = "om_sdk_card001"
+        adapter._lark_client.im.v1.message.create.return_value = mock_resp
+
+        import sys
+
+        mock_im = MagicMock()
+        body_builder = MagicMock()
+        body_builder.receive_id.return_value = body_builder
+        body_builder.msg_type.return_value = body_builder
+        body_builder.content.return_value = body_builder
+        body_builder.build.return_value = MagicMock(name="body")
+        mock_im.CreateMessageRequestBody.builder.return_value = body_builder
+
+        req_builder = MagicMock()
+        req_builder.receive_id_type.return_value = req_builder
+        req_builder.request_body.return_value = req_builder
+        req_builder.build.return_value = MagicMock(name="request")
+        mock_im.CreateMessageRequest.builder.return_value = req_builder
+
+        saved = sys.modules.get("lark_oapi.api.im.v1")
+        sys.modules["lark_oapi.api.im.v1"] = mock_im
+        try:
+            msg_id = asyncio.run(adapter.send_card("oc_chat001", "card text"))
+        finally:
+            if saved is None:
+                sys.modules.pop("lark_oapi.api.im.v1", None)
+            else:
+                sys.modules["lark_oapi.api.im.v1"] = saved
+
+        assert msg_id == "om_sdk_card001"
+        # Verify msg_type was set to "interactive"
+        body_builder.msg_type.assert_called_with("interactive")
+
+    def test_update_card_sdk(self):
+        adapter, _ = self._make_sdk_adapter()
+        mock_resp = MagicMock()
+        mock_resp.success.return_value = True
+        adapter._lark_client.im.v1.message.patch.return_value = mock_resp
+
+        import sys
+
+        mock_im = MagicMock()
+        patch_body_builder = MagicMock()
+        patch_body_builder.content.return_value = patch_body_builder
+        patch_body_builder.build.return_value = MagicMock(name="patch_body")
+        mock_im.PatchMessageRequestBody.builder.return_value = patch_body_builder
+
+        patch_req_builder = MagicMock()
+        patch_req_builder.message_id.return_value = patch_req_builder
+        patch_req_builder.request_body.return_value = patch_req_builder
+        patch_req_builder.build.return_value = MagicMock(name="patch_request")
+        mock_im.PatchMessageRequest.builder.return_value = patch_req_builder
+
+        saved = sys.modules.get("lark_oapi.api.im.v1")
+        sys.modules["lark_oapi.api.im.v1"] = mock_im
+        try:
+            asyncio.run(adapter.update_card("om_card001", "updated"))
+        finally:
+            if saved is None:
+                sys.modules.pop("lark_oapi.api.im.v1", None)
+            else:
+                sys.modules["lark_oapi.api.im.v1"] = saved
+
+        adapter._lark_client.im.v1.message.patch.assert_called_once()
+        patch_req_builder.message_id.assert_called_with("om_card001")

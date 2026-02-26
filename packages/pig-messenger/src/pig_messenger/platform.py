@@ -99,6 +99,45 @@ class MessagePlatform(ABC):
         """Stop listening for messages."""
         pass
 
+    async def send_card(
+        self,
+        channel_id: str,
+        text: str,
+        **kwargs,
+    ) -> str:
+        """Send an interactive card message.
+
+        Platforms that support rich cards (e.g. Feishu) should override this.
+        Default implementation falls back to ``send_message``.
+
+        Args:
+            channel_id: Channel ID
+            text: Card body text (markdown)
+            **kwargs: Platform-specific arguments
+
+        Returns:
+            Message ID
+        """
+        return await self.send_message(channel_id, text, **kwargs)
+
+    async def update_card(
+        self,
+        message_id: str,
+        text: str,
+        **kwargs,
+    ) -> None:
+        """Update an existing card message.
+
+        Platforms that support in-place card updates should override this.
+        Default implementation is a no-op.
+
+        Args:
+            message_id: ID of the card message to update
+            text: New card body text (markdown)
+            **kwargs: Platform-specific arguments
+        """
+        return  # no-op for platforms without card support
+
     def set_message_handler(self, handler: Callable) -> None:
         """Set the message handler callback.
 

@@ -262,6 +262,152 @@ class FeishuAdapter(MessagePlatform):
         data = response.json()
         return data["data"]["message_id"]
 
+    # ------------------------------------------------------------------
+    # Card messages (streaming support)
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _build_card_content(text: str) -> dict:
+        """Build a Feishu interactive card JSON payload.
+
+        Args:
+            text: Markdown text for the card body
+
+        Returns:
+            Card content dict suitable for ``msg_type="interactive"``
+        """
+        return {
+            "elements": [{"tag": "markdown", "content": text}],
+        }
+
+    async def send_card(
+        self,
+        channel_id: str,
+        text: str,
+        **kwargs,
+    ) -> str:
+        """Send an interactive card message.
+
+        Args:
+            channel_id: Chat ID (chat_id or open_id)
+            text: Markdown text for the card body
+            **kwargs: Additional parameters
+
+        Returns:
+            Message ID
+        """
+        if self.use_ws:
+            return self._send_card_sdk(channel_id, text)
+        return await self._send_card_http(channel_id, text)
+
+    def _send_card_sdk(self, channel_id: str, text: str) -> str:
+        """Send interactive card via lark_oapi SDK."""
+        from lark_oapi.api.im.v1 import (
+            CreateMessageRequest,
+            CreateMessageRequestBody,
+        )
+
+        receive_id_type = "open_id" if channel_id.startswith("ou_") else "chat_id"
+        card_content = self._build_card_content(text)
+
+        body = (
+            CreateMessageRequestBody.builder()
+            .receive_id(channel_id)
+            .msg_type("interactive")
+            .content(json.dumps(card_content))
+            .build()
+        )
+
+        request = (
+            CreateMessageRequest.builder()
+            .receive_id_type(receive_id_type)
+            .request_body(body)
+            .build()
+        )
+
+        response = self._lark_client.im.v1.message.create(request)
+        if not response.success():
+            raise RuntimeError(
+                f"Feishu SDK send_card failed: code={response.code}, msg={response.msg}"
+            )
+        return response.data.message_id
+
+    async def _send_card_http(self, channel_id: str, text: str) -> str:
+        """Send interactive card via HTTP."""
+        token = await self._get_tenant_access_token()
+
+        url = f"{self.api_base}/im/v1/messages"
+        headers = {"Authorization": f"Bearer {token}"}
+
+        receive_id_type = "chat_id" if channel_id.startswith("oc_") else "open_id"
+        params = {"receive_id_type": receive_id_type}
+
+        card_content = self._build_card_content(text)
+        payload = {
+            "receive_id": channel_id,
+            "msg_type": "interactive",
+            "content": json.dumps(card_content),
+        }
+
+        response = await self.client.post(url, headers=headers, params=params, json=payload)
+        response.raise_for_status()
+
+        return response.json()["data"]["message_id"]
+
+    async def update_card(
+        self,
+        message_id: str,
+        text: str,
+        **kwargs,
+    ) -> None:
+        """Update an existing interactive card message.
+
+        Args:
+            message_id: ID of the card message to update
+            text: New markdown text for the card body
+            **kwargs: Additional parameters
+        """
+        if self.use_ws:
+            self._update_card_sdk(message_id, text)
+        else:
+            await self._update_card_http(message_id, text)
+
+    def _update_card_sdk(self, message_id: str, text: str) -> None:
+        """Update card via lark_oapi SDK (PATCH)."""
+        from lark_oapi.api.im.v1 import (
+            PatchMessageRequest,
+            PatchMessageRequestBody,
+        )
+
+        card_content = self._build_card_content(text)
+
+        body = PatchMessageRequestBody.builder().content(json.dumps(card_content)).build()
+
+        request = PatchMessageRequest.builder().message_id(message_id).request_body(body).build()
+
+        response = self._lark_client.im.v1.message.patch(request)
+        if not response.success():
+            raise RuntimeError(
+                f"Feishu SDK update_card failed: code={response.code}, msg={response.msg}"
+            )
+
+    async def _update_card_http(self, message_id: str, text: str) -> None:
+        """Update card via HTTP (PATCH)."""
+        token = await self._get_tenant_access_token()
+
+        url = f"{self.api_base}/im/v1/messages/{message_id}"
+        headers = {"Authorization": f"Bearer {token}"}
+
+        card_content = self._build_card_content(text)
+        payload = {"content": json.dumps(card_content)}
+
+        response = await self.client.patch(url, headers=headers, json=payload)
+        response.raise_for_status()
+
+    # ------------------------------------------------------------------
+    # File operations
+    # ------------------------------------------------------------------
+
     async def upload_file(
         self,
         channel_id: str,
