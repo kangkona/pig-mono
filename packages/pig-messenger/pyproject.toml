@@ -35,7 +35,7 @@ discord = [
     "discord.py>=2.3.0",
 ]
 whatsapp = [
-    "whatsapp-cloud-api>=0.3.0",
+    "whatsapp-cloud-api>=0.0.4",
 ]
 telegram = [
     "python-telegram-bot>=20.7",
