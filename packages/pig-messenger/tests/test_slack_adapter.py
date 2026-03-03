@@ -122,7 +122,12 @@ class TestSlackAdapterInit:
 
 class TestHandleSlackMessage:
     def _run(self, coro):
-        return asyncio.get_event_loop().run_until_complete(coro)
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+        return loop.run_until_complete(coro)
 
     def test_mention_strips_bot_id(self, slack_event_mention):
         adapter, client, _, _ = _make_adapter()
@@ -225,7 +230,12 @@ class TestHandleSlackMessage:
 
 class TestSendMessage:
     def _run(self, coro):
-        return asyncio.get_event_loop().run_until_complete(coro)
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+        return loop.run_until_complete(coro)
 
     def test_send_simple_message(self):
         adapter, client, _, _ = _make_adapter()
@@ -256,7 +266,12 @@ class TestSendMessage:
 
 class TestUploadFile:
     def _run(self, coro):
-        return asyncio.get_event_loop().run_until_complete(coro)
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+        return loop.run_until_complete(coro)
 
     def test_upload(self, tmp_path):
         adapter, client, _, _ = _make_adapter()
@@ -280,7 +295,12 @@ class TestUploadFile:
 
 class TestGetHistory:
     def _run(self, coro):
-        return asyncio.get_event_loop().run_until_complete(coro)
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+        return loop.run_until_complete(coro)
 
     def test_returns_messages_skipping_bot(self):
         adapter, client, _, _ = _make_adapter()
@@ -304,7 +324,12 @@ class TestGetHistory:
 
 class TestDownloadFile:
     def _run(self, coro):
-        return asyncio.get_event_loop().run_until_complete(coro)
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+        return loop.run_until_complete(coro)
 
     def test_download(self):
         adapter, client, _, _ = _make_adapter()

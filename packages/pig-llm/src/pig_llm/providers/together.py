@@ -35,7 +35,44 @@ class TogetherProvider(Provider):
 
     def _convert_messages(self, messages: list[Message]) -> list[dict]:
         """Convert internal messages to Together AI format."""
-        return [{"role": msg.role, "content": msg.content} for msg in messages]
+        result = []
+        for msg in messages:
+            if msg.role == "assistant" and msg.metadata and "tool_calls" in msg.metadata:
+                result.append(
+                    {
+                        "role": "assistant",
+                        "content": msg.content or None,
+                        "tool_calls": msg.metadata["tool_calls"],
+                    }
+                )
+            elif msg.role == "tool" and msg.metadata:
+                result.append(
+                    {
+                        "role": "tool",
+                        "content": msg.content,
+                        "tool_call_id": msg.metadata.get("tool_call_id", ""),
+                    }
+                )
+            else:
+                result.append({"role": msg.role, "content": msg.content})
+        return result
+
+    @staticmethod
+    def _extract_tool_calls(message) -> list[dict] | None:
+        """Extract tool_calls from OpenAI response message."""
+        if not hasattr(message, "tool_calls") or not message.tool_calls:
+            return None
+        return [
+            {
+                "id": tc.id,
+                "type": "function",
+                "function": {
+                    "name": tc.function.name,
+                    "arguments": tc.function.arguments,
+                },
+            }
+            for tc in message.tool_calls
+        ]
 
     def complete(
         self,
@@ -66,6 +103,7 @@ class TogetherProvider(Provider):
             model=response.model,
             usage=usage,
             finish_reason=choice.finish_reason,
+            tool_calls=self._extract_tool_calls(choice.message),
             metadata={"id": response.id},
         )
 
@@ -125,6 +163,7 @@ class TogetherProvider(Provider):
             model=response.model,
             usage=usage,
             finish_reason=choice.finish_reason,
+            tool_calls=self._extract_tool_calls(choice.message),
             metadata={"id": response.id},
         )
 

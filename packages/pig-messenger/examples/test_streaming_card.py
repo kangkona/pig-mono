@@ -44,7 +44,7 @@ async def main():
     accumulated = ""
     for i, chunk in enumerate(chunks, 1):
         accumulated += chunk
-        print(f"[{i+1}/4] Updating card (chunk {i}/{len(chunks)})...")
+        print(f"[{i + 1}/4] Updating card (chunk {i}/{len(chunks)})...")
         await adapter.update_card(msg_id, accumulated + "\n\n● 生成中...")
         time.sleep(1)
 
