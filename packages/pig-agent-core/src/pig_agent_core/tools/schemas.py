@@ -132,7 +132,7 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
                 "timezone": {
                     "type": "string",
                     "description": (
-                        "Timezone name (e.g., 'UTC', 'America/New_York'). " "Defaults to UTC."
+                        "Timezone name (e.g., 'UTC', 'America/New_York'). Defaults to UTC."
                     ),
                 }
             },

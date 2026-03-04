@@ -428,7 +428,7 @@ class TestParallelExecution:
         assert results[1].ok is True
 
         # Both should start before either ends (parallel execution)
-        tool1_start_idx = execution_order.index("tool1_start")
+        execution_order.index("tool1_start")
         tool2_start_idx = execution_order.index("tool2_start")
         tool1_end_idx = execution_order.index("tool1_end")
 

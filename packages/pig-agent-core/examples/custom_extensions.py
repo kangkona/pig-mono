@@ -439,10 +439,10 @@ async def example_integrated_agent():
     print("  - MockContextLoader for user context")
 
     # Create custom components
-    memory = FileMemoryProvider(storage_dir="./example_memory")
-    tracker = DetailedCostTracker()
-    prompt_builder = PersonalizedPromptBuilder()
-    context_loader = MockContextLoader()
+    FileMemoryProvider(storage_dir="./example_memory")
+    DetailedCostTracker()
+    PersonalizedPromptBuilder()
+    MockContextLoader()
 
     print("\n✓ All custom extensions initialized")
     print("\nTo use with a real agent:")

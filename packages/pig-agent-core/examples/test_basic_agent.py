@@ -113,7 +113,7 @@ async def test_cancellation():
         yield mock_chunk
 
     with patch.object(agent, "respond_stream", side_effect=mock_stream):
-        async for chunk in agent.respond_stream("Test", cancel=cancel_event):
+        async for _chunk in agent.respond_stream("Test", cancel=cancel_event):
             pass
 
     print("✓ Cancellation support works")
@@ -134,7 +134,7 @@ async def test_error_handling():
         with patch.object(agent, "respond", side_effect=mock_error):
             try:
                 await agent.respond("Test")
-                assert False, "Should have raised error"
+                raise AssertionError("Should have raised error")
             except ValueError as e:
                 assert str(e) == "Test error"
 

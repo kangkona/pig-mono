@@ -31,7 +31,7 @@ async def mock_failing_tool(args, user_id, meta, cancel):
 
 async def mock_cancellable_tool(args, user_id, meta, cancel):
     """Mock tool that checks cancellation."""
-    for i in range(10):
+    for _i in range(10):
         if cancel and cancel.is_set():
             raise CancelledError("Cancelled")
         await asyncio.sleep(0.01)

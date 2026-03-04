@@ -1,5 +1,8 @@
 """Tool system for agents."""
 
+import sys  # noqa: E402
+from pathlib import Path  # noqa: E402
+
 from .base import CancelledError, ToolResult
 from .handlers_core import HANDLERS
 from .registry import ToolRegistry
@@ -10,8 +13,6 @@ from .schemas import CORE_TOOL_NAMES, TOOL_BUDGETS, TOOL_PERMISSIONS, TOOL_SCHEM
 _global_registry = ToolRegistry()
 
 # Import old Tool class and tool decorator from parent tools.py for backward compatibility
-import sys
-from pathlib import Path
 
 # Get the parent package directory
 parent_dir = Path(__file__).parent.parent

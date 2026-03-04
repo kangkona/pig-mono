@@ -101,7 +101,7 @@ def test_tool_budgets():
     assert "discover_tools" in TOOL_BUDGETS
 
     # Check budget structure
-    for tool_name, budget in TOOL_BUDGETS.items():
+    for _tool_name, budget in TOOL_BUDGETS.items():
         assert "timeout" in budget
         assert "max_retries" in budget
         assert isinstance(budget["timeout"], int)

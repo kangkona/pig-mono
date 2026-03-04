@@ -9,9 +9,9 @@ from unittest.mock import Mock
 src_path = Path(__file__).parent.parent / "src"
 sys.path.insert(0, str(src_path))
 
-from pig_agent_core.agent import Agent
-from pig_agent_core.observability.events import AgentEvent
-from pig_agent_core.resilience.profile import APIProfile, ProfileManager
+from pig_agent_core.agent import Agent  # noqa: E402
+from pig_agent_core.observability.events import AgentEvent  # noqa: E402
+from pig_agent_core.resilience.profile import APIProfile, ProfileManager  # noqa: E402
 
 
 def create_mock_llm():

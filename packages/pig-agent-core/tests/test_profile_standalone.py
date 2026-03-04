@@ -10,7 +10,7 @@ src_path = Path(__file__).parent.parent / "src"
 sys.path.insert(0, str(src_path))
 
 # Import directly from resilience module
-from pig_agent_core.resilience.profile import APIProfile, ProfileManager
+from pig_agent_core.resilience.profile import APIProfile, ProfileManager  # noqa: E402
 
 
 def test_api_profile_creation():

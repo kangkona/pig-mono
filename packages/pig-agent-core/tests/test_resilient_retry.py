@@ -243,7 +243,7 @@ async def test_resilient_streaming_call_max_retries():
     # Call should raise after max retries
     messages = [{"role": "user", "content": "Hi"}]
     with pytest.raises(Exception, match="Permanent failure"):
-        async for chunk in resilient_streaming_call(llm, messages, max_retries=2):
+        async for _chunk in resilient_streaming_call(llm, messages, max_retries=2):
             pass
 
 

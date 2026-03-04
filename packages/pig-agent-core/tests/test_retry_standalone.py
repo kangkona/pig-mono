@@ -10,7 +10,7 @@ from unittest.mock import AsyncMock, Mock
 src_path = Path(__file__).parent.parent / "src"
 sys.path.insert(0, str(src_path))
 
-from pig_agent_core.resilience.retry import (
+from pig_agent_core.resilience.retry import (  # noqa: E402
     _is_context_overflow,
     _is_error_type,
     _should_rotate_profile,

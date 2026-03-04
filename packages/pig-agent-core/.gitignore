@@ -1,0 +1,6 @@
+
+# Example output directories
+example_memory/
+
+# Coverage reports
+coverage.xml
