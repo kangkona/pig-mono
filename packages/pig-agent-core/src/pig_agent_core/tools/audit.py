@@ -68,7 +68,7 @@ class ToolAuditLog:
         """
         self.max_entries = max_entries
         self._entries: list[ToolAuditEntry] = []
-        self._last_timestamp: float = 0.0  # Ensures strictly increasing timestamps
+        self._seq: int = 0
 
     def log(
         self,
@@ -93,11 +93,8 @@ class ToolAuditLog:
             result_size: Size of result in characters
             metadata: Additional metadata
         """
-        # Guarantee strictly increasing timestamps so sort order is deterministic
+        self._seq += 1
         ts = time.time()
-        if ts <= self._last_timestamp:
-            ts = self._last_timestamp + 1e-9
-        self._last_timestamp = ts
 
         entry = ToolAuditEntry(
             tool_name=tool_name,
@@ -147,8 +144,8 @@ class ToolAuditLog:
         if success is not None:
             entries = [e for e in entries if e.success == success]
 
-        # Sort by timestamp descending (most recent first)
-        entries = sorted(entries, key=lambda e: e.timestamp, reverse=True)
+        # Reverse to get most recent first (entries are appended in order)
+        entries = list(reversed(entries))
 
         # Apply limit
         if limit is not None:

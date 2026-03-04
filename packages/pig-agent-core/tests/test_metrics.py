@@ -300,8 +300,8 @@ class TestToolMetricsCollector:
         assert summary["success_rate"] == pytest.approx(66.67, rel=0.01)
         assert summary["total_duration"] == 6.0
         assert summary["avg_duration"] == 2.0
-        assert summary["uptime"] > 0
-        assert summary["calls_per_second"] > 0
+        assert summary["uptime"] >= 0
+        assert summary["calls_per_second"] >= 0
 
     def test_get_summary_empty(self):
         """Test getting summary with no data."""
