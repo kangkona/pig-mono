@@ -53,7 +53,7 @@ def test_coding_agent_has_tools(mock_llm, temp_workspace):
     assert len(agent.agent.registry) > 0
 
     # Check for some expected tools
-    tool_names = [tool.name for tool in agent.agent.registry.list_tools()]
+    tool_names = agent.agent.registry.list_tools()
     assert "read_file" in tool_names
     assert "write_file" in tool_names
     assert "list_files" in tool_names

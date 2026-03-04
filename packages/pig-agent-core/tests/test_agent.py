@@ -1,6 +1,7 @@
 """Tests for Agent class."""
 
-from unittest.mock import Mock
+import asyncio
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 from pig_agent_core import Agent, tool
@@ -130,3 +131,107 @@ def test_agent_max_iterations(mock_llm):
     """Test max iterations parameter."""
     agent = Agent(llm=mock_llm, max_iterations=5)
     assert agent.max_iterations == 5
+
+
+@pytest.mark.asyncio
+async def test_agent_respond_stream_basic():
+    """Test basic streaming response without tool calls."""
+    # Create mock LLM with streaming support
+    mock_llm = Mock()
+    mock_llm.config = Mock(model="test-model")
+
+    # Mock streaming response
+    async def mock_stream():
+        # Simulate streaming chunks
+        chunk1 = Mock()
+        chunk1.choices = [Mock()]
+        chunk1.choices[0].delta = Mock()
+        chunk1.choices[0].delta.content = "Hello"
+        chunk1.choices[0].delta.tool_calls = None
+
+        chunk2 = Mock()
+        chunk2.choices = [Mock()]
+        chunk2.choices[0].delta = Mock()
+        chunk2.choices[0].delta.content = " world"
+        chunk2.choices[0].delta.tool_calls = None
+
+        yield chunk1
+        yield chunk2
+
+    mock_llm.achat_stream = AsyncMock(return_value=mock_stream())
+
+    agent = Agent(llm=mock_llm)
+
+    # Test streaming
+    chunks = []
+    async for chunk in agent.respond_stream("Hello"):
+        chunks.append(chunk)
+
+    assert chunks == ["Hello", " world"]
+    assert len(agent.history) == 2  # user + assistant
+
+
+@pytest.mark.asyncio
+async def test_agent_respond_non_streaming():
+    """Test non-streaming respond method."""
+    # Create mock LLM with streaming support
+    mock_llm = Mock()
+    mock_llm.config = Mock(model="test-model")
+
+    # Mock streaming response
+    async def mock_stream():
+        chunk1 = Mock()
+        chunk1.choices = [Mock()]
+        chunk1.choices[0].delta = Mock()
+        chunk1.choices[0].delta.content = "Complete"
+        chunk1.choices[0].delta.tool_calls = None
+
+        chunk2 = Mock()
+        chunk2.choices = [Mock()]
+        chunk2.choices[0].delta = Mock()
+        chunk2.choices[0].delta.content = " response"
+        chunk2.choices[0].delta.tool_calls = None
+
+        yield chunk1
+        yield chunk2
+
+    mock_llm.achat_stream = AsyncMock(return_value=mock_stream())
+
+    agent = Agent(llm=mock_llm)
+
+    # Test non-streaming
+    response = await agent.respond("Hello")
+
+    assert response == "Complete response"
+    assert len(agent.history) == 2  # user + assistant
+
+
+@pytest.mark.asyncio
+async def test_agent_respond_with_cancellation():
+    """Test cancellation support."""
+    mock_llm = Mock()
+    mock_llm.config = Mock(model="test-model")
+
+    # Mock streaming response
+    async def mock_stream():
+        chunk = Mock()
+        chunk.choices = [Mock()]
+        chunk.choices[0].delta = Mock()
+        chunk.choices[0].delta.content = "Should not see this"
+        chunk.choices[0].delta.tool_calls = None
+        yield chunk
+
+    mock_llm.achat_stream = AsyncMock(return_value=mock_stream())
+
+    agent = Agent(llm=mock_llm)
+
+    # Create cancel event and set it immediately
+    cancel = asyncio.Event()
+    cancel.set()
+
+    # Test cancellation
+    chunks = []
+    async for chunk in agent.respond_stream("Hello", cancel=cancel):
+        chunks.append(chunk)
+
+    assert chunks == ["Request was cancelled."]

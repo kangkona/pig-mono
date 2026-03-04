@@ -33,6 +33,10 @@ def main(
     session_name: str | None = typer.Option(None, "--session", "-s", help="Session name"),
     no_extensions: bool = typer.Option(False, "--no-extensions", help="Disable extensions"),
     no_skills: bool = typer.Option(False, "--no-skills", help="Disable skills"),
+    no_resilience: bool = typer.Option(False, "--no-resilience", help="Disable resilience"),
+    no_cost_tracking: bool = typer.Option(
+        False, "--no-cost-tracking", help="Disable cost tracking"
+    ),
     mode: str = typer.Option("interactive", "--mode", help="Output mode: interactive, json, rpc"),
     base_url: str | None = typer.Option(
         None, "--base-url", help="Custom API base URL (for custom providers)"
@@ -107,6 +111,8 @@ def main(
         session_path=session_path,
         enable_extensions=not no_extensions,
         enable_skills=not no_skills,
+        enable_resilience=not no_resilience,
+        enable_cost_tracking=not no_cost_tracking,
     )
 
     console.print("[green]✓ Coding Agent started[/green]")

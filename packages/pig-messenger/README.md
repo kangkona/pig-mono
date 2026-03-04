@@ -8,10 +8,11 @@ One agent, multiple messaging platforms. Write once, deploy everywhere.
 
 - **Multi-Platform**: Slack, Discord, Telegram, WhatsApp, Feishu
 - **Plug-in Architecture**: Easy to add new platforms
-- **Powered by pig-agent-core**: Full agent capabilities
+- **Powered by pig-agent-core v0.0.4**: Full agent capabilities with resilience & observability
 - **Session Management**: Per-channel conversation history
 - **File Handling**: Upload/download across platforms
 - **Lazy Imports**: Only install deps for the platforms you use
+- **Production Ready**: Automatic API key rotation, cost tracking, error recovery
 
 ## Supported Platforms
 
@@ -87,6 +88,54 @@ bot.add_platform(FeishuAdapter(
     app_secret=os.environ["FEISHU_APP_SECRET"],
 ))
 bot.start()  # All platforms run in parallel
+```
+
+### Production Bot with Resilience (NEW v0.0.4)
+
+```python
+from pig_agent_core import Agent, ProfileManager
+from pig_agent_core.observability.events import AgentEvent
+
+# Set up multiple API keys for automatic rotation
+# export OPENAI_API_KEY=sk-...
+# export OPENAI_API_KEY_2=sk-...
+# export ANTHROPIC_API_KEY=sk-ant-...
+
+# Create profile manager for resilience
+profile_manager = ProfileManager()
+profile_manager.add_profile(APIProfile(
+    api_key=os.environ["OPENAI_API_KEY"],
+    model="gpt-4",
+))
+profile_manager.add_profile(APIProfile(
+    api_key=os.environ.get("OPENAI_API_KEY_2"),
+    model="gpt-4",
+))
+
+# Track events and costs
+events = []
+def event_callback(event: AgentEvent):
+    events.append(event)
+    if event.type == "agent_end":
+        print(f"Agent finished: {event.data}")
+
+# Create production-ready agent
+agent = Agent(
+    llm=LLM(provider="openai"),
+    profile_manager=profile_manager,  # Automatic key rotation
+    event_callback=event_callback,     # Event tracking
+    max_rounds=15,
+)
+
+bot = MessengerBot(agent)
+bot.add_platform(SlackAdapter(...))
+bot.start()
+
+# Bot now automatically:
+# - Rotates API keys on rate limits
+# - Falls back to alternative models
+# - Tracks usage and costs
+# - Emits events for monitoring
 ```
 
 ## Slack App Setup

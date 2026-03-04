@@ -1,6 +1,8 @@
 """Context file management (AGENTS.md, SYSTEM.md, etc.)."""
 
+from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any, Protocol
 
 
 class ContextManager:
@@ -162,3 +164,328 @@ class ContextManager:
         """
         # TODO: Implement file watching
         pass
+
+
+# ---------------------------------------------------------------------------
+# Agent context hydration (for runtime context management)
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class CachedContext:
+    """Cached context for agent execution.
+
+    Attributes:
+        system_prompt: System prompt template
+        user_config: User-specific configuration
+        metadata: Additional metadata
+    """
+
+    system_prompt: str = ""
+    user_config: dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+
+async def hydrate(user_id: str) -> CachedContext:
+    """Load user context (simplified version without external dependencies).
+
+    In a production environment, this would load from:
+    - Database for user preferences
+    - Redis cache for performance
+    - External services for integrations
+
+    Args:
+        user_id: User identifier
+
+    Returns:
+        CachedContext with user-specific settings
+    """
+    # Simplified implementation - returns default context
+    # In production, this would load from database/cache
+    return CachedContext(
+        system_prompt="You are a helpful AI assistant.",
+        user_config={
+            "user_id": user_id,
+            "preferences": {},
+        },
+        metadata={},
+    )
+
+
+def build_messages(
+    ctx: CachedContext,
+    history: list[dict[str, Any]],
+    user_text: str,
+) -> list[dict[str, Any]]:
+    """Build message list for LLM with context injection.
+
+    Args:
+        ctx: Cached context with system prompt
+        history: Conversation history
+        user_text: Current user message
+
+    Returns:
+        Complete message list for LLM
+    """
+    messages = []
+
+    # Add system prompt if available
+    if ctx.system_prompt:
+        messages.append(
+            {
+                "role": "system",
+                "content": ctx.system_prompt,
+            }
+        )
+
+    # Add conversation history
+    messages.extend(history)
+
+    # Add current user message
+    messages.append(
+        {
+            "role": "user",
+            "content": user_text,
+        }
+    )
+
+    return messages
+
+
+# ---------------------------------------------------------------------------
+# Extension Protocols
+# ---------------------------------------------------------------------------
+
+
+class ContextLoader(Protocol):
+    """Protocol for loading user/brand context.
+
+    Allows products to inject custom context loading logic.
+    """
+
+    async def load_context(self, user_id: str) -> dict[str, Any]:
+        """Load context for a user.
+
+        Args:
+            user_id: User identifier
+
+        Returns:
+            Context dictionary with user-specific data
+        """
+        ...
+
+
+class SystemPromptBuilder(Protocol):
+    """Protocol for building system prompts.
+
+    Allows products to customize system prompt construction.
+    """
+
+    def build_prompt(self, base_prompt: str, context: dict[str, Any]) -> str:
+        """Build system prompt from base and context.
+
+        Args:
+            base_prompt: Base system prompt
+            context: User/brand context
+
+        Returns:
+            Final system prompt
+        """
+        ...
+
+
+# ---------------------------------------------------------------------------
+# 3-Level Context Compression
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class CompressionConfig:
+    """Configuration for context compression.
+
+    Attributes:
+        level1_threshold: Token ratio to trigger Level 1 (truncate tool results)
+        level2_threshold: Token ratio to trigger Level 2 (replace with summaries)
+        level3_threshold: Token ratio to trigger Level 3 (LLM summarization)
+        max_tool_result_chars: Max characters per tool result after Level 1
+    """
+
+    level1_threshold: float = 0.7  # 70% of context window
+    level2_threshold: float = 0.8  # 80% of context window
+    level3_threshold: float = 0.9  # 90% of context window
+    max_tool_result_chars: int = 1000
+
+
+def compress_level1(messages: list[dict[str, Any]], max_chars: int = 1000) -> list[dict[str, Any]]:
+    """Level 1: Truncate tool result messages.
+
+    Args:
+        messages: Message list
+        max_chars: Maximum characters per tool result
+
+    Returns:
+        Compressed message list
+    """
+    compressed = []
+    for msg in messages:
+        if msg.get("role") == "tool":
+            content = msg.get("content", "")
+            if len(content) > max_chars:
+                truncation_msg = f"\n\n[... truncated {len(content) - max_chars} chars]"
+                truncated = content[:max_chars] + truncation_msg
+                compressed.append({**msg, "content": truncated})
+            else:
+                compressed.append(msg)
+        else:
+            compressed.append(msg)
+    return compressed
+
+
+def compress_level2(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Level 2: Replace tool call/result pairs with summaries.
+
+    Args:
+        messages: Message list
+
+    Returns:
+        Compressed message list with summaries
+    """
+    compressed = []
+    i = 0
+    while i < len(messages):
+        msg = messages[i]
+
+        # Look for assistant message with tool calls
+        if msg.get("role") == "assistant" and msg.get("tool_calls"):
+            tool_calls = msg.get("tool_calls", [])
+            tool_names = [tc.get("function", {}).get("name", "unknown") for tc in tool_calls]
+
+            # Collect following tool results
+            j = i + 1
+            tool_results = []
+            while j < len(messages) and messages[j].get("role") == "tool":
+                tool_results.append(messages[j])
+                j += 1
+
+            # Create summary
+            summary = f"[Tool execution: {', '.join(tool_names)} - {len(tool_results)} results]"
+            compressed.append(
+                {
+                    "role": "assistant",
+                    "content": summary,
+                }
+            )
+
+            # Skip the tool result messages
+            i = j
+        else:
+            compressed.append(msg)
+            i += 1
+
+    return compressed
+
+
+async def compress_level3(messages: list[dict[str, Any]], llm: Any) -> list[dict[str, Any]]:
+    """Level 3: LLM-summarize middle messages.
+
+    Keeps system prompt, recent messages, and summarizes the middle.
+
+    Args:
+        messages: Message list
+        llm: LLM client for summarization
+
+    Returns:
+        Compressed message list with LLM summary
+    """
+    if len(messages) <= 5:
+        return messages
+
+    # Keep system prompt (first message if role=system)
+    system_msg = []
+    start_idx = 0
+    if messages and messages[0].get("role") == "system":
+        system_msg = [messages[0]]
+        start_idx = 1
+
+    # Keep last 3 messages
+    recent = messages[-3:]
+    middle = messages[start_idx:-3]
+
+    if not middle:
+        return messages
+
+    # Build summary prompt
+    middle_text = "\n\n".join(
+        [f"{msg.get('role', 'unknown')}: {msg.get('content', '')[:200]}" for msg in middle]
+    )
+
+    summary_prompt = (
+        "Summarize this conversation history in 2-3 sentences, "
+        f"focusing on key decisions and context:\n\n{middle_text}\n\nSummary:"
+    )
+
+    try:
+        # Use LLM to summarize
+        response = await llm.achat(
+            messages=[{"role": "user", "content": summary_prompt}],
+            max_tokens=200,
+        )
+        summary = response.content
+
+        # Build compressed messages
+        compressed = (
+            system_msg
+            + [
+                {
+                    "role": "assistant",
+                    "content": f"[Previous conversation summary: {summary}]",
+                }
+            ]
+            + recent
+        )
+
+        return compressed
+    except Exception:
+        # If summarization fails, fall back to Level 2
+        return compress_level2(messages)
+
+
+def compress_messages(
+    messages: list[dict[str, Any]],
+    current_tokens: int,
+    max_tokens: int,
+    config: CompressionConfig | None = None,
+    llm: Any | None = None,
+) -> list[dict[str, Any]]:
+    """Apply appropriate compression level based on token usage.
+
+    Args:
+        messages: Message list
+        current_tokens: Current token count
+        max_tokens: Maximum allowed tokens
+        config: Compression configuration
+        llm: LLM client for Level 3 compression
+
+    Returns:
+        Compressed message list
+    """
+    if config is None:
+        config = CompressionConfig()
+
+    ratio = current_tokens / max_tokens
+
+    if ratio < config.level1_threshold:
+        # No compression needed
+        return messages
+
+    if ratio < config.level2_threshold:
+        # Level 1: Truncate tool results
+        return compress_level1(messages, config.max_tool_result_chars)
+
+    if ratio < config.level3_threshold:
+        # Level 2: Replace with summaries
+        return compress_level2(messages)
+
+    # Level 3: LLM summarization (async, so return Level 2 for now)
+    # In practice, this should be called with await compress_level3()
+    return compress_level2(messages)
