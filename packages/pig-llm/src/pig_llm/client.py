@@ -1,6 +1,6 @@
 """Main LLM client."""
 
-from collections.abc import Iterator
+from collections.abc import AsyncIterator, Iterator
 
 from .config import Config
 from .models import Message, Response, StreamChunk
@@ -156,3 +156,56 @@ class LLM:
             max_tokens=max_tokens,
             **kwargs,
         )
+
+    async def achat(
+        self,
+        messages: list[Message],
+        **kwargs,
+    ) -> Response:
+        """Async generate a chat completion with full message history.
+
+        Args:
+            messages: List of Message objects
+            **kwargs: Additional parameters (tools, etc.)
+
+        Returns:
+            Response object with content and metadata
+        """
+        model = kwargs.pop("model", self.config.model)
+        temperature = kwargs.pop("temperature", self.config.temperature)
+        max_tokens = kwargs.pop("max_tokens", self.config.max_tokens)
+
+        return await self._provider.acomplete(
+            messages=messages,
+            model=model,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            **kwargs,
+        )
+
+    async def achat_stream(
+        self,
+        messages: list[Message],
+        **kwargs,
+    ) -> AsyncIterator[StreamChunk]:
+        """Async stream a chat completion with full message history.
+
+        Args:
+            messages: List of Message objects
+            **kwargs: Additional parameters (tools, etc.)
+
+        Yields:
+            StreamChunk objects with content
+        """
+        model = kwargs.pop("model", self.config.model)
+        temperature = kwargs.pop("temperature", self.config.temperature)
+        max_tokens = kwargs.pop("max_tokens", self.config.max_tokens)
+
+        async for chunk in self._provider.astream(
+            messages=messages,
+            model=model,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            **kwargs,
+        ):
+            yield chunk
