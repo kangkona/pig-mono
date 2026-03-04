@@ -1,6 +1,13 @@
 """Web tools for agents."""
 
 from .handlers import HANDLERS, handle_read_webpage, handle_search_web
+from .providers import (
+    ExaProvider,
+    SearchProvider,
+    SearchResult,
+    TavilyProvider,
+    get_default_provider,
+)
 from .schemas import TOOL_SCHEMAS
 
 
@@ -60,4 +67,9 @@ __all__ = [
     "HANDLERS",
     "TOOL_SCHEMAS",
     "register_tools",
+    "SearchProvider",
+    "SearchResult",
+    "TavilyProvider",
+    "ExaProvider",
+    "get_default_provider",
 ]

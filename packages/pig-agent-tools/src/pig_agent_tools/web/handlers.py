@@ -4,74 +4,60 @@ from typing import Any
 
 from pig_agent_core.tools.base import ToolResult
 
+from .providers.base import SearchProvider
+
 
 async def handle_search_web(
     args: dict[str, Any],
     user_id: str | None = None,
     meta: dict[str, Any] | None = None,
     cancel: Any = None,
+    provider: SearchProvider | None = None,
 ) -> ToolResult:
-    """Handle web search using Tavily API.
+    """Search the web and return formatted results.
+
+    The ``provider`` argument selects the search backend.  When omitted the
+    best available provider is auto-detected from environment variables
+    (TAVILY_API_KEY → Tavily, EXA_API_KEY → Exa).
 
     Args:
-        args: Tool arguments containing 'query' and optional 'max_results'
-        user_id: Optional user identifier
-        meta: Optional metadata
-        cancel: Optional cancellation token
+        args: Tool arguments — ``query`` (required), ``max_results`` (default 5).
+        user_id: Optional user identifier passed by the agent runtime.
+        meta: Optional metadata passed by the agent runtime.
+        cancel: Optional cancellation token passed by the agent runtime.
+        provider: Explicit search provider instance.  Useful for testing and
+            for scenarios where the caller wants to control the backend.
 
     Returns:
-        ToolResult with search results
+        ToolResult with a formatted string of results on success.
     """
     query = args.get("query", "")
     max_results = args.get("max_results", 5)
 
     if not query:
-        return ToolResult(
-            ok=False,
-            error="Query parameter is required",
-        )
+        return ToolResult(ok=False, error="Query parameter is required")
 
     try:
-        # Import here to avoid requiring tavily for package installation
-        import os
+        if provider is None:
+            from .providers import get_default_provider
 
-        try:
-            from tavily import TavilyClient
-        except ImportError:
-            return ToolResult(
-                ok=False,
-                error="Tavily package not installed. Install with: pip install tavily-python",
-            )
+            provider = get_default_provider()
 
-        api_key = os.getenv("TAVILY_API_KEY")
-        if not api_key:
-            return ToolResult(
-                ok=False,
-                error="TAVILY_API_KEY environment variable not set",
-            )
+        results = await provider.search(query, max_results=max_results)
 
-        client = TavilyClient(api_key=api_key)
-        response = client.search(query=query, max_results=max_results)
-
-        # Format results
-        results = response.get("results", [])
         if not results:
             return ToolResult(ok=True, data="No results found")
 
-        formatted_results = []
-        for i, result in enumerate(results, 1):
-            title = result.get("title", "No title")
-            url = result.get("url", "")
-            snippet = result.get("content", "")
-            formatted_results.append(f"{i}. {title}\n   URL: {url}\n   {snippet}\n")
+        lines = []
+        for i, r in enumerate(results, 1):
+            lines.append(f"{i}. {r.title}\n   URL: {r.url}\n   {r.snippet}\n")
 
-        return ToolResult(ok=True, data="\n".join(formatted_results))
+        return ToolResult(ok=True, data="\n".join(lines))
 
+    except RuntimeError as e:
+        return ToolResult(ok=False, error=str(e))
     except Exception as e:
-        return ToolResult(
-            ok=False,
-            error=f"Search failed: {str(e)}",
-        )
+        return ToolResult(ok=False, error=f"Search failed: {e}")
 
 
 async def handle_read_webpage(
@@ -80,69 +66,54 @@ async def handle_read_webpage(
     meta: dict[str, Any] | None = None,
     cancel: Any = None,
 ) -> ToolResult:
-    """Handle webpage reading and content extraction.
+    """Read and extract text content from a webpage.
 
     Args:
-        args: Tool arguments containing 'url'
-        user_id: Optional user identifier
-        meta: Optional metadata
-        cancel: Optional cancellation token
+        args: Tool arguments — ``url`` (required).
+        user_id: Optional user identifier passed by the agent runtime.
+        meta: Optional metadata passed by the agent runtime.
+        cancel: Optional cancellation token passed by the agent runtime.
 
     Returns:
-        ToolResult with extracted webpage content
+        ToolResult with extracted page text on success.
     """
     url = args.get("url", "")
 
     if not url:
-        return ToolResult(
-            ok=False,
-            error="URL parameter is required",
-        )
+        return ToolResult(ok=False, error="URL parameter is required")
 
-    # Basic URL validation
     if not url.startswith(("http://", "https://")):
-        return ToolResult(
-            ok=False,
-            error="URL must start with http:// or https://",
-        )
+        return ToolResult(ok=False, error="URL must start with http:// or https://")
 
     try:
-        # Import here to avoid requiring httpx/bs4 for package installation
         try:
             import httpx
             from bs4 import BeautifulSoup
         except ImportError:
             return ToolResult(
                 ok=False,
-                error="Required packages not installed. Install with: pip install httpx beautifulsoup4",  # noqa: E501
+                error=(
+                    "Required packages not installed. "
+                    "Install with: pip install httpx beautifulsoup4"
+                ),
             )
 
-        # Fetch webpage
         async with httpx.AsyncClient(timeout=30.0) as client:
             response = await client.get(url, follow_redirects=True)
             response.raise_for_status()
 
-        # Parse HTML and extract text
         soup = BeautifulSoup(response.text, "html.parser")
 
-        # Remove script and style elements
-        for script in soup(["script", "style", "nav", "footer", "header"]):
-            script.decompose()
+        for tag in soup(["script", "style", "nav", "footer", "header"]):
+            tag.decompose()
 
-        # Get text content
         text = soup.get_text(separator="\n", strip=True)
-
-        # Clean up whitespace
         lines = [line.strip() for line in text.splitlines() if line.strip()]
         content = "\n".join(lines)
 
         if not content:
-            return ToolResult(
-                ok=False,
-                error="No text content found on webpage",
-            )
+            return ToolResult(ok=False, error="No text content found on webpage")
 
-        # Limit content length to avoid overwhelming context
         max_length = 10000
         if len(content) > max_length:
             content = content[:max_length] + "\n\n[Content truncated...]"
@@ -155,18 +126,11 @@ async def handle_read_webpage(
             error=f"HTTP error {e.response.status_code}: {e.response.reason_phrase}",
         )
     except httpx.TimeoutException:
-        return ToolResult(
-            ok=False,
-            error="Request timed out after 30 seconds",
-        )
+        return ToolResult(ok=False, error="Request timed out after 30 seconds")
     except Exception as e:
-        return ToolResult(
-            ok=False,
-            error=f"Failed to read webpage: {str(e)}",
-        )
+        return ToolResult(ok=False, error=f"Failed to read webpage: {e}")
 
 
-# Handler registry
 HANDLERS = {
     "search_web": handle_search_web,
     "read_webpage": handle_read_webpage,

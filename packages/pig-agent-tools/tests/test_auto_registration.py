@@ -1,13 +1,11 @@
 """Integration tests for tool auto-registration."""
 
 import asyncio
-import sys
-from types import ModuleType
-from unittest.mock import Mock, patch
 
 import pytest
 from pig_agent_core.tools import _global_registry
 from pig_agent_tools.web import register_tools
+from pig_agent_tools.web.providers.base import SearchResult
 
 
 def test_register_tools_with_global_registry():
@@ -76,34 +74,20 @@ def test_handlers_can_be_called_directly():
     """Test that handlers can be used without registration."""
     from pig_agent_tools.web import handle_search_web
 
-    mock_response = {
-        "results": [
-            {
-                "title": "Test Result",
-                "url": "https://example.com",
-                "content": "Test content",
-            }
-        ]
-    }
+    class _MockProvider:
+        async def search(self, query: str, max_results: int = 5) -> list[SearchResult]:
+            return [
+                SearchResult(title="Test Result", url="https://example.com", snippet="Test content")
+            ]
 
-    fake_tavily = ModuleType("tavily")
-    fake_tavily.TavilyClient = Mock()
-    sys.modules["tavily"] = fake_tavily
-    try:
-        mock_client = Mock()
-        mock_client.search.return_value = mock_response
-        fake_tavily.TavilyClient.return_value = mock_client
+    result = asyncio.run(
+        handle_search_web(
+            {"query": "test", "max_results": 1},
+            user_id="test_user",
+            meta={},
+            provider=_MockProvider(),
+        )
+    )
 
-        with patch.dict("os.environ", {"TAVILY_API_KEY": "test-key"}):
-            result = asyncio.run(
-                handle_search_web(
-                    {"query": "test", "max_results": 1},
-                    user_id="test_user",
-                    meta={},
-                )
-            )
-
-        assert result.ok
-        assert "Test Result" in result.data
-    finally:
-        sys.modules.pop("tavily", None)
+    assert result.ok
+    assert "Test Result" in result.data

@@ -1,59 +1,63 @@
 """Tests for web tool handlers."""
 
-import sys
-from types import ModuleType
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 from pig_agent_tools.web.handlers import handle_read_webpage, handle_search_web
+from pig_agent_tools.web.providers.base import SearchResult
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
 
 
-def _install_fake_tavily():
-    """Inject a fake tavily module into sys.modules so patch() can target it."""
-    fake_tavily = ModuleType("tavily")
-    fake_tavily.TavilyClient = Mock()
-    sys.modules["tavily"] = fake_tavily
-    return fake_tavily
+def _make_provider(*results: SearchResult):
+    """Return a mock SearchProvider that yields the given results."""
+
+    class _Provider:
+        async def search(self, query: str, max_results: int = 5) -> list[SearchResult]:
+            return list(results)
+
+    return _Provider()
+
+
+def _failing_provider(message: str):
+    """Return a mock SearchProvider that raises RuntimeError."""
+
+    class _Provider:
+        async def search(self, query: str, max_results: int = 5) -> list[SearchResult]:
+            raise RuntimeError(message)
+
+    return _Provider()
+
+
+# ---------------------------------------------------------------------------
+# handle_search_web
+# ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
 async def test_search_web_success():
-    """Test successful web search."""
-    mock_response = {
-        "results": [
-            {
-                "title": "Python Tutorial",
-                "url": "https://example.com/python",
-                "content": "Learn Python programming",
-            },
-            {
-                "title": "Python Docs",
-                "url": "https://docs.python.org",
-                "content": "Official Python documentation",
-            },
-        ]
-    }
+    """Successful search returns formatted results."""
+    r1 = SearchResult(
+        title="Python Tutorial", url="https://example.com/python", snippet="Learn Python"
+    )  # noqa: E501
+    r2 = SearchResult(title="Python Docs", url="https://docs.python.org", snippet="Official docs")
+    provider = _make_provider(r1, r2)
 
-    fake_tavily = _install_fake_tavily()
-    try:
-        mock_client = Mock()
-        mock_client.search.return_value = mock_response
-        fake_tavily.TavilyClient.return_value = mock_client
+    result = await handle_search_web(
+        {"query": "Python tutorials", "max_results": 2}, provider=provider
+    )
 
-        with patch.dict("os.environ", {"TAVILY_API_KEY": "test-key"}):
-            result = await handle_search_web({"query": "Python tutorials", "max_results": 2})
-
-        assert result.ok
-        assert "Python Tutorial" in result.data
-        assert "https://example.com/python" in result.data
-        assert "Learn Python programming" in result.data
-    finally:
-        sys.modules.pop("tavily", None)
+    assert result.ok
+    assert "Python Tutorial" in result.data
+    assert "https://example.com/python" in result.data
+    assert "Learn Python" in result.data
 
 
 @pytest.mark.asyncio
 async def test_search_web_missing_query():
-    """Test search with missing query parameter."""
+    """Missing query returns an error."""
     result = await handle_search_web({})
 
     assert not result.ok
@@ -61,71 +65,59 @@ async def test_search_web_missing_query():
 
 
 @pytest.mark.asyncio
-async def test_search_web_no_api_key():
-    """Test search without API key — when tavily is not installed, expect import error."""
-    sys.modules.pop("tavily", None)
+async def test_search_web_no_results():
+    """Empty result list returns a friendly message."""
+    provider = _make_provider()
+
+    result = await handle_search_web({"query": "nonexistent query"}, provider=provider)
+
+    assert result.ok
+    assert "No results found" in result.data
+
+
+@pytest.mark.asyncio
+async def test_search_web_provider_error():
+    """Provider RuntimeError surfaces as ToolResult error."""
+    provider = _failing_provider("TAVILY_API_KEY environment variable not set")
+
+    result = await handle_search_web({"query": "test"}, provider=provider)
+
+    assert not result.ok
+    assert "TAVILY_API_KEY" in result.error
+
+
+@pytest.mark.asyncio
+async def test_search_web_provider_unexpected_exception():
+    """Unexpected exceptions are wrapped as 'Search failed'."""
+
+    class _BrokenProvider:
+        async def search(self, query: str, max_results: int = 5) -> list[SearchResult]:
+            raise ValueError("unexpected!")
+
+    result = await handle_search_web({"query": "test"}, provider=_BrokenProvider())
+
+    assert not result.ok
+    assert "Search failed" in result.error
+
+
+@pytest.mark.asyncio
+async def test_search_web_auto_detects_provider_no_key():
+    """Without any API key, auto-detection raises RuntimeError → ToolResult error."""
     with patch.dict("os.environ", {}, clear=True):
         result = await handle_search_web({"query": "test"})
 
     assert not result.ok
-    assert "TAVILY_API_KEY" in result.error or "Tavily" in result.error
+    assert "No search provider configured" in result.error
 
 
-@pytest.mark.asyncio
-async def test_search_web_no_api_key_with_tavily():
-    """Test search without API key when tavily is installed."""
-    _install_fake_tavily()
-    try:
-        with patch.dict("os.environ", {}, clear=True):
-            result = await handle_search_web({"query": "test"})
-
-        assert not result.ok
-        assert "TAVILY_API_KEY" in result.error
-    finally:
-        sys.modules.pop("tavily", None)
-
-
-@pytest.mark.asyncio
-async def test_search_web_no_results():
-    """Test search with no results."""
-    mock_response = {"results": []}
-
-    fake_tavily = _install_fake_tavily()
-    try:
-        mock_client = Mock()
-        mock_client.search.return_value = mock_response
-        fake_tavily.TavilyClient.return_value = mock_client
-
-        with patch.dict("os.environ", {"TAVILY_API_KEY": "test-key"}):
-            result = await handle_search_web({"query": "nonexistent query"})
-
-        assert result.ok
-        assert "No results found" in result.data
-    finally:
-        sys.modules.pop("tavily", None)
-
-
-@pytest.mark.asyncio
-async def test_search_web_exception():
-    """Test search with exception."""
-    fake_tavily = _install_fake_tavily()
-    try:
-        mock_client = Mock()
-        mock_client.search.side_effect = Exception("API error")
-        fake_tavily.TavilyClient.return_value = mock_client
-
-        with patch.dict("os.environ", {"TAVILY_API_KEY": "test-key"}):
-            result = await handle_search_web({"query": "test"})
-
-        assert not result.ok
-        assert "Search failed" in result.error
-    finally:
-        sys.modules.pop("tavily", None)
+# ---------------------------------------------------------------------------
+# handle_read_webpage
+# ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
 async def test_read_webpage_success():
-    """Test successful webpage reading."""
+    """Successful page read strips scripts/nav/footer."""
     mock_html = """
     <html>
         <head><title>Test Page</title></head>
@@ -162,25 +154,20 @@ async def test_read_webpage_success():
 
 @pytest.mark.asyncio
 async def test_read_webpage_missing_url():
-    """Test webpage reading with missing URL."""
     result = await handle_read_webpage({})
-
     assert not result.ok
     assert "URL parameter is required" in result.error
 
 
 @pytest.mark.asyncio
 async def test_read_webpage_invalid_url():
-    """Test webpage reading with invalid URL."""
     result = await handle_read_webpage({"url": "not-a-url"})
-
     assert not result.ok
     assert "must start with http" in result.error
 
 
 @pytest.mark.asyncio
 async def test_read_webpage_http_error():
-    """Test webpage reading with HTTP error."""
     import httpx
 
     mock_response = Mock()
@@ -204,7 +191,6 @@ async def test_read_webpage_http_error():
 
 @pytest.mark.asyncio
 async def test_read_webpage_timeout():
-    """Test webpage reading with timeout."""
     import httpx
 
     with patch("httpx.AsyncClient") as mock_client_class:
@@ -222,7 +208,6 @@ async def test_read_webpage_timeout():
 
 @pytest.mark.asyncio
 async def test_read_webpage_content_truncation():
-    """Test webpage content truncation for long content."""
     long_content = "A" * 15000
     mock_html = f"<html><body><p>{long_content}</p></body></html>"
 

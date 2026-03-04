@@ -1,9 +1,6 @@
 """Verify pig-agent-tools README examples are accurate."""
 
 import asyncio
-import sys
-from types import ModuleType
-from unittest.mock import Mock, patch
 
 print("Testing pig-agent-tools README examples...\n")
 
@@ -24,31 +21,22 @@ except Exception as e:
 print("\nTest 2: Direct handler usage...")
 try:
     from pig_agent_tools.web import handle_search_web
+    from pig_agent_tools.web.providers.base import SearchResult
 
-    mock_response = {
-        "results": [{"title": "Test", "url": "https://example.com", "content": "Test content"}]
-    }
+    class _MockProvider:
+        async def search(self, query: str, max_results: int = 5) -> list[SearchResult]:
+            return [SearchResult(title="Test", url="https://example.com", snippet="Test content")]
 
     async def test_handler():
-        fake_tavily = ModuleType("tavily")
-        fake_tavily.TavilyClient = Mock()
-        sys.modules["tavily"] = fake_tavily
-        try:
-            mock_client = Mock()
-            mock_client.search.return_value = mock_response
-            fake_tavily.TavilyClient.return_value = mock_client
-
-            with patch.dict("os.environ", {"TAVILY_API_KEY": "test-key"}):
-                result = await handle_search_web(
-                    {"query": "Python tutorials", "max_results": 5},
-                    user_id="user123",
-                    meta={},
-                )
-                assert result.ok, f"Expected ok=True, got {result.ok}"
-                assert "Test" in result.data
-                return True
-        finally:
-            sys.modules.pop("tavily", None)
+        result = await handle_search_web(
+            {"query": "Python tutorials", "max_results": 5},
+            user_id="user123",
+            meta={},
+            provider=_MockProvider(),
+        )
+        assert result.ok, f"Expected ok=True, got {result.ok}"
+        assert "Test" in result.data
+        return True
 
     success = asyncio.run(test_handler())
     print("✓ Direct handler usage works")
