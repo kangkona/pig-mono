@@ -15,7 +15,9 @@ from pig_agent_core.tools import Tool
 from pig_llm import LLM
 from pig_tui import ChatUI, InteractivePrompt
 
+from .billing import CostTracker
 from .file_reference import FileReferenceParser
+from .resilience import create_profile_manager_from_env, get_profile_status
 from .tools import CodeTools, FileTools, ShellTools
 
 
@@ -31,6 +33,8 @@ class CodingAgent:
         session_path: Path | None = None,
         enable_extensions: bool = True,
         enable_skills: bool = True,
+        enable_resilience: bool = True,
+        enable_cost_tracking: bool = True,
     ):
         """Initialize coding agent.
 
@@ -42,10 +46,27 @@ class CodingAgent:
             session_path: Path to load existing session
             enable_extensions: Enable extension system
             enable_skills: Enable skills system
+            enable_resilience: Enable resilience (API key rotation, fallback)
+            enable_cost_tracking: Enable cost tracking
         """
         self.workspace = Path(workspace).resolve()
         self.llm = llm or LLM()
         self.verbose = verbose
+
+        # Initialize resilience (ProfileManager)
+        self.profile_manager = None
+        if enable_resilience:
+            self.profile_manager = create_profile_manager_from_env()
+            if self.profile_manager and verbose:
+                status = get_profile_status(self.profile_manager)
+                print(f"✓ Resilience enabled: {status['available_profiles']} API keys available")
+
+        # Initialize cost tracking
+        self.cost_tracker = None
+        if enable_cost_tracking:
+            self.cost_tracker = CostTracker(self.workspace)
+            if verbose:
+                print("✓ Cost tracking enabled")
 
         # Initialize session
         if session_path and session_path.exists():
@@ -89,6 +110,8 @@ class CodingAgent:
             tools=tools,
             system_prompt=self._get_system_prompt(),
             verbose=verbose,
+            profile_manager=self.profile_manager,
+            billing_hook=self.cost_tracker,
         )
 
         # Initialize extension manager
@@ -177,6 +200,9 @@ When generating code, provide clean, well-documented, production-ready code.
         "/model",
         "/login",
         "/logout",
+        "/resilience",
+        "/cost",
+        "/usage",
     ]
 
     def _build_commands(self) -> list[str]:
@@ -396,6 +422,12 @@ Tools: {len(self.agent.registry)}
             parts = cmd.split(maxsplit=1)
             provider = parts[1] if len(parts) > 1 else None
             self._logout(provider)
+
+        elif cmd.startswith("/resilience"):
+            self._show_resilience_status()
+
+        elif cmd.startswith("/cost") or cmd.startswith("/usage"):
+            self._show_cost_summary()
 
         elif cmd.startswith("/"):
             # Check if it's a prompt template
@@ -1067,3 +1099,53 @@ Branches: {info["branches"]}
         """
         response = self.agent.run(message)
         return response.content
+
+    def _show_resilience_status(self):
+        """Show resilience system status."""
+        if not self.profile_manager:
+            self.ui.system("Resilience not enabled")
+            self.ui.system("\nTo enable resilience:")
+            self.ui.system("  1. Set multiple API keys:")
+            self.ui.system("     export OPENAI_API_KEY=sk-...")
+            self.ui.system("     export OPENAI_API_KEY_2=sk-...")
+            self.ui.system("     export ANTHROPIC_API_KEY=sk-ant-...")
+            self.ui.system("  2. Restart agent")
+            return
+
+        status = get_profile_status(self.profile_manager)
+
+        status_text = f"""
+**Resilience Status**
+
+Total API keys: {status["total_profiles"]}
+Available: {status["available_profiles"]}
+In cooldown: {status["cooldown_profiles"]}
+
+**Profiles:**
+"""
+
+        for i, profile in enumerate(status["profiles"], 1):
+            provider = profile["provider"]
+            key_idx = profile["key_index"]
+            available = "✓" if profile["available"] else "✗ (cooldown)"
+
+            status_text += f"\n{i}. {provider} (key #{key_idx}): {available}"
+
+        status_text += "\n\n**Features:**\n"
+        status_text += "• Automatic API key rotation on rate limits\n"
+        status_text += "• Per-failure-type cooldowns\n"
+        status_text += "• Model fallback on context overflow\n"
+
+        self.ui.panel(status_text, title="Resilience")
+
+    def _show_cost_summary(self):
+        """Show cost tracking summary."""
+        if not self.cost_tracker:
+            self.ui.system("Cost tracking not enabled")
+            return
+
+        summary_text = self.cost_tracker.format_summary()
+        self.ui.panel(summary_text, title="Cost Tracking")
+
+        # Show usage file location
+        self.ui.system(f"\nUsage data: {self.cost_tracker.usage_file}")

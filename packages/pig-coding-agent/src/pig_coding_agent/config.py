@@ -20,6 +20,8 @@ class AgentConfig(BaseModel):
     enable_skills: bool = True
     enable_prompts: bool = True
     enable_context: bool = True
+    enable_resilience: bool = True
+    enable_cost_tracking: bool = True
 
     # Session settings
     auto_save_session: bool = True

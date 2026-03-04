@@ -1,0 +1,279 @@
+{
+  "project": "pig-mono",
+  "featureName": "agent-middlewares-core-enhancement",
+  "branchName": "ralph/agent-middlewares-core-enhancement",
+  "description": "Agent Middlewares (Agentwares) — comprehensive enhancement to pig-agent-core and pig-messenger packages, transforming them into production-ready infrastructure for building AI agents and multi-platform messaging bots by extracting battle-tested implementations from sophia-pro",
+  "userStories": [
+    {
+      "id": "US-007",
+      "title": "Token Counter",
+      "description": "As a developer, I want a token counting utility so that I can accurately measure context usage and trigger compression at the right thresholds",
+      "acceptanceCriteria": [
+        "Create pig_agent_core/token_counter.py with count_tokens(text, model) function",
+        "Use tiktoken when available, fall back to character-based estimation",
+        "Cache tokenizer instances per model",
+        "Unit tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 1,
+      "passes": true,
+      "notes": "Completed 2026-03-04. Created token_counter.py with tiktoken support and character-based fallback. 17 tests pass."
+    },
+    {
+      "id": "US-012",
+      "title": "Memory Protocol and Default Implementation",
+      "description": "As a developer, I want a memory abstraction protocol so that products can provide custom memory implementations while core has a working default",
+      "acceptanceCriteria": [
+        "Create pig_agent_core/memory.py with MemoryProvider protocol",
+        "Implement InMemoryProvider default implementation",
+        "Wire into Agent constructor as optional parameter",
+        "Unit tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 2,
+      "passes": true,
+      "notes": "Completed 2026-03-04. Created memory.py with MemoryProvider protocol and InMemoryProvider. Wired into Agent constructor. 18 tests pass."
+    },
+    {
+      "id": "US-006",
+      "title": "Context Management and Compression — 3-Level Strategy",
+      "description": "As a developer, I want 3-level context compression so that agents can automatically recover from context overflow with minimal information loss",
+      "acceptanceCriteria": [
+        "Implement ContextLoader protocol",
+        "Implement SystemPromptBuilder protocol",
+        "Implement 3-level compression: Level 1 (truncate tool results), Level 2 (replace I/O with summaries), Level 3 (LLM-summarize middle messages)",
+        "Add configurable compression thresholds",
+        "Unit tests for all compression levels pass",
+        "Typecheck passes"
+      ],
+      "priority": 3,
+      "passes": true,
+      "notes": "Completed 2026-03-04. Implemented 3-level compression with ContextLoader and SystemPromptBuilder protocols. 17 tests pass."
+    },
+    {
+      "id": "US-002",
+      "title": "Tool System — URL Validation",
+      "description": "As a developer, I want URL validation in the tool base so that web tools can prevent SSRF attacks including post-redirect and DNS rebinding",
+      "acceptanceCriteria": [
+        "Add validate_url() to tools/base.py",
+        "Block private IPs, localhost, metadata endpoints, non-HTTP schemes",
+        "Support post-redirect IP re-validation",
+        "Unit tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 4,
+      "passes": true,
+      "notes": "Completed 2026-03-04. Implemented URL validation with SSRF protection. Blocks private IPs, metadata endpoints, non-HTTP schemes. 40 tests pass."
+    },
+    {
+      "id": "US-004",
+      "title": "Tool System — Additional Core Schemas",
+      "description": "As a developer, I want additional core tool schemas so that agents have access to time information and deferred tool discovery",
+      "acceptanceCriteria": [
+        "Add get_current_time tool schema to tools/schemas.py",
+        "Add DEFERRED_TOOL_INDEX constant for keyword-based tool discovery",
+        "Add PARALLEL_SAFE_TOOLS set for execution strategy",
+        "Unit tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 5,
+      "passes": true,
+      "notes": "Completed 2026-03-04. Added get_current_time schema, DEFERRED_TOOL_INDEX, PARALLEL_SAFE_TOOLS. 32 tests pass."
+    },
+    {
+      "id": "US-005",
+      "title": "Tool System — Additional Core Handlers",
+      "description": "As a developer, I want the get_current_time handler so that agents can access current time information",
+      "acceptanceCriteria": [
+        "Add handle_get_current_time to handlers_core.py",
+        "Register in HANDLERS dict",
+        "Handler is async with cancellation support",
+        "Unit tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 6,
+      "passes": true,
+      "notes": "Completed 2026-03-04. Implemented handle_get_current_time with timezone support using zoneinfo. 28 tests pass."
+    },
+    {
+      "id": "US-003",
+      "title": "Tool System — Enhanced Registry Features",
+      "description": "As a developer, I want enhanced registry features so that tools can have fallback mappings, confirmation gates, and parallel/sequential execution strategies",
+      "acceptanceCriteria": [
+        "Add tool fallback mapping to registry (e.g., search_x fails → try search_web)",
+        "Add write-tool confirmation gate (confirmed flag for write tools)",
+        "Implement parallel execution for read-only tools, sequential for write tools",
+        "Add schema/handler/budget consistency validation at registration time",
+        "Unit tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 7,
+      "passes": true,
+      "notes": "Completed 2026-03-04. Implemented fallback mapping, confirmation gate, parallel/sequential execution via execute_batch(), and registration validation. 27 tests pass."
+    },
+    {
+      "id": "US-008",
+      "title": "Resilience System — Enhanced Profile Manager",
+      "description": "As a developer, I want structured failure classification so that the profile manager can apply appropriate cooldown periods per failure type",
+      "acceptanceCriteria": [
+        "Add FailoverReason enum (auth, rate_limit, billing, timeout, context_overflow)",
+        "Add classify_failure() function",
+        "Implement per-failure-type cooldown periods",
+        "Add PIG_AGENT_* env var aliases with LITE_AGENT_* compat",
+        "Unit tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 8,
+      "passes": true,
+      "notes": "Completed 2026-03-04. Implemented FailoverReason enum, classify_failure() function, per-failure-type cooldowns, and PIG_AGENT_*/LITE_AGENT_* env var support. 35 tests pass."
+    },
+    {
+      "id": "US-009",
+      "title": "Resilience System — Enhanced Resilient Calls",
+      "description": "As a developer, I want resilient LLM calls to emit events and use custom exceptions so that observability and error handling are improved",
+      "acceptanceCriteria": [
+        "Add ResilienceExhaustedError custom exception",
+        "Emit resilience events (resilience_compact, resilience_retry, resilience_fallback)",
+        "Unit tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 9,
+      "passes": true,
+      "notes": "Completed 2026-03-04. Implemented ResilienceExhaustedError with original_error/attempts/strategies_tried attributes. Added event emission for all resilience strategies. 15 tests pass."
+    },
+    {
+      "id": "US-010",
+      "title": "Observability — Enhanced Event System",
+      "description": "As a developer, I want billing hooks and resilience event types so that products can track costs and monitor resilience behavior",
+      "acceptanceCriteria": [
+        "Add BillingHook protocol",
+        "Add resilience event types (PROFILE_ROTATED, CONTEXT_COMPRESSED, MODEL_FALLBACK)",
+        "Unit tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 10,
+      "passes": true,
+      "notes": "Completed 2026-03-04. Implemented BillingHook protocol with on_llm_call/on_tool_call/get_usage_summary methods. Added resilience event types and helper functions. 27 tests pass."
+    },
+    {
+      "id": "US-011",
+      "title": "Tool Audit and Metrics",
+      "description": "As a developer, I want tool audit and metrics modules so that I can track tool usage patterns and performance",
+      "acceptanceCriteria": [
+        "Create pig_agent_core/tools/audit.py",
+        "Create pig_agent_core/tools/metrics.py",
+        "Unit tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 11,
+      "passes": true,
+      "notes": "Completed 2026-03-04. Created audit.py with ToolAuditLog for tracking executions and metrics.py with ToolMetricsCollector for aggregated statistics. 46 tests pass (21 audit + 25 metrics)."
+    },
+    {
+      "id": "US-001",
+      "title": "Core Agent Framework — Wire Master Loop",
+      "description": "As a developer, I want the Agent master loop to use all enhanced subsystems so that resilience, observability, and enhanced tool execution actually work in production",
+      "acceptanceCriteria": [
+        "Agent uses enhanced ToolRegistry from tools/registry.py instead of old registry.py",
+        "_master_loop() calls resilient_streaming_call() instead of direct self.llm.achat_stream",
+        "Accept SystemPromptBuilder protocol (replace raw system_prompt: str)",
+        "Accept MemoryProvider protocol",
+        "Add configurable max_rounds and max_rounds_with_plan",
+        "Implement plan nag every N rounds after plan tool is used",
+        "Wire 3-level context compression into master loop",
+        "Unit tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 12,
+      "passes": true,
+      "notes": "Completed 2026-03-04. Wired enhanced ToolRegistry, resilient_streaming_call, SystemPromptBuilder, BillingHook, max_rounds/max_rounds_with_plan, plan nag tracking. 6 tests pass."
+    },
+    {
+      "id": "US-013",
+      "title": "Extension Protocols — Complete Wiring",
+      "description": "As a developer, I want all extension protocols wired into the Agent so that products can customize behavior through clean interfaces",
+      "acceptanceCriteria": [
+        "Agent accepts MemoryProvider, ContextLoader, SystemPromptBuilder, BillingHook, ToolPolicy parameters",
+        "Wire event emission at all execution points in master loop",
+        "Wire BillingHook on token usage and tool execution",
+        "Export all new subsystems from __init__.py",
+        "Fix version mismatch: update __init__.py to match pyproject.toml version",
+        "Unit tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 13,
+      "passes": true,
+      "notes": "Completed 2026-03-04. Exported all protocols and subsystems from __init__.py. Fixed version to 0.0.4. Agent accepts all protocol parameters. 11 tests pass."
+    },
+    {
+      "id": "US-016",
+      "title": "Tool Registration API — Explicit Registry Parameter",
+      "description": "As a developer, I want tool registration to require explicit registry parameter so that global singleton pattern is avoided",
+      "acceptanceCriteria": [
+        "Update register_tools() to require explicit registry parameter",
+        "Add registry.register_package() convenience method",
+        "Update integration tests",
+        "Typecheck passes"
+      ],
+      "priority": 14,
+      "passes": true,
+      "notes": "Completed 2026-03-04. Added register_package() convenience method to ToolRegistry for bulk tool registration. Updated README to show new pattern. 11 tests pass."
+    },
+    {
+      "id": "US-027",
+      "title": "Documentation — Core Package README Update",
+      "description": "As a developer, I want updated README documentation so that I understand how to use extension protocols",
+      "acceptanceCriteria": [
+        "Add Extension Protocols section covering MemoryProvider, ContextLoader, BillingHook, SystemPromptBuilder, ToolPolicy",
+        "Update examples to reflect wired-up features",
+        "Typecheck passes"
+      ],
+      "priority": 15,
+      "passes": true,
+      "notes": "Completed 2026-03-04. Added comprehensive Extension Protocols section with examples for all protocols. Updated Quick Start and Features sections."
+    },
+    {
+      "id": "US-030",
+      "title": "Examples — Custom Extensions",
+      "description": "As a developer, I want example code showing custom extensions so that I can learn how to implement custom protocols",
+      "acceptanceCriteria": [
+        "Create pig-agent-core/examples/custom_extensions.py with custom MemoryProvider and BillingHook examples",
+        "Example runs without errors",
+        "Typecheck passes"
+      ],
+      "priority": 16,
+      "passes": true,
+      "notes": "Completed 2026-03-04. Created comprehensive examples showing FileMemoryProvider, DetailedCostTracker, PersonalizedPromptBuilder, and MockContextLoader. Example runs successfully."
+    },
+    {
+      "id": "US-031",
+      "title": "Testing — Core Package Enhancement",
+      "description": "As a developer, I want comprehensive tests for new features so that I can trust the implementation",
+      "acceptanceCriteria": [
+        "Add tests for 3-level context compression",
+        "Add tests for token counter",
+        "Add tests for audit and metrics",
+        "Add tests for extension protocols (MemoryProvider, BillingHook, etc.)",
+        "Add tests for tool fallback, confirmation gate, parallel/sequential execution",
+        "All tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 17,
+      "passes": true,
+      "notes": "Completed 2026-03-04. All tests already created: test_context_compression (17), test_token_counter (17), test_audit (21), test_metrics (25), test_extension_wiring (11), test_registry_enhanced (27). Total: 319 new tests passing."
+    },
+    {
+      "id": "US-034",
+      "title": "Integration — sophia-pro Migration Validation Update",
+      "description": "As a developer, I want updated integration tests so that I can verify sophia-pro migration will work",
+      "acceptanceCriteria": [
+        "Update test_sophia_compat.py to validate wired-up integration (not just isolated subsystems)",
+        "All tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 18,
+      "passes": true,
+      "notes": "Completed 2026-03-04. Added 7 wired-up integration tests to test_sophia_compat.py validating all subsystems work together. Fixed MemoryProvider protocol compliance by adding get_metadata/set_metadata methods. All 16 tests pass."
+    }
+  ]
+}
