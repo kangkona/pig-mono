@@ -5,7 +5,10 @@ import time
 from abc import ABC, abstractmethod
 from typing import Any
 
-from cryptography.fernet import Fernet
+try:
+    from cryptography.fernet import Fernet
+except ImportError:
+    Fernet = None  # type: ignore
 
 
 class WorkspaceAlreadyClaimedError(Exception):
@@ -210,6 +213,9 @@ def encrypt_value(value: str, key: str | None = None) -> str:
     Returns:
         Encrypted value (base64 encoded)
     """
+    if Fernet is None:
+        raise ImportError("cryptography is required for encryption")
+
     if key is None:
         key = os.getenv("MESSENGER_ENCRYPTION_KEY")
         if not key:
@@ -229,6 +235,9 @@ def decrypt_value(encrypted: str, key: str | None = None) -> str:
     Returns:
         Decrypted value
     """
+    if Fernet is None:
+        raise ImportError("cryptography is required for decryption")
+
     if key is None:
         key = os.getenv("MESSENGER_ENCRYPTION_KEY")
         if not key:

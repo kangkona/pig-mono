@@ -19,6 +19,8 @@ dependencies = [
     "pydantic>=2.6.0",
     "httpx>=0.26.0",
     "python-dotenv>=1.0.0",
+    "cryptography>=41.0.0",
+    "redis>=5.0.0",
 ]
 
 [project.urls]
