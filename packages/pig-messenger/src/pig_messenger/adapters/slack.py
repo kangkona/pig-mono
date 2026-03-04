@@ -1,259 +1,349 @@
-"""Slack platform adapter."""
+"""Slack messenger adapter."""
 
-from datetime import datetime
-from pathlib import Path
+import hashlib
+import hmac
+import logging
+import re
+from typing import Any
 
-from slack_bolt import App
-from slack_bolt.adapter.socket_mode import SocketModeHandler
-from slack_sdk import WebClient
+try:
+    from slack_sdk.web.async_client import AsyncWebClient
+except ImportError:
+    AsyncWebClient = None  # type: ignore
 
-from ..message import Attachment, UniversalMessage
-from ..platform import MessagePlatform
+from pig_messenger.base import (
+    BaseMessengerAdapter,
+    IncomingMessage,
+    MessengerCapabilities,
+    MessengerType,
+    MessengerUser,
+)
+
+logger = logging.getLogger(__name__)
 
 
-class SlackAdapter(MessagePlatform):
-    """Slack platform adapter using Socket Mode."""
+def markdown_to_mrkdwn(text: str) -> str:
+    """Convert markdown to Slack mrkdwn format.
+
+    Args:
+        text: Markdown text
+
+    Returns:
+        Slack mrkdwn formatted text
+    """
+    # Preserve code blocks
+    text = re.sub(r"```(\w+)?\n(.*?)\n```", r"```\2```", text, flags=re.DOTALL)
+
+    # Convert bold: **text** or __text__ -> *text*
+    text = re.sub(r"\*\*(.+?)\*\*", r"*\1*", text)
+    text = re.sub(r"__(.+?)__", r"*\1*", text)
+
+    # Convert italic: *text* or _text_ -> _text_
+    text = re.sub(r"(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)", r"_\1_", text)
+
+    # Convert links: [text](url) -> <url|text>
+    text = re.sub(r"\[([^\]]+)\]\(([^\)]+)\)", r"<\2|\1>", text)
+
+    # Convert headers: # Header -> *Header*
+    text = re.sub(r"^#{1,6}\s+(.+)$", r"*\1*", text, flags=re.MULTILINE)
+
+    return text
+
+
+class SlackMessengerAdapter(BaseMessengerAdapter):
+    """Slack messenger adapter with blocks and reactions."""
 
     def __init__(
         self,
-        app_token: str,
         bot_token: str,
-        bot_user_id: str | None = None,
+        signing_secret: str | None = None,
     ):
         """Initialize Slack adapter.
 
         Args:
-            app_token: Slack app-level token (xapp-...)
-            bot_token: Slack bot token (xoxb-...)
-            bot_user_id: Bot user ID (auto-detected if None)
+            bot_token: Slack bot token
+            signing_secret: Slack signing secret for verification
         """
-        super().__init__("slack")
+        if AsyncWebClient is None:
+            raise ImportError("slack_sdk is required for Slack adapter")
 
-        self.app = App(token=bot_token)
-        self.client = WebClient(token=bot_token)
-        self.app_token = app_token
-        self.bot_user_id = bot_user_id
-        self.handler = None
+        self.bot_token = bot_token
+        self.signing_secret = signing_secret
+        self.client = AsyncWebClient(token=bot_token)
 
-        # Auto-detect bot user ID
-        if not self.bot_user_id:
-            auth = self.client.auth_test()
-            self.bot_user_id = auth["user_id"]
-
-        # Register event handlers
-        self._setup_handlers()
-
-    def _setup_handlers(self):
-        """Setup Slack event handlers."""
-        import asyncio
-
-        def _run_async(coro):
-            """Run async coroutine from sync context."""
-            try:
-                loop = asyncio.get_running_loop()
-            except RuntimeError:
-                loop = None
-            if loop and loop.is_running():
-                import concurrent.futures
-
-                with concurrent.futures.ThreadPoolExecutor() as pool:
-                    return pool.submit(asyncio.run, coro).result()
-            else:
-                return asyncio.run(coro)
-
-        @self.app.event("app_mention")
-        def handle_mention(event, say):
-            """Handle @mention."""
-            _run_async(self._handle_slack_message(event, is_mention=True))
-
-        @self.app.event("message")
-        def handle_message(event, say):
-            """Handle direct messages and channel messages."""
-            # Skip bot's own messages
-            if event.get("user") == self.bot_user_id:
-                return
-
-            # Check if it's a DM or if bot is mentioned
-            channel_type = event.get("channel_type")
-            is_dm = channel_type == "im"
-            text = event.get("text", "")
-            is_mention = f"<@{self.bot_user_id}>" in text
-
-            if is_dm or is_mention:
-                _run_async(self._handle_slack_message(event, is_mention=is_mention, is_dm=is_dm))
-
-    async def _handle_slack_message(
-        self, event: dict, is_mention: bool = False, is_dm: bool = False
-    ):
-        """Convert Slack event to UniversalMessage and emit.
-
-        Args:
-            event: Slack event
-            is_mention: Is bot mentioned
-            is_dm: Is direct message
-        """
-        # Get user info
-        user_id = event.get("user", "")
-        try:
-            user_info = self.client.users_info(user=user_id)
-            username = user_info["user"]["real_name"] or user_info["user"]["name"]
-            user_email = user_info["user"].get("profile", {}).get("email")
-        except Exception:
-            username = user_id
-            user_email = None
-
-        # Clean mention from text
-        text = event.get("text", "")
-        if is_mention:
-            text = text.replace(f"<@{self.bot_user_id}>", "").strip()
-
-        # Handle attachments
-        attachments = []
-        for file in event.get("files", []):
-            attachments.append(
-                Attachment(
-                    id=file["id"],
-                    filename=file["name"],
-                    content_type=file.get("mimetype", ""),
-                    size=file.get("size", 0),
-                    url=file.get("url_private"),
-                )
-            )
-
-        # Create universal message
-        message = UniversalMessage(
-            id=event["ts"],
-            platform="slack",
-            channel_id=event["channel"],
-            user_id=user_id,
-            username=username,
-            user_email=user_email,
-            text=text,
-            attachments=attachments,
-            timestamp=datetime.fromtimestamp(float(event["ts"])),
-            is_mention=is_mention,
-            is_dm=is_dm,
-            is_thread="thread_ts" in event,
-            thread_id=event.get("thread_ts"),
-            raw_data=event,
+        self.capabilities = MessengerCapabilities(
+            can_edit=True,
+            can_delete=True,
+            can_react=True,
+            can_thread=True,
+            can_upload_file=True,
+            supports_blocks=True,
+            supports_draft=False,
+            max_message_length=3500,
         )
 
-        # Emit to handler
-        await self._emit_message(message)
+    async def parse_event(self, raw_event: dict[str, Any]) -> IncomingMessage | None:
+        """Parse Slack event to IncomingMessage.
+
+        Args:
+            raw_event: Slack Events API payload
+
+        Returns:
+            IncomingMessage or None
+        """
+        # Handle URL verification
+        if raw_event.get("type") == "url_verification":
+            return None
+
+        # Extract event
+        event = raw_event.get("event", {})
+        event_type = event.get("type")
+
+        # Only handle message events
+        if event_type != "message":
+            return None
+
+        # Skip bot messages and message changes
+        if event.get("subtype") in ["bot_message", "message_changed"]:
+            return None
+
+        text = event.get("text", "")
+        channel_id = event.get("channel", "")
+        user_id = event.get("user", "")
+
+        # Check if group channel
+        channel_type = event.get("channel_type", "")
+        is_group = channel_type in ["group", "channel"]
+
+        # Group channel filtering: only respond to mentions or thread replies
+        if is_group:
+            bot_user_id = raw_event.get("authorizations", [{}])[0].get("user_id")
+            is_mention = bot_user_id and f"<@{bot_user_id}>" in text
+            is_thread_reply = "thread_ts" in event and event.get("thread_ts") != event.get("ts")
+
+            if not (is_mention or is_thread_reply):
+                return None
+
+        user = MessengerUser(
+            id=user_id,
+            username="",  # Would need users.info API call
+            display_name="",
+        )
+
+        return IncomingMessage(
+            message_id=event.get("ts", ""),
+            platform=MessengerType.SLACK,
+            channel_id=channel_id,
+            text=text,
+            user=user,
+            timestamp=float(event.get("ts", 0)),
+            is_dm=channel_type == "im",
+        )
 
     async def send_message(
-        self,
-        channel_id: str,
-        text: str,
-        thread_id: str | None = None,
-        **kwargs,
-    ) -> str:
-        """Send message to Slack channel.
+        self, channel_id: str, text: str, *, thread_id: str | None = None, **kwargs
+    ) -> dict[str, Any]:
+        """Send message to Slack.
 
         Args:
             channel_id: Channel ID
             text: Message text
-            thread_id: Thread timestamp (if replying in thread)
-            **kwargs: Additional Slack arguments
+            thread_id: Optional thread timestamp
+            **kwargs: Additional parameters
 
         Returns:
-            Message timestamp
+            API response with message_id (ts)
         """
-        result = self.client.chat_postMessage(
+        response = await self.client.chat_postMessage(
             channel=channel_id,
             text=text,
             thread_ts=thread_id,
             **kwargs,
         )
 
-        return result["ts"]
+        return {
+            "message_id": response["ts"],
+        }
 
-    async def upload_file(
-        self,
-        channel_id: str,
-        file_path: Path,
-        caption: str | None = None,
-        thread_id: str | None = None,
-    ) -> str:
-        """Upload file to Slack.
+    async def update_message(
+        self, channel_id: str, message_id: str, text: str, **kwargs
+    ) -> dict[str, Any]:
+        """Update message in Slack.
 
         Args:
             channel_id: Channel ID
-            file_path: File path
-            caption: Optional caption
-            thread_id: Thread timestamp
+            message_id: Message timestamp
+            text: New text
+            **kwargs: Additional parameters
 
         Returns:
-            File ID
+            API response
         """
-        result = self.client.files_upload_v2(
+        response = await self.client.chat_update(
             channel=channel_id,
-            file=str(file_path),
-            initial_comment=caption,
-            thread_ts=thread_id,
+            ts=message_id,
+            text=text,
+            **kwargs,
+        )
+        return response.data
+
+    async def delete_message(self, channel_id: str, message_id: str) -> bool:
+        """Delete message in Slack.
+
+        Args:
+            channel_id: Channel ID
+            message_id: Message timestamp
+
+        Returns:
+            True if successful
+        """
+        await self.client.chat_delete(
+            channel=channel_id,
+            ts=message_id,
+        )
+        return True
+
+    async def send_reaction(self, channel_id: str, message_id: str, emoji: str) -> None:
+        """Add reaction to message.
+
+        Args:
+            channel_id: Channel ID
+            message_id: Message timestamp
+            emoji: Emoji name (without colons)
+        """
+        await self.client.reactions_add(
+            channel=channel_id,
+            timestamp=message_id,
+            name=emoji.strip(":"),
         )
 
-        return result["file"]["id"]
-
-    async def get_history(self, channel_id: str, limit: int = 100) -> list[UniversalMessage]:
-        """Get Slack channel history.
+    async def send_blocks(
+        self,
+        channel_id: str,
+        blocks: list[dict[str, Any]],
+        *,
+        text_fallback: str = "",
+        thread_id: str | None = None,
+        **kwargs,
+    ) -> dict[str, Any]:
+        """Send blocks to Slack.
 
         Args:
             channel_id: Channel ID
-            limit: Message limit
+            blocks: Block Kit blocks
+            text_fallback: Fallback text
+            thread_id: Optional thread timestamp
+            **kwargs: Additional parameters
 
         Returns:
-            List of universal messages
+            API response with message_id
         """
-        result = self.client.conversations_history(channel=channel_id, limit=limit)
+        response = await self.client.chat_postMessage(
+            channel=channel_id,
+            blocks=blocks,
+            text=text_fallback,
+            thread_ts=thread_id,
+            **kwargs,
+        )
 
-        messages = []
-        for msg in result["messages"]:
-            # Skip bot messages
-            if msg.get("user") == self.bot_user_id:
-                continue
+        return {
+            "message_id": response["ts"],
+        }
 
-            # Convert to universal format
-            # (simplified - full implementation would be more complete)
-            messages.append(
-                UniversalMessage(
-                    id=msg["ts"],
-                    platform="slack",
-                    channel_id=channel_id,
-                    user_id=msg.get("user", ""),
-                    username="",  # Would need to fetch
-                    text=msg.get("text", ""),
-                    timestamp=datetime.fromtimestamp(float(msg["ts"])),
-                    raw_data=msg,
-                )
-            )
-
-        return messages
-
-    async def download_file(self, attachment: Attachment) -> bytes:
-        """Download file from Slack.
+    async def send_file(self, channel_id: str, url: str, filename: str, **kwargs) -> dict[str, Any]:
+        """Send file from URL.
 
         Args:
-            attachment: Attachment info
+            channel_id: Channel ID
+            url: File URL
+            filename: File name
+            **kwargs: Additional parameters
 
         Returns:
-            File bytes
+            API response
         """
-        import httpx
+        # Slack doesn't support direct URL upload, would need to download first
+        raise NotImplementedError("URL file upload not supported")
 
-        headers = {"Authorization": f"Bearer {self.client.token}"}
+    async def send_file_content(
+        self,
+        channel_id: str,
+        content: bytes,
+        filename: str,
+        content_type: str,
+        **kwargs,
+    ) -> dict[str, Any]:
+        """Send file from content.
 
-        async with httpx.AsyncClient() as client:
-            response = await client.get(attachment.url, headers=headers)
-            response.raise_for_status()
-            return response.content
+        Args:
+            channel_id: Channel ID
+            content: File content
+            filename: File name
+            content_type: MIME type
+            **kwargs: Additional parameters
 
-    def start(self) -> None:
-        """Start Slack bot (blocking)."""
-        self.handler = SocketModeHandler(self.app, self.app_token)
-        self.handler.start()
+        Returns:
+            API response
+        """
+        response = await self.client.files_upload_v2(
+            channel=channel_id,
+            content=content,
+            filename=filename,
+            **kwargs,
+        )
+        return response.data
 
-    def stop(self) -> None:
-        """Stop Slack bot."""
-        if self.handler:
-            self.handler.close()
+    async def open_dm(self, user_id: str) -> str:
+        """Open DM channel with user.
+
+        Args:
+            user_id: User ID
+
+        Returns:
+            Channel ID
+        """
+        response = await self.client.conversations_open(users=[user_id])
+        return response["channel"]["id"]
+
+    async def get_user_tz(self, user_id: str) -> str:
+        """Get user timezone.
+
+        Args:
+            user_id: User ID
+
+        Returns:
+            Timezone string
+        """
+        response = await self.client.users_info(user=user_id)
+        return response["user"].get("tz", "UTC")
+
+    async def verify_signature(self, request_body: bytes, timestamp: str, signature: str) -> bool:
+        """Verify Slack request signature.
+
+        Args:
+            request_body: Raw request body
+            timestamp: X-Slack-Request-Timestamp header
+            signature: X-Slack-Signature header
+
+        Returns:
+            True if signature is valid
+        """
+        if not self.signing_secret:
+            return True
+
+        sig_basestring = f"v0:{timestamp}:{request_body.decode()}"
+        expected = (
+            "v0="
+            + hmac.new(
+                self.signing_secret.encode(),
+                sig_basestring.encode(),
+                hashlib.sha256,
+            ).hexdigest()
+        )
+
+        return hmac.compare_digest(expected, signature)
+
+    async def aclose(self) -> None:
+        """Close Slack client."""
+        # AsyncWebClient doesn't need explicit closing
+        pass
