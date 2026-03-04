@@ -21,14 +21,14 @@ Build AI agents and LLM applications with a powerful, modular Python toolkit. pi
 
 ## 📦 Packages
 
-| Package | Description | Status |
-|---------|-------------|--------|
-| **[pig-llm](packages/pig-llm)** | Unified LLM API for 14 providers | ✅ Ready |
-| **[pig-agent-core](packages/pig-agent-core)** | Agent runtime with tools, sessions, extensions | ✅ Ready |
-| **[pig-tui](packages/pig-tui)** | Terminal UI with rich formatting | ✅ Ready |
-| **[pig-web-ui](packages/pig-web-ui)** | Web chat interface with FastAPI | ✅ Ready |
-| **[pig-coding-agent](packages/pig-coding-agent)** | Interactive coding assistant CLI | ✅ Ready |
-| **[pig-messenger](packages/pig-messenger)** | Multi-platform bot framework | ✅ Ready |
+| Package | Version | Description | Status |
+|---------|---------|-------------|--------|
+| **[pig-llm](packages/pig-llm)** | v0.0.2 | Unified LLM API for 14 providers | ✅ Ready |
+| **[pig-agent-core](packages/pig-agent-core)** | v0.0.4 | Agent runtime with tools, resilience, observability | ✅ Ready |
+| **[pig-tui](packages/pig-tui)** | v0.0.1 | Terminal UI with rich formatting | ✅ Ready |
+| **[pig-web-ui](packages/pig-web-ui)** | v0.0.1 | Web chat interface with FastAPI | ✅ Ready |
+| **[pig-coding-agent](packages/pig-coding-agent)** | v0.0.4 | Interactive coding assistant with resilience & cost tracking | ✅ Ready |
+| **[pig-messenger](packages/pig-messenger)** | v0.0.2 | Multi-platform bot framework | ✅ Ready |
 
 ---
 
@@ -85,7 +85,26 @@ pig-code --provider openrouter --model moonshotai/kimi-k2.5
 > /tree                                   # View session tree
 > /fork alternative-approach              # Branch conversation
 > /skill:code-review                      # Invoke skill
+> /resilience                             # Check API key status (NEW v0.0.4)
+> /cost                                   # View usage & costs (NEW v0.0.4)
 !Stop and explain what you're doing      # Interrupt with steering
+```
+
+**Production Resilience** (NEW v0.0.4):
+```bash
+# Set multiple API keys for automatic rotation
+export OPENAI_API_KEY=sk-...
+export OPENAI_API_KEY_2=sk-...
+export ANTHROPIC_API_KEY=sk-ant-...
+
+pig-code
+# ✓ Resilience enabled: 3 API keys available
+# ✓ Cost tracking enabled
+
+# Agent automatically:
+# - Rotates keys on rate limits
+# - Falls back to alternative models
+# - Tracks costs in real-time
 ```
 
 **Multi-Platform Bot** ([setup guide](packages/pig-messenger/README.md)):
@@ -122,6 +141,15 @@ bot.start()
 - **Skills**: Reusable agent capabilities (Agent Skills standard)
 - **Prompts**: Template system with variable substitution
 - **Context**: Project-aware via AGENTS.md and SYSTEM.md
+- **Resilience** (NEW v0.0.4): Automatic API key rotation, failure recovery, model fallback
+- **Observability** (NEW v0.0.4): Event emission, billing tracking, metrics collection
+
+### Production-Ready Infrastructure
+- **API Key Rotation**: Automatic failover on rate limits with per-failure-type cooldowns
+- **Cost Tracking**: Real-time LLM and tool usage monitoring with pricing data
+- **Context Management**: 3-level compression (truncate → summarize → LLM-compress)
+- **Tool System**: Fallback mapping, confirmation gates, parallel/sequential execution
+- **Memory Protocols**: Pluggable memory providers for custom storage backends
 
 ### Multi-Platform Messaging
 - **5 Platforms**: Slack, Discord, Telegram, WhatsApp, Feishu

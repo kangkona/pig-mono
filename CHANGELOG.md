@@ -7,6 +7,61 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.4] - 2026-03-04
+
+### Agent Middlewares Enhancement
+
+Major upgrade adding production-ready resilience and observability features.
+
+#### pig-agent-core v0.0.4
+
+**Added:**
+- **Resilience System**: API key rotation with per-failure-type cooldowns
+  - ProfileManager for managing multiple API profiles
+  - Per-failure-type cooldown periods (AUTH=5min, RATE_LIMIT=1min, BILLING=1hr, etc.)
+  - resilient_call() and resilient_streaming_call() with automatic retry
+
+- **Observability System**: Event emission and metrics collection
+  - AgentEvent and AgentEventType for structured event tracking
+  - BillingHook protocol for cost tracking
+  - Tool audit logging with execution metrics
+
+- **Context Management**: 3-level compression strategy
+  - Token counting with tiktoken and character-based fallback
+  - Automatic context overflow detection and handling
+
+- **Memory Protocols**: Pluggable storage backends
+  - MemoryProvider protocol for custom implementations
+
+- **Enhanced Tool System**:
+  - Tool fallback mapping, confirmation gates
+  - Parallel vs sequential execution strategies
+  - URL validation for SSRF protection
+
+**Tests:** 330+ new tests covering all subsystems
+
+#### pig-coding-agent v0.0.4
+
+**Added:**
+- **Resilience Support**: Automatic API key rotation
+  - Multi-key support via environment variables
+  - /resilience command to view status
+
+- **Cost Tracking**: Usage and cost monitoring
+  - Automatic LLM call tracking (tokens, cost)
+  - Tool usage tracking with statistics
+  - /cost and /usage commands
+
+- **Documentation**: CHANGELOG.md, UPGRADE.md
+
+**Tests:** 25 new tests (11 resilience + 14 billing)
+
+#### pig-messenger v0.0.2
+
+**Changed:**
+- Updated to use pig-agent-core v0.0.4 features
+- Now benefits from automatic API key rotation and cost tracking
+
 ### Added
 - Initial release of pig-mono
 - 6 core packages: pig-llm, pig-agent-core, pig-tui, pig-web-ui, pig-coding-agent, pig-messenger
