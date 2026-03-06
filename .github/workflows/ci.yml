@@ -54,7 +54,7 @@ jobs:
         # Install all third-party dependencies
         pip install openai anthropic pydantic rich prompt-toolkit \
           typer fastapi uvicorn jinja2 python-multipart coverage \
-          httpx beautifulsoup4 tzdata
+          httpx beautifulsoup4 tzdata cryptography redis
       shell: bash
 
     - name: Run linting
