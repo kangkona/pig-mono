@@ -1,4 +1,4 @@
-"""Test streaming card updates on Feishu.
+"""Demo streaming card updates on Feishu.
 
 Sends a placeholder card, updates it several times to simulate LLM
 streaming, then posts the final content.
@@ -11,7 +11,7 @@ Usage:
     export FEISHU_APP_SECRET=xxx
     export FEISHU_TEST_CHAT_ID=oc_xxx   # a group chat the bot is in
 
-    python examples/test_streaming_card.py
+    python examples/demo_streaming_card.py
 """
 
 import asyncio

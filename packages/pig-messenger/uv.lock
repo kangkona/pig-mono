@@ -755,7 +755,7 @@ name = "exceptiongroup"
 version = "1.3.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "typing-extensions", marker = "python_full_version < '3.13'" },
+    { name = "typing-extensions", marker = "python_full_version < '3.11'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/50/79/66800aadf48771f6b62f7eb014e352e5d06856655206165d775e675a02c9/exceptiongroup-1.3.1.tar.gz", hash = "sha256:8b412432c6055b0b7d14c310000ae93352ed6754f70fa8f7c34141f91c4e3219", size = 30371, upload-time = "2025-11-21T23:01:54.787Z" }
 wheels = [
@@ -1751,9 +1751,11 @@ dependencies = [
 
 [package.optional-dependencies]
 all = [
+    { name = "cryptography" },
     { name = "discord-py" },
     { name = "lark-oapi" },
     { name = "python-telegram-bot" },
+    { name = "redis" },
     { name = "slack-bolt" },
     { name = "slack-sdk" },
     { name = "whatsapp-cloud-api" },
@@ -1766,8 +1768,14 @@ dev = [
 discord = [
     { name = "discord-py" },
 ]
+encryption = [
+    { name = "cryptography" },
+]
 feishu = [
     { name = "lark-oapi" },
+]
+redis = [
+    { name = "redis" },
 ]
 slack = [
     { name = "slack-bolt" },
@@ -1782,23 +1790,25 @@ whatsapp = [
 
 [package.metadata]
 requires-dist = [
+    { name = "cryptography", marker = "extra == 'encryption'", specifier = ">=41.0.0" },
     { name = "discord-py", marker = "extra == 'discord'", specifier = ">=2.3.0" },
     { name = "httpx", specifier = ">=0.26.0" },
     { name = "lark-oapi", marker = "extra == 'feishu'", specifier = ">=1.5.0" },
     { name = "pig-agent-core", specifier = ">=0.0.1" },
     { name = "pig-llm", specifier = ">=0.0.1" },
-    { name = "pig-messenger", extras = ["slack", "discord", "whatsapp", "telegram", "feishu"], marker = "extra == 'all'" },
+    { name = "pig-messenger", extras = ["redis", "encryption", "slack", "discord", "whatsapp", "telegram", "feishu"], marker = "extra == 'all'" },
     { name = "pydantic", specifier = ">=2.6.0" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0.0" },
     { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.23.0" },
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=4.1.0" },
     { name = "python-dotenv", specifier = ">=1.0.0" },
     { name = "python-telegram-bot", marker = "extra == 'telegram'", specifier = ">=20.7" },
+    { name = "redis", marker = "extra == 'redis'", specifier = ">=5.0.0" },
     { name = "slack-bolt", marker = "extra == 'slack'", specifier = ">=1.18.0" },
     { name = "slack-sdk", marker = "extra == 'slack'", specifier = ">=3.26.0" },
     { name = "whatsapp-cloud-api", marker = "extra == 'whatsapp'", specifier = ">=0.0.4" },
 ]
-provides-extras = ["slack", "discord", "whatsapp", "telegram", "feishu", "all", "dev"]
+provides-extras = ["redis", "encryption", "slack", "discord", "whatsapp", "telegram", "feishu", "all", "dev"]
 
 [[package]]
 name = "pluggy"
@@ -2307,6 +2317,18 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/da/92/1446574745d74df0c92e6aa4a7b0b3130706a4142b2d1a5869f2eaa423c6/pyyaml-6.0.3-cp314-cp314t-musllinux_1_2_x86_64.whl", hash = "sha256:16249ee61e95f858e83976573de0f5b2893b3677ba71c9dd36b9cf8be9ac6d65", size = 829923, upload-time = "2025-09-25T21:32:54.537Z" },
     { url = "https://files.pythonhosted.org/packages/f0/7a/1c7270340330e575b92f397352af856a8c06f230aa3e76f86b39d01b416a/pyyaml-6.0.3-cp314-cp314t-win_amd64.whl", hash = "sha256:4ad1906908f2f5ae4e5a8ddfce73c320c2a1429ec52eafd27138b7f1cbe341c9", size = 174062, upload-time = "2025-09-25T21:32:55.767Z" },
     { url = "https://files.pythonhosted.org/packages/f1/12/de94a39c2ef588c7e6455cfbe7343d3b2dc9d6b6b2f40c4c6565744c873d/pyyaml-6.0.3-cp314-cp314t-win_arm64.whl", hash = "sha256:ebc55a14a21cb14062aa4162f906cd962b28e2e9ea38f9b4391244cd8de4ae0b", size = 149341, upload-time = "2025-09-25T21:32:56.828Z" },
+]
+
+[[package]]
+name = "redis"
+version = "7.2.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "async-timeout", marker = "python_full_version < '3.11.3'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/e9/31/1476f206482dd9bc53fdbbe9f6fbd5e05d153f18e54667ce839df331f2e6/redis-7.2.1.tar.gz", hash = "sha256:6163c1a47ee2d9d01221d8456bc1c75ab953cbda18cfbc15e7140e9ba16ca3a5", size = 4906735, upload-time = "2026-02-25T20:05:18.171Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/ca/98/1dd1a5c060916cf21d15e67b7d6a7078e26e2605d5c37cbc9f4f5454c478/redis-7.2.1-py3-none-any.whl", hash = "sha256:49e231fbc8df2001436ae5252b3f0f3dc930430239bfeb6da4c7ee92b16e5d33", size = 396057, upload-time = "2026-02-25T20:05:16.533Z" },
 ]
 
 [[package]]

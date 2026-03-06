@@ -1,9 +1,20 @@
-"""Universal message format."""
+"""Universal message format.
 
+DEPRECATED: This module is kept for backward compatibility.
+Use pig_messenger.base instead.
+"""
+
+import warnings
 from datetime import datetime
 from typing import Any
 
 from pydantic import BaseModel, Field
+
+warnings.warn(
+    "pig_messenger.message is deprecated. Use pig_messenger.base instead.",
+    DeprecationWarning,
+    stacklevel=2,
+)
 
 
 class Attachment(BaseModel):

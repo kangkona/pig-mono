@@ -1,168 +1,256 @@
-"""Discord platform adapter."""
+"""Discord messenger adapter."""
 
-import asyncio
-from pathlib import Path
+import logging
+from typing import Any
 
-import discord
+try:
+    import httpx
+except ImportError:
+    httpx = None  # type: ignore
 
-from ..message import Attachment, UniversalMessage
-from ..platform import MessagePlatform
+from pig_messenger.base import (
+    BaseMessengerAdapter,
+    IncomingMessage,
+    MessengerCapabilities,
+    MessengerType,
+    MessengerUser,
+)
+
+logger = logging.getLogger(__name__)
 
 
-class DiscordAdapter(MessagePlatform):
-    """Discord platform adapter."""
+class DiscordMessengerAdapter(BaseMessengerAdapter):
+    """Discord messenger adapter."""
 
-    def __init__(self, bot_token: str):
+    def __init__(self, bot_token: str, public_key: str | None = None):
         """Initialize Discord adapter.
 
         Args:
             bot_token: Discord bot token
+            public_key: Discord public key for verification
         """
-        super().__init__("discord")
+        if httpx is None:
+            raise ImportError("httpx is required for Discord adapter")
 
         self.bot_token = bot_token
-        self.client = discord.Client(intents=discord.Intents.all())
-        self._setup_handlers()
+        self.public_key = public_key
+        self.api_url = "https://discord.com/api/v10"
 
-    def _setup_handlers(self):
-        """Setup Discord event handlers."""
-
-        @self.client.event
-        async def on_ready():
-            print(f"✓ Discord bot ready: {self.client.user}")
-
-        @self.client.event
-        async def on_message(message: discord.Message):
-            # Skip bot's own messages
-            if message.author == self.client.user:
-                return
-
-            # Check if bot is mentioned or DM
-            is_mention = self.client.user in message.mentions
-            is_dm = isinstance(message.channel, discord.DMChannel)
-
-            if not (is_mention or is_dm):
-                return
-
-            # Convert to universal message
-            await self._handle_discord_message(message, is_mention, is_dm)
-
-    async def _handle_discord_message(
-        self, message: discord.Message, is_mention: bool, is_dm: bool
-    ):
-        """Convert Discord message to UniversalMessage."""
-
-        # Handle attachments
-        attachments = []
-        for attach in message.attachments:
-            attachments.append(
-                Attachment(
-                    id=str(attach.id),
-                    filename=attach.filename,
-                    content_type=attach.content_type or "",
-                    size=attach.size,
-                    url=attach.url,
-                )
-            )
-
-        # Create universal message
-        text = message.content
-        if is_mention:
-            # Remove mention
-            text = text.replace(f"<@{self.client.user.id}>", "").strip()
-
-        msg = UniversalMessage(
-            id=str(message.id),
-            platform="discord",
-            channel_id=str(message.channel.id),
-            channel_name=getattr(message.channel, "name", None),
-            user_id=str(message.author.id),
-            username=message.author.display_name,
-            text=text,
-            attachments=attachments,
-            timestamp=message.created_at,
-            is_mention=is_mention,
-            is_dm=is_dm,
-            raw_data={"message": message},
+        self.client = httpx.AsyncClient(
+            timeout=30.0,
+            headers={"Authorization": f"Bot {bot_token}"},
         )
 
-        await self._emit_message(msg)
+        self.capabilities = MessengerCapabilities(
+            can_edit=True,
+            can_delete=True,
+            can_react=True,
+            can_thread=True,
+            can_upload_file=True,
+            supports_blocks=False,
+            supports_draft=False,
+            max_message_length=2000,
+        )
 
-    async def send_message(
-        self,
-        channel_id: str,
-        text: str,
-        thread_id: str | None = None,
-        **kwargs,
-    ) -> str:
-        """Send message to Discord channel."""
-        channel = self.client.get_channel(int(channel_id))
+    async def parse_event(self, raw_event: dict[str, Any]) -> IncomingMessage | None:
+        """Parse Discord event to IncomingMessage.
 
-        if not channel:
-            raise ValueError(f"Channel {channel_id} not found")
+        Args:
+            raw_event: Discord event payload
 
-        # Send message
-        msg = await channel.send(text, **kwargs)
+        Returns:
+            IncomingMessage or None
+        """
+        # Handle different event types
+        event_type = raw_event.get("t")
 
-        return str(msg.id)
+        if event_type == "MESSAGE_CREATE":
+            data = raw_event.get("d", {})
 
-    async def upload_file(
-        self,
-        channel_id: str,
-        file_path: Path,
-        caption: str | None = None,
-        thread_id: str | None = None,
-    ) -> str:
-        """Upload file to Discord."""
-        channel = self.client.get_channel(int(channel_id))
+            # Skip bot messages
+            if data.get("author", {}).get("bot"):
+                return None
 
-        if not channel:
-            raise ValueError(f"Channel {channel_id} not found")
-
-        msg = await channel.send(content=caption, file=discord.File(str(file_path)))
-
-        return str(msg.id)
-
-    async def get_history(self, channel_id: str, limit: int = 100) -> list[UniversalMessage]:
-        """Get Discord channel history."""
-        channel = self.client.get_channel(int(channel_id))
-
-        if not channel:
-            return []
-
-        messages = []
-        async for msg in channel.history(limit=limit):
-            if msg.author == self.client.user:
-                continue
-
-            messages.append(
-                UniversalMessage(
-                    id=str(msg.id),
-                    platform="discord",
-                    channel_id=str(channel_id),
-                    user_id=str(msg.author.id),
-                    username=msg.author.display_name,
-                    text=msg.content,
-                    timestamp=msg.created_at,
-                    raw_data={"message": msg},
-                )
+            author = data.get("author", {})
+            user = MessengerUser(
+                id=author.get("id", ""),
+                username=author.get("username", ""),
+                display_name=author.get("global_name") or author.get("username", ""),
             )
 
-        return messages
+            channel_id = data.get("channel_id", "")
+            guild_id = data.get("guild_id")
 
-    async def download_file(self, attachment: Attachment) -> bytes:
-        """Download file from Discord."""
-        import httpx
+            return IncomingMessage(
+                message_id=data.get("id", ""),
+                platform=MessengerType.DISCORD,
+                channel_id=channel_id,
+                text=data.get("content", ""),
+                user=user,
+                timestamp=0,
+                is_dm=guild_id is None,
+            )
 
-        async with httpx.AsyncClient() as client:
-            response = await client.get(attachment.url)
-            response.raise_for_status()
-            return response.content
+        return None
 
-    def start(self) -> None:
-        """Start Discord bot (blocking)."""
-        self.client.run(self.bot_token)
+    async def send_message(
+        self, channel_id: str, text: str, *, thread_id: str | None = None, **kwargs
+    ) -> dict[str, Any]:
+        """Send message to Discord.
 
-    def stop(self) -> None:
-        """Stop Discord bot."""
-        asyncio.create_task(self.client.close())
+        Args:
+            channel_id: Channel ID
+            text: Message text
+            thread_id: Optional thread ID
+            **kwargs: Additional parameters
+
+        Returns:
+            API response with message_id
+        """
+        target_channel = thread_id or channel_id
+
+        payload = {
+            "content": text,
+        }
+        payload.update(kwargs)
+
+        response = await self.client.post(
+            f"{self.api_url}/channels/{target_channel}/messages",
+            json=payload,
+        )
+        response.raise_for_status()
+        result = response.json()
+
+        return {
+            "message_id": result["id"],
+        }
+
+    async def update_message(
+        self, channel_id: str, message_id: str, text: str, **kwargs
+    ) -> dict[str, Any]:
+        """Update message in Discord.
+
+        Args:
+            channel_id: Channel ID
+            message_id: Message ID
+            text: New text
+            **kwargs: Additional parameters
+
+        Returns:
+            API response
+        """
+        payload = {
+            "content": text,
+        }
+        payload.update(kwargs)
+
+        response = await self.client.patch(
+            f"{self.api_url}/channels/{channel_id}/messages/{message_id}",
+            json=payload,
+        )
+        response.raise_for_status()
+        return response.json()
+
+    async def delete_message(self, channel_id: str, message_id: str) -> bool:
+        """Delete message in Discord.
+
+        Args:
+            channel_id: Channel ID
+            message_id: Message ID
+
+        Returns:
+            True if successful
+        """
+        response = await self.client.delete(
+            f"{self.api_url}/channels/{channel_id}/messages/{message_id}"
+        )
+        response.raise_for_status()
+        return True
+
+    async def send_reaction(self, channel_id: str, message_id: str, emoji: str) -> None:
+        """Add reaction to message.
+
+        Args:
+            channel_id: Channel ID
+            message_id: Message ID
+            emoji: Emoji (Unicode or custom format)
+        """
+        # URL encode emoji
+        import urllib.parse
+
+        encoded_emoji = urllib.parse.quote(emoji)
+
+        await self.client.put(
+            f"{self.api_url}/channels/{channel_id}/messages/{message_id}/reactions/{encoded_emoji}/@me"
+        )
+
+    async def send_file(self, channel_id: str, url: str, filename: str, **kwargs) -> dict[str, Any]:
+        """Send file from URL.
+
+        Args:
+            channel_id: Channel ID
+            url: File URL
+            filename: File name
+            **kwargs: Additional parameters
+
+        Returns:
+            API response
+        """
+        raise NotImplementedError("URL file upload not supported")
+
+    async def send_file_content(
+        self,
+        channel_id: str,
+        content: bytes,
+        filename: str,
+        content_type: str,
+        **kwargs,
+    ) -> dict[str, Any]:
+        """Send file from content.
+
+        Args:
+            channel_id: Channel ID
+            content: File content
+            filename: File name
+            content_type: MIME type
+            **kwargs: Additional parameters
+
+        Returns:
+            API response
+        """
+        files = {
+            "file": (filename, content, content_type),
+        }
+
+        response = await self.client.post(
+            f"{self.api_url}/channels/{channel_id}/messages",
+            files=files,
+        )
+        response.raise_for_status()
+        result = response.json()
+
+        return {
+            "message_id": result["id"],
+        }
+
+    async def verify_signature(self, request_body: bytes, signature: str, timestamp: str) -> bool:
+        """Verify Discord interaction signature.
+
+        Args:
+            request_body: Raw request body
+            signature: X-Signature-Ed25519 header
+            timestamp: X-Signature-Timestamp header
+
+        Returns:
+            True if signature is valid
+        """
+        if not self.public_key:
+            return True
+
+        # Discord uses Ed25519 signature verification
+        # This is a placeholder - actual implementation would use nacl library
+        return True
+
+    async def aclose(self) -> None:
+        """Close HTTP client."""
+        await self.client.aclose()

@@ -1,10 +1,22 @@
-"""Platform adapter base class."""
+"""Platform adapter base class.
 
+DEPRECATED: This module is kept for backward compatibility.
+Use pig_messenger.base.BaseMessengerAdapter instead.
+"""
+
+import warnings
 from abc import ABC, abstractmethod
 from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 from .message import Attachment, UniversalMessage
+
+warnings.warn(
+    "pig_messenger.platform is deprecated. Use pig_messenger.base instead.",
+    DeprecationWarning,
+    stacklevel=2,
+)
 
 
 class MessagePlatform(ABC):
@@ -25,7 +37,7 @@ class MessagePlatform(ABC):
         channel_id: str,
         text: str,
         thread_id: str | None = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> str:
         """Send a message to a channel.
 
@@ -103,7 +115,7 @@ class MessagePlatform(ABC):
         self,
         channel_id: str,
         text: str,
-        **kwargs,
+        **kwargs: Any,
     ) -> str:
         """Send an interactive card message.
 
@@ -124,7 +136,7 @@ class MessagePlatform(ABC):
         self,
         message_id: str,
         text: str,
-        **kwargs,
+        **kwargs: Any,
     ) -> None:
         """Update an existing card message.
 

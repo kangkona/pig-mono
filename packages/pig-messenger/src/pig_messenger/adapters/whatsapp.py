@@ -1,288 +1,221 @@
-"""WhatsApp platform adapter (via WhatsApp Business API)."""
+"""WhatsApp messenger adapter via Twilio."""
 
-from datetime import datetime
-from pathlib import Path
+import hashlib
+import hmac
+import logging
+from typing import Any
 
-import httpx
+try:
+    import httpx
+except ImportError:
+    httpx = None  # type: ignore
 
-from ..message import Attachment, UniversalMessage
-from ..platform import MessagePlatform
+from pig_messenger.base import (
+    BaseMessengerAdapter,
+    IncomingMessage,
+    MessengerCapabilities,
+    MessengerType,
+    MessengerUser,
+)
+
+logger = logging.getLogger(__name__)
 
 
-class WhatsAppAdapter(MessagePlatform):
-    """WhatsApp Business API adapter."""
+class WhatsAppMessengerAdapter(BaseMessengerAdapter):
+    """WhatsApp messenger adapter using Twilio API."""
 
     def __init__(
         self,
-        phone_number_id: str,
-        access_token: str,
-        verify_token: str | None = None,
-        webhook_url: str | None = None,
+        account_sid: str,
+        auth_token: str,
+        from_number: str,
     ):
         """Initialize WhatsApp adapter.
 
         Args:
-            phone_number_id: WhatsApp Business phone number ID
-            access_token: WhatsApp Business access token
-            verify_token: Webhook verification token
-            webhook_url: Webhook URL for receiving messages
+            account_sid: Twilio account SID
+            auth_token: Twilio auth token
+            from_number: WhatsApp from number (format: whatsapp:+1234567890)
         """
-        super().__init__("whatsapp")
+        if httpx is None:
+            raise ImportError("httpx is required for WhatsApp adapter")
 
-        self.phone_number_id = phone_number_id
-        self.access_token = access_token
-        self.verify_token = verify_token
-        self.webhook_url = webhook_url
+        self.account_sid = account_sid
+        self.auth_token = auth_token
+        self.from_number = from_number
+        self.api_url = f"https://api.twilio.com/2010-04-01/Accounts/{account_sid}"
 
-        self.api_base = "https://graph.facebook.com/v18.0"
-        self.client = httpx.AsyncClient(headers={"Authorization": f"Bearer {access_token}"})
+        self.client = httpx.AsyncClient(
+            timeout=30.0,
+            auth=(account_sid, auth_token),
+        )
 
-    async def send_message(
-        self,
-        channel_id: str,
-        text: str,
-        thread_id: str | None = None,
-        **kwargs,
-    ) -> str:
-        """Send text message via WhatsApp.
+        self.capabilities = MessengerCapabilities(
+            can_edit=False,
+            can_delete=False,
+            can_react=False,
+            can_thread=False,
+            can_upload_file=True,
+            supports_blocks=False,
+            supports_draft=False,
+            max_message_length=1600,
+        )
+
+    async def parse_event(self, raw_event: dict[str, Any]) -> IncomingMessage | None:
+        """Parse Twilio webhook to IncomingMessage.
 
         Args:
-            channel_id: Phone number (with country code, e.g., "1234567890")
+            raw_event: Twilio webhook form data
+
+        Returns:
+            IncomingMessage or None
+        """
+        # Twilio sends form data, not JSON
+        message_sid = raw_event.get("MessageSid")
+        from_number = raw_event.get("From", "")
+        body = raw_event.get("Body", "")
+
+        if not message_sid or not body:
+            return None
+
+        # Extract phone number from whatsapp:+1234567890 format
+        user_id = from_number.replace("whatsapp:", "")
+
+        user = MessengerUser(
+            id=user_id,
+            username=user_id,
+            display_name=raw_event.get("ProfileName", user_id),
+        )
+
+        return IncomingMessage(
+            message_id=message_sid,
+            platform=MessengerType.WHATSAPP,
+            channel_id=user_id,
+            text=body,
+            user=user,
+            timestamp=0,
+            is_dm=True,
+        )
+
+    async def send_message(
+        self, channel_id: str, text: str, *, thread_id: str | None = None, **kwargs
+    ) -> dict[str, Any]:
+        """Send message to WhatsApp.
+
+        Args:
+            channel_id: Phone number
             text: Message text
-            thread_id: Not applicable for WhatsApp
+            thread_id: Not used
             **kwargs: Additional parameters
 
         Returns:
-            Message ID
+            API response with message_id
         """
-        url = f"{self.api_base}/{self.phone_number_id}/messages"
+        # Ensure channel_id has whatsapp: prefix
+        to_number = channel_id if channel_id.startswith("whatsapp:") else f"whatsapp:{channel_id}"
 
         payload = {
-            "messaging_product": "whatsapp",
-            "to": channel_id,
-            "type": "text",
-            "text": {"body": text},
+            "From": self.from_number,
+            "To": to_number,
+            "Body": text,
+        }
+        payload.update(kwargs)
+
+        response = await self.client.post(
+            f"{self.api_url}/Messages.json",
+            data=payload,
+        )
+        response.raise_for_status()
+        result = response.json()
+
+        return {
+            "message_id": result["sid"],
         }
 
-        response = await self.client.post(url, json=payload)
-        response.raise_for_status()
-
-        data = response.json()
-        return data["messages"][0]["id"]
-
-    async def send_template(self, channel_id: str, template_name: str, **params) -> str:
-        """Send template message.
+    async def update_message(
+        self, channel_id: str, message_id: str, text: str, **kwargs
+    ) -> dict[str, Any]:
+        """Update message (not supported by WhatsApp).
 
         Args:
             channel_id: Phone number
-            template_name: Template name
-            **params: Template parameters
+            message_id: Message ID
+            text: New text
+            **kwargs: Additional parameters
 
         Returns:
-            Message ID
+            Empty dict
+
+        Raises:
+            NotImplementedError: WhatsApp doesn't support message editing
         """
-        url = f"{self.api_base}/{self.phone_number_id}/messages"
+        raise NotImplementedError("WhatsApp does not support message editing")
 
-        payload = {
-            "messaging_product": "whatsapp",
-            "to": channel_id,
-            "type": "template",
-            "template": {"name": template_name, "language": {"code": "en"}},
-        }
+    async def delete_message(self, channel_id: str, message_id: str) -> bool:
+        """Delete message (not supported by WhatsApp).
 
-        response = await self.client.post(url, json=payload)
-        response.raise_for_status()
+        Args:
+            channel_id: Phone number
+            message_id: Message ID
 
-        data = response.json()
-        return data["messages"][0]["id"]
+        Returns:
+            False
 
-    async def upload_file(
+        Raises:
+            NotImplementedError: WhatsApp doesn't support message deletion
+        """
+        raise NotImplementedError("WhatsApp does not support message deletion")
+
+    async def send_file_content(
         self,
         channel_id: str,
-        file_path: Path,
-        caption: str | None = None,
-        thread_id: str | None = None,
-    ) -> str:
-        """Send file via WhatsApp.
+        content: bytes,
+        filename: str,
+        content_type: str,
+        **kwargs,
+    ) -> dict[str, Any]:
+        """Send file from content.
 
         Args:
             channel_id: Phone number
-            file_path: File path
-            caption: Optional caption
-            thread_id: Not applicable
+            content: File content
+            filename: File name
+            content_type: MIME type
+            **kwargs: Additional parameters
 
         Returns:
-            Message ID
+            API response
         """
-        # First upload media to WhatsApp
-        media_url = f"{self.api_base}/{self.phone_number_id}/media"
+        # WhatsApp via Twilio requires media URL, not direct upload
+        raise NotImplementedError("Direct file upload not supported, use media URL")
 
-        with open(file_path, "rb") as f:
-            files = {"file": (file_path.name, f, "application/octet-stream")}
-            response = await self.client.post(media_url, files=files)
-            response.raise_for_status()
-
-        media_id = response.json()["id"]
-
-        # Determine media type
-        suffix = file_path.suffix.lower()
-        if suffix in [".jpg", ".jpeg", ".png"]:
-            media_type = "image"
-        elif suffix in [".mp4", ".3gp"]:
-            media_type = "video"
-        elif suffix in [".mp3", ".ogg"]:
-            media_type = "audio"
-        elif suffix == ".pdf":
-            media_type = "document"
-        else:
-            media_type = "document"
-
-        # Send media message
-        url = f"{self.api_base}/{self.phone_number_id}/messages"
-
-        payload = {
-            "messaging_product": "whatsapp",
-            "to": channel_id,
-            "type": media_type,
-            media_type: {"id": media_id, "caption": caption or ""},
-        }
-
-        response = await self.client.post(url, json=payload)
-        response.raise_for_status()
-
-        data = response.json()
-        return data["messages"][0]["id"]
-
-    async def get_history(self, channel_id: str, limit: int = 100) -> list[UniversalMessage]:
-        """Get WhatsApp message history.
-
-        Note: WhatsApp Business API doesn't provide history retrieval.
-        Would need to implement via webhook storage.
+    async def verify_signature(self, url: str, params: dict[str, str], signature: str) -> bool:
+        """Verify Twilio request signature.
 
         Args:
-            channel_id: Phone number
-            limit: Message limit
+            url: Full request URL
+            params: Request parameters
+            signature: X-Twilio-Signature header
 
         Returns:
-            Empty list (not supported by API)
+            True if signature is valid
         """
-        return []
+        # Construct data string
+        data_string = url + "".join(f"{k}{params[k]}" for k in sorted(params.keys()))
 
-    async def download_file(self, attachment: Attachment) -> bytes:
-        """Download media from WhatsApp.
+        # Compute HMAC-SHA1
+        expected = hmac.new(
+            self.auth_token.encode(),
+            data_string.encode(),
+            hashlib.sha1,
+        ).digest()
 
-        Args:
-            attachment: Attachment info
+        import base64
 
-        Returns:
-            File bytes
-        """
-        # Get media URL
-        media_url = f"{self.api_base}/{attachment.id}"
-        response = await self.client.get(media_url)
-        response.raise_for_status()
+        expected_b64 = base64.b64encode(expected).decode()
 
-        download_url = response.json()["url"]
+        return hmac.compare_digest(expected_b64, signature)
 
-        # Download file
-        file_response = await self.client.get(download_url)
-        file_response.raise_for_status()
-
-        return file_response.content
-
-    def handle_webhook(self, payload: dict) -> None:
-        """Handle incoming webhook from WhatsApp.
-
-        Args:
-            payload: Webhook payload
-
-        This should be called by your webhook server.
-        """
-        import asyncio
-
-        # Parse webhook
-        for entry in payload.get("entry", []):
-            for change in entry.get("changes", []):
-                if change.get("field") != "messages":
-                    continue
-
-                value = change.get("value", {})
-
-                for message in value.get("messages", []):
-                    # Convert to UniversalMessage
-                    msg = self._convert_webhook_message(message, value)
-
-                    # Emit asynchronously
-                    asyncio.create_task(self._emit_message(msg))
-
-    def _convert_webhook_message(self, message: dict, value: dict) -> UniversalMessage:
-        """Convert WhatsApp webhook message to UniversalMessage.
-
-        Args:
-            message: Message object from webhook
-            value: Value object from webhook
-
-        Returns:
-            Universal message
-        """
-        # Get contact info
-        contacts = {c["wa_id"]: c for c in value.get("contacts", [])}
-        contact = contacts.get(message["from"], {})
-
-        profile = contact.get("profile", {})
-        username = profile.get("name", message["from"])
-
-        # Get text
-        text = ""
-        if message["type"] == "text":
-            text = message["text"]["body"]
-        elif message["type"] == "interactive":
-            # Button or list response
-            interactive = message.get("interactive", {})
-            if interactive.get("type") == "button_reply":
-                text = interactive["button_reply"]["title"]
-            elif interactive.get("type") == "list_reply":
-                text = interactive["list_reply"]["title"]
-
-        # Handle attachments
-        attachments = []
-        for media_type in ["image", "video", "audio", "document"]:
-            if media_type in message:
-                media = message[media_type]
-                attachments.append(
-                    Attachment(
-                        id=media["id"],
-                        filename=media.get(
-                            "filename", f"{media_type}.{media.get('mime_type', '').split('/')[-1]}"
-                        ),
-                        content_type=media.get("mime_type", ""),
-                        size=0,  # Not provided in webhook
-                    )
-                )
-
-        return UniversalMessage(
-            id=message["id"],
-            platform="whatsapp",
-            channel_id=message["from"],  # Phone number
-            user_id=message["from"],
-            username=username,
-            text=text,
-            attachments=attachments,
-            timestamp=datetime.fromtimestamp(int(message["timestamp"])),
-            is_dm=True,  # WhatsApp is always 1:1 or groups
-            raw_data=message,
-        )
-
-    def start(self) -> None:
-        """Start WhatsApp adapter.
-
-        Note: Requires external webhook server.
-        Use Flask/FastAPI to receive webhooks and call handle_webhook().
-        """
-        print("WhatsApp adapter ready")
-        print(f"Configure webhook: {self.webhook_url}")
-        print("Call adapter.handle_webhook(payload) from your webhook server")
-
-    def stop(self) -> None:
-        """Stop WhatsApp adapter."""
-        pass
+    async def aclose(self) -> None:
+        """Close HTTP client."""
+        await self.client.aclose()

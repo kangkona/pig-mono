@@ -27,6 +27,12 @@ Repository = "https://github.com/kangkona/pig-mono"
 Issues = "https://github.com/kangkona/pig-mono/issues"
 
 [project.optional-dependencies]
+redis = [
+    "redis>=5.0.0",
+]
+encryption = [
+    "cryptography>=41.0.0",
+]
 slack = [
     "slack-sdk>=3.26.0",
     "slack-bolt>=1.18.0",
@@ -44,7 +50,7 @@ feishu = [
     "lark-oapi>=1.5.0",
 ]
 all = [
-    "pig-messenger[slack,discord,whatsapp,telegram,feishu]"
+    "pig-messenger[redis,encryption,slack,discord,whatsapp,telegram,feishu]"
 ]
 dev = [
     "pytest>=8.0.0",
