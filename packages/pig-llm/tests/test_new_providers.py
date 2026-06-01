@@ -275,6 +275,80 @@ def test_deepseek_provider_sends_explicit_thinking_enabled_payload() -> None:
     assert "reasoning_effort" not in create.call_args.kwargs
 
 
+def test_together_provider_sends_explicit_reasoning_disabled_payload() -> None:
+    create = Mock(
+        return_value=SimpleNamespace(
+            id="resp-1",
+            model="moonshotai/Kimi-K2.6",
+            choices=[
+                SimpleNamespace(
+                    message=SimpleNamespace(content="ok", tool_calls=None),
+                    finish_reason="stop",
+                )
+            ],
+            usage=SimpleNamespace(prompt_tokens=1, completion_tokens=1, total_tokens=2),
+        )
+    )
+    sync_client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+    async_client = SimpleNamespace(
+        chat=SimpleNamespace(completions=SimpleNamespace(create=AsyncMock()))
+    )
+
+    with (
+        patch("pig_llm.providers.together.openai.OpenAI", return_value=sync_client),
+        patch("pig_llm.providers.together.openai.AsyncOpenAI", return_value=async_client),
+    ):
+        from pig_llm.providers.together import TogetherProvider
+
+        provider = TogetherProvider(Config(provider="together", api_key="test"))
+
+    provider.complete(
+        [SimpleNamespace(role="user", content="hello", metadata=None)],
+        model="moonshotai/Kimi-K2.6",
+        thinking_level="off",
+    )
+
+    assert create.call_args.kwargs["reasoning"] == {"enabled": False}
+    assert "reasoning_effort" not in create.call_args.kwargs
+
+
+def test_together_provider_sends_explicit_reasoning_enabled_payload() -> None:
+    create = Mock(
+        return_value=SimpleNamespace(
+            id="resp-1",
+            model="moonshotai/Kimi-K2.6",
+            choices=[
+                SimpleNamespace(
+                    message=SimpleNamespace(content="ok", tool_calls=None),
+                    finish_reason="stop",
+                )
+            ],
+            usage=SimpleNamespace(prompt_tokens=1, completion_tokens=1, total_tokens=2),
+        )
+    )
+    sync_client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+    async_client = SimpleNamespace(
+        chat=SimpleNamespace(completions=SimpleNamespace(create=AsyncMock()))
+    )
+
+    with (
+        patch("pig_llm.providers.together.openai.OpenAI", return_value=sync_client),
+        patch("pig_llm.providers.together.openai.AsyncOpenAI", return_value=async_client),
+    ):
+        from pig_llm.providers.together import TogetherProvider
+
+        provider = TogetherProvider(Config(provider="together", api_key="test"))
+
+    provider.complete(
+        [SimpleNamespace(role="user", content="hello", metadata=None)],
+        model="moonshotai/Kimi-K2.6",
+        thinking_level="high",
+    )
+
+    assert create.call_args.kwargs["reasoning"] == {"enabled": True}
+    assert "reasoning_effort" not in create.call_args.kwargs
+
+
 def test_azure_openai_provider_uses_session_affinity_headers() -> None:
     create = Mock(
         return_value=SimpleNamespace(

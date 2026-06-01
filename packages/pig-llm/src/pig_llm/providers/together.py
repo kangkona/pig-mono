@@ -5,7 +5,7 @@ from collections.abc import AsyncIterator, Iterator
 import openai
 
 from ..compat import (
-    OPENAI_COMPAT,
+    TOGETHER_COMPAT,
     apply_request_headers,
     apply_thinking_level,
     build_token_limit_param,
@@ -90,7 +90,7 @@ class TogetherProvider(Provider):
         **kwargs,
     ) -> Response:
         """Generate a completion."""
-        kwargs = apply_thinking_level(kwargs, OPENAI_COMPAT)
+        kwargs = apply_thinking_level(kwargs, TOGETHER_COMPAT)
         kwargs = apply_request_headers(kwargs)
         response = self.client.chat.completions.create(
             model=model,
@@ -99,7 +99,7 @@ class TogetherProvider(Provider):
             **build_token_limit_param(
                 max_tokens,
                 param_name="max_tokens",
-                compat=OPENAI_COMPAT,
+                compat=TOGETHER_COMPAT,
             ),
             **kwargs,
         )
@@ -125,7 +125,7 @@ class TogetherProvider(Provider):
         **kwargs,
     ) -> Iterator[StreamChunk]:
         """Stream a completion."""
-        kwargs = apply_thinking_level(kwargs, OPENAI_COMPAT)
+        kwargs = apply_thinking_level(kwargs, TOGETHER_COMPAT)
         kwargs = apply_request_headers(kwargs)
         stream = self.client.chat.completions.create(
             model=model,
@@ -135,7 +135,7 @@ class TogetherProvider(Provider):
             **build_token_limit_param(
                 max_tokens,
                 param_name="max_tokens",
-                compat=OPENAI_COMPAT,
+                compat=TOGETHER_COMPAT,
             ),
             **kwargs,
         )
@@ -158,7 +158,7 @@ class TogetherProvider(Provider):
         **kwargs,
     ) -> Response:
         """Async generate a completion."""
-        kwargs = apply_thinking_level(kwargs, OPENAI_COMPAT)
+        kwargs = apply_thinking_level(kwargs, TOGETHER_COMPAT)
         kwargs = apply_request_headers(kwargs)
         response = await self.async_client.chat.completions.create(
             model=model,
@@ -167,7 +167,7 @@ class TogetherProvider(Provider):
             **build_token_limit_param(
                 max_tokens,
                 param_name="max_tokens",
-                compat=OPENAI_COMPAT,
+                compat=TOGETHER_COMPAT,
             ),
             **kwargs,
         )
@@ -193,7 +193,7 @@ class TogetherProvider(Provider):
         **kwargs,
     ) -> AsyncIterator[StreamChunk]:
         """Async stream a completion."""
-        kwargs = apply_thinking_level(kwargs, OPENAI_COMPAT)
+        kwargs = apply_thinking_level(kwargs, TOGETHER_COMPAT)
         kwargs = apply_request_headers(kwargs)
         stream = await self.async_client.chat.completions.create(
             model=model,
@@ -203,7 +203,7 @@ class TogetherProvider(Provider):
             **build_token_limit_param(
                 max_tokens,
                 param_name="max_tokens",
-                compat=OPENAI_COMPAT,
+                compat=TOGETHER_COMPAT,
             ),
             **kwargs,
         )

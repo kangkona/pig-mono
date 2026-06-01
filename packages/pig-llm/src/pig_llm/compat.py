@@ -144,6 +144,21 @@ DEEPSEEK_COMPAT = ProviderCompat(
     retryable_patterns=COMMON_RETRYABLE_PATTERNS,
 )
 
+TOGETHER_COMPAT = ProviderCompat(
+    max_output_token_policy="send_when_explicit",
+    thinking_level_map={
+        "off": {"enabled": False},
+        "minimal": {"enabled": True},
+        "low": {"enabled": True},
+        "medium": {"enabled": True},
+        "high": {"enabled": True},
+        "xhigh": {"enabled": True},
+    },
+    context_overflow_patterns=COMMON_CONTEXT_OVERFLOW_PATTERNS,
+    quota_or_billing_patterns=COMMON_QUOTA_OR_BILLING_PATTERNS,
+    retryable_patterns=COMMON_RETRYABLE_PATTERNS,
+)
+
 
 def normalize_messages(
     messages: list[Message],
@@ -211,6 +226,11 @@ def apply_thinking_level(kwargs: dict[str, Any], compat: ProviderCompat) -> dict
         return next_kwargs
 
     if compat is OPENROUTER_COMPAT:
+        next_kwargs["reasoning"] = mapped
+        next_kwargs.pop("thinking", None)
+        return next_kwargs
+
+    if compat is TOGETHER_COMPAT:
         next_kwargs["reasoning"] = mapped
         next_kwargs.pop("thinking", None)
         return next_kwargs
