@@ -352,7 +352,7 @@ class Session:
             # Auto-generate path
             session_dir = self.workspace / ".sessions"
             session_dir.mkdir(exist_ok=True)
-            path = session_dir / f"{self.name}.jsonl"
+            path = session_dir / f"{self.name}-{self.id[:8]}.jsonl"
 
         # Save metadata and tree
         data = {

@@ -178,3 +178,15 @@ def test_session_get_info():
     assert info["name"] == "test"
     assert info["entries"] == 1
     assert "created_at" in info
+
+
+def test_session_save_uses_session_id_in_filename_when_name_reused(tmp_path):
+    session1 = Session(name="shared-name", workspace=str(tmp_path), auto_save=False)
+    session2 = Session(name="shared-name", workspace=str(tmp_path), auto_save=False)
+
+    path1 = session1.save()
+    path2 = session2.save()
+
+    assert path1 != path2
+    assert path1.exists()
+    assert path2.exists()

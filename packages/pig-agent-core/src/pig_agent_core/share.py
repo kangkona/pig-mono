@@ -2,6 +2,8 @@
 
 from pathlib import Path
 
+import httpx
+
 from .export import SessionExporter
 from .session import Session
 
@@ -75,9 +77,6 @@ class GistSharer:
             "Authorization": f"token {self.github_token}",
             "Accept": "application/vnd.github.v3+json",
         }
-
-        # Import lazily so pig_agent_core can be imported without optional share deps.
-        import httpx
 
         response = httpx.post(self.GIST_API, json=payload, headers=headers, timeout=30)
 
