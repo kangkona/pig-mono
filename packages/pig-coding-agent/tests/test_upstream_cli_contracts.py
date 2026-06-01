@@ -194,3 +194,20 @@ def test_rpc_mode_cleans_up_extensions_on_shutdown(monkeypatch) -> None:
     run_rpc_mode(agent)
 
     agent.extension_manager.cleanup.assert_called_once()
+
+
+def test_rpc_mode_cleans_up_extensions_on_interrupt(monkeypatch) -> None:
+    requests = iter(KeyboardInterrupt() for _ in range(1))
+    out = io.StringIO()
+    agent = Mock()
+    agent.extension_manager = Mock()
+
+    def interrupted_readline():
+        raise next(requests)
+
+    monkeypatch.setattr("sys.stdin.readline", interrupted_readline)
+
+    with patch("sys.stdout", out):
+        run_rpc_mode(agent)
+
+    agent.extension_manager.cleanup.assert_called_once()

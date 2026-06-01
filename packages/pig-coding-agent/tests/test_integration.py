@@ -258,6 +258,36 @@ def extension(api):
     assert "hello" not in agent.extension_manager.api.get_commands()
 
 
+def test_reload_resources_clears_stale_extension_handlers(mock_llm, temp_workspace):
+    ext_dir = temp_workspace / ".agents" / "extensions"
+    ext_dir.mkdir(parents=True)
+
+    ext_file = ext_dir / "test_ext.py"
+    ext_file.write_text(
+        """
+def extension(api):
+    @api.on("message_received")
+    def on_message(event, ctx):
+        return None
+"""
+    )
+
+    agent = CodingAgent(
+        llm=mock_llm,
+        workspace=str(temp_workspace),
+        enable_extensions=True,
+        verbose=False,
+    )
+    agent.ui = Mock()
+
+    assert "message_received" in agent.extension_manager.api._event_handlers
+
+    ext_file.unlink()
+    agent._reload_resources()
+
+    assert "message_received" not in agent.extension_manager.api._event_handlers
+
+
 def test_queue_command_reports_remaining_followups_after_single_drain(mock_llm, temp_workspace):
     agent = CodingAgent(
         llm=mock_llm,
