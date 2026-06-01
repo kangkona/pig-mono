@@ -347,6 +347,8 @@ When generating code, provide clean, well-documented, production-ready code.
                 cleared = self.agent.message_queue.clear()
                 if cleared:
                     self.ui.system(f"\nCleared {len(cleared)} queued messages")
+            if shutdown_reason == "normal" and self.session:
+                self.ui.system(f"To resume this session: pig-code --session-id {self.session.id}")
             self.ui.system("\nGoodbye!")
 
     def _handle_command(self, command: str) -> None:

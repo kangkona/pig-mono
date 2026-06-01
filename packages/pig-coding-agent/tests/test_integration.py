@@ -401,6 +401,35 @@ def test_run_interactive_emits_session_shutdown_reason_on_clean_exit(mock_llm, t
     agent.extension_manager.cleanup.assert_called_once_with(reason="normal")
 
 
+def test_run_interactive_prints_resume_hint_on_clean_exit(mock_llm, temp_workspace):
+    agent = CodingAgent(
+        llm=mock_llm,
+        workspace=str(temp_workspace),
+        verbose=False,
+        enable_extensions=False,
+    )
+    agent.ui = Mock()
+    agent.extension_manager = Mock()
+
+    prompt = Mock()
+    prompt.ask.side_effect = ["/exit"]
+
+    original_handle_command = agent._handle_command
+
+    def wrapped_handle_command(command: str):
+        original_handle_command(command)
+
+    with (
+        patch("pig_coding_agent.agent.InteractivePrompt", return_value=prompt),
+        patch.object(agent, "_handle_command", side_effect=wrapped_handle_command),
+    ):
+        agent.run_interactive()
+
+    messages = [call.args[0] for call in agent.ui.system.call_args_list]
+    assert any("To resume this session:" in message for message in messages)
+    assert any(agent.session.id in message for message in messages)
+
+
 def test_run_interactive_cleans_up_extensions_on_shutdown(mock_llm, temp_workspace):
     agent = CodingAgent(
         llm=mock_llm,
@@ -438,6 +467,27 @@ def test_run_interactive_emits_session_shutdown_reason_on_terminal_loss(mock_llm
             agent.run_interactive()
 
     agent.extension_manager.cleanup.assert_called_once_with(reason="lost_terminal")
+
+
+def test_run_interactive_does_not_print_resume_hint_on_terminal_loss(mock_llm, temp_workspace):
+    agent = CodingAgent(
+        llm=mock_llm,
+        workspace=str(temp_workspace),
+        verbose=False,
+        enable_extensions=False,
+    )
+    agent.ui = Mock()
+    agent.extension_manager = Mock()
+
+    prompt = Mock()
+    prompt.ask.side_effect = RuntimeError("lost terminal")
+
+    with patch("pig_coding_agent.agent.InteractivePrompt", return_value=prompt):
+        with pytest.raises(RuntimeError, match="lost terminal"):
+            agent.run_interactive()
+
+    messages = [call.args[0] for call in agent.ui.system.call_args_list]
+    assert all("To resume this session:" not in message for message in messages)
 
 
 def test_shutdown_extensions_helper_emits_signal_reason_and_cleans_up(mock_llm, temp_workspace):
