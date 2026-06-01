@@ -19,6 +19,17 @@ from pig_llm.models import Message
 from pig_llm.providers.openrouter import OpenRouterProvider
 
 
+def _anthropic_completion_response() -> SimpleNamespace:
+    text_block = SimpleNamespace(type="text", text="ok")
+    return SimpleNamespace(
+        id="msg_123",
+        model="claude-opus-4-7",
+        content=[text_block],
+        stop_reason="end_turn",
+        usage=SimpleNamespace(input_tokens=1, output_tokens=1),
+    )
+
+
 def _completion_response() -> SimpleNamespace:
     return SimpleNamespace(
         id="chatcmpl-test",
@@ -155,3 +166,47 @@ def test_openrouter_sets_session_id_header_for_affinity() -> None:
     )
 
     assert create.call_args.kwargs["extra_headers"] == {"session-id": "session-abc"}
+
+
+def test_anthropic_opus_47_omits_temperature_param() -> None:
+    create = Mock(return_value=_anthropic_completion_response())
+    client = SimpleNamespace(messages=SimpleNamespace(create=create))
+    async_client = SimpleNamespace(messages=SimpleNamespace(create=AsyncMock()))
+
+    with (
+        patch("pig_llm.providers.anthropic.anthropic.Anthropic", return_value=client),
+        patch("pig_llm.providers.anthropic.anthropic.AsyncAnthropic", return_value=async_client),
+    ):
+        from pig_llm.providers.anthropic import AnthropicProvider
+
+        provider = AnthropicProvider(Config(provider="anthropic", api_key="test"))
+
+    provider.complete(
+        [Message(role="user", content="hello")],
+        model="claude-opus-4-7",
+        temperature=0,
+    )
+
+    assert "temperature" not in create.call_args.kwargs
+
+
+def test_anthropic_non_opus_47_models_keep_temperature_param() -> None:
+    create = Mock(return_value=_anthropic_completion_response())
+    client = SimpleNamespace(messages=SimpleNamespace(create=create))
+    async_client = SimpleNamespace(messages=SimpleNamespace(create=AsyncMock()))
+
+    with (
+        patch("pig_llm.providers.anthropic.anthropic.Anthropic", return_value=client),
+        patch("pig_llm.providers.anthropic.anthropic.AsyncAnthropic", return_value=async_client),
+    ):
+        from pig_llm.providers.anthropic import AnthropicProvider
+
+        provider = AnthropicProvider(Config(provider="anthropic", api_key="test"))
+
+    provider.complete(
+        [Message(role="user", content="hello")],
+        model="claude-sonnet-4-6",
+        temperature=0,
+    )
+
+    assert create.call_args.kwargs["temperature"] == 0

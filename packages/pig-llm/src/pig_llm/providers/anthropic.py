@@ -14,6 +14,12 @@ from ._base import Provider
 class AnthropicProvider(Provider):
     """Anthropic (Claude) provider implementation."""
 
+    @staticmethod
+    def _supports_temperature(model: str) -> bool:
+        """Claude Opus 4.7+ rejects explicit temperature parameters."""
+        model_name = (model or "").lower()
+        return "claude-opus-4-7" not in model_name and "claude-opus-4-8" not in model_name
+
     def __init__(self, config: Config):
         """Initialize Anthropic provider."""
         self.config = config
@@ -141,13 +147,16 @@ class AnthropicProvider(Provider):
             kwargs = {k: v for k, v in kwargs.items() if k != "tools"}
             kwargs["tools"] = tools
 
+        request_kwargs = dict(kwargs)
+        if self._supports_temperature(model):
+            request_kwargs["temperature"] = temperature
+
         response = self.client.messages.create(
             model=model,
             messages=anthropic_messages,
             system=system,
-            temperature=temperature,
             max_tokens=max_tokens or 4096,
-            **kwargs,
+            **request_kwargs,
         )
 
         # Extract text content
@@ -215,13 +224,16 @@ class AnthropicProvider(Provider):
             kwargs = {k: v for k, v in kwargs.items() if k != "tools"}
             kwargs["tools"] = tools
 
+        request_kwargs = dict(kwargs)
+        if self._supports_temperature(model):
+            request_kwargs["temperature"] = temperature
+
         response = await self.async_client.messages.create(
             model=model,
             messages=anthropic_messages,
             system=system,
-            temperature=temperature,
             max_tokens=max_tokens or 4096,
-            **kwargs,
+            **request_kwargs,
         )
 
         # Extract text content
