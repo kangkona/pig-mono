@@ -402,6 +402,29 @@ def test_run_interactive_cleans_up_extensions_on_shutdown(mock_llm, temp_workspa
     agent.extension_manager.cleanup.assert_called_once()
 
 
+def test_run_interactive_emits_session_shutdown_reason_on_terminal_loss(mock_llm, temp_workspace):
+    agent = CodingAgent(
+        llm=mock_llm,
+        workspace=str(temp_workspace),
+        verbose=False,
+        enable_extensions=False,
+    )
+    agent.ui = Mock()
+    agent.extension_manager = Mock()
+
+    prompt = Mock()
+    prompt.ask.side_effect = RuntimeError("lost terminal")
+
+    with patch("pig_coding_agent.agent.InteractivePrompt", return_value=prompt):
+        with pytest.raises(RuntimeError, match="lost terminal"):
+            agent.run_interactive()
+
+    agent.extension_manager.emit_event.assert_called_once_with(
+        "session_shutdown",
+        {"reason": "lost_terminal"},
+    )
+
+
 def test_skill_invocation(mock_llm, temp_workspace):
     """Test invoking a skill."""
     # Create skill

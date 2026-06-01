@@ -326,6 +326,10 @@ When generating code, provide clean, well-documented, production-ready code.
             shutdown_reason = "normal"
         except KeyboardInterrupt:
             shutdown_reason = "interrupt"
+        except RuntimeError as exc:
+            if "lost terminal" in str(exc).lower():
+                shutdown_reason = "lost_terminal"
+            raise
         finally:
             if self.extension_manager:
                 try:
