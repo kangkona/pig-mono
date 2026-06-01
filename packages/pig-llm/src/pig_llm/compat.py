@@ -190,6 +190,29 @@ ZAI_COMPAT = ProviderCompat(
     retryable_patterns=COMMON_RETRYABLE_PATTERNS,
 )
 
+QWEN_CHAT_TEMPLATE_COMPAT = ProviderCompat(
+    max_output_token_policy="send_when_explicit",
+    thinking_level_map=QWEN_COMPAT.thinking_level_map,
+    context_overflow_patterns=COMMON_CONTEXT_OVERFLOW_PATTERNS,
+    quota_or_billing_patterns=COMMON_QUOTA_OR_BILLING_PATTERNS,
+    retryable_patterns=COMMON_RETRYABLE_PATTERNS,
+)
+
+STRING_THINKING_COMPAT = ProviderCompat(
+    max_output_token_policy="send_when_explicit",
+    thinking_level_map={
+        "off": "none",
+        "minimal": "minimal",
+        "low": "low",
+        "medium": "medium",
+        "high": "high",
+        "xhigh": "xhigh",
+    },
+    context_overflow_patterns=COMMON_CONTEXT_OVERFLOW_PATTERNS,
+    quota_or_billing_patterns=COMMON_QUOTA_OR_BILLING_PATTERNS,
+    retryable_patterns=COMMON_RETRYABLE_PATTERNS,
+)
+
 OPENCODE_GO_KIMI_COMPAT = ProviderCompat(
     max_output_token_policy="send_when_explicit",
     thinking_level_map={
@@ -287,9 +310,25 @@ def apply_thinking_level(kwargs: dict[str, Any], compat: ProviderCompat) -> dict
         next_kwargs.pop("thinking", None)
         return next_kwargs
 
+    if compat is QWEN_CHAT_TEMPLATE_COMPAT:
+        next_kwargs["chat_template_kwargs"] = {
+            "enable_thinking": mapped,
+            "preserve_thinking": True,
+        }
+        next_kwargs.pop("thinking", None)
+        next_kwargs.pop("reasoning", None)
+        next_kwargs.pop("reasoning_effort", None)
+        return next_kwargs
+
     if compat is QWEN_COMPAT or compat is ZAI_COMPAT:
         next_kwargs["enable_thinking"] = mapped
         next_kwargs.pop("thinking", None)
+        next_kwargs.pop("reasoning", None)
+        next_kwargs.pop("reasoning_effort", None)
+        return next_kwargs
+
+    if compat is STRING_THINKING_COMPAT:
+        next_kwargs["thinking"] = mapped
         next_kwargs.pop("reasoning", None)
         next_kwargs.pop("reasoning_effort", None)
         return next_kwargs

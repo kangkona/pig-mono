@@ -201,6 +201,32 @@ def test_custom_qwen_base_url_uses_enable_thinking_toggle() -> None:
     assert "reasoning_effort" not in sync_create.call_args.kwargs
 
 
+def test_explicit_qwen_chat_template_compat_uses_chat_template_kwargs() -> None:
+    sync_create = Mock(return_value=_completion_response())
+    provider = _provider_with_clients(
+        sync_create,
+        AsyncMock(),
+        Config(
+            provider="openai",
+            api_key="test-key",
+            base_url="https://local-qwen-gateway.example/v1",
+            compat_mode="qwen-chat-template",
+        ),
+    )
+
+    provider.complete(
+        _messages(),
+        model="qwen/qwen3-coder",
+        thinking_level="high",
+    )
+
+    assert sync_create.call_args.kwargs["chat_template_kwargs"] == {
+        "enable_thinking": True,
+        "preserve_thinking": True,
+    }
+    assert "reasoning_effort" not in sync_create.call_args.kwargs
+
+
 def test_custom_zai_base_url_disables_thinking_when_off() -> None:
     sync_create = Mock(return_value=_completion_response())
     provider = _provider_with_clients(
@@ -220,6 +246,29 @@ def test_custom_zai_base_url_disables_thinking_when_off() -> None:
     )
 
     assert sync_create.call_args.kwargs["enable_thinking"] is False
+    assert "reasoning_effort" not in sync_create.call_args.kwargs
+
+
+def test_explicit_string_thinking_compat_uses_string_payload() -> None:
+    sync_create = Mock(return_value=_completion_response())
+    provider = _provider_with_clients(
+        sync_create,
+        AsyncMock(),
+        Config(
+            provider="openai",
+            api_key="test-key",
+            base_url="https://custom-kimi.example/v1",
+            compat_mode="string-thinking",
+        ),
+    )
+
+    provider.complete(
+        _messages(),
+        model="kimi-k2.6",
+        thinking_level="off",
+    )
+
+    assert sync_create.call_args.kwargs["thinking"] == "none"
     assert "reasoning_effort" not in sync_create.call_args.kwargs
 
 

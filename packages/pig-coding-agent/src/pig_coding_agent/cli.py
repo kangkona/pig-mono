@@ -77,6 +77,11 @@ def main(
     base_url: str | None = typer.Option(
         None, "--base-url", help="Custom API base URL (for custom providers)"
     ),
+    compat_mode: str | None = typer.Option(
+        None,
+        "--compat-mode",
+        help="Explicit OpenAI-compatible request normalization mode",
+    ),
 ):
     """Start interactive coding agent."""
     if ctx.invoked_subcommand is not None:
@@ -99,6 +104,7 @@ def main(
         api_key=api_key,
         model=model or ("gpt-3.5-turbo" if provider == "openai" else None),
         base_url=base_url,
+        compat_mode=compat_mode,
     )
 
     # Handle session loading

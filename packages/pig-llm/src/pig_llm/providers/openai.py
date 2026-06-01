@@ -7,7 +7,9 @@ import openai
 from ..compat import (
     OPENAI_COMPAT,
     OPENCODE_GO_KIMI_COMPAT,
+    QWEN_CHAT_TEMPLATE_COMPAT,
     QWEN_COMPAT,
+    STRING_THINKING_COMPAT,
     ZAI_COMPAT,
     apply_request_headers,
     apply_thinking_level,
@@ -25,6 +27,11 @@ class OpenAIProvider(Provider):
     def _compat(self, model: str | None = None):
         base_url = (self.config.base_url or "").lower()
         model_name = (model or self.config.model or "").lower()
+        compat_mode = (self.config.compat_mode or "").lower()
+        if compat_mode == "qwen-chat-template":
+            return QWEN_CHAT_TEMPLATE_COMPAT
+        if compat_mode == "string-thinking":
+            return STRING_THINKING_COMPAT
         if "opencode.ai/zen/go" in base_url and model_name == "kimi-k2.6":
             return OPENCODE_GO_KIMI_COMPAT
         if "dashscope.aliyuncs.com" in base_url:

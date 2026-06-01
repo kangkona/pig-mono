@@ -57,6 +57,33 @@ def test_main_maps_name_session_id_and_excluded_tools(mock_agent_class, mock_llm
 @patch.dict("os.environ", {"OPENAI_API_KEY": "test-key"})
 @patch("pig_coding_agent.cli.LLM")
 @patch("pig_coding_agent.cli.CodingAgent")
+def test_main_passes_explicit_compat_mode_to_llm(mock_agent_class, mock_llm_class, tmp_path):
+    ctx = Mock(invoked_subcommand=None)
+    mock_llm = Mock()
+    mock_llm.config = Mock(model="test-model")
+    mock_llm_class.return_value = mock_llm
+    mock_agent = Mock()
+    mock_agent.session = None
+    mock_agent.skill_manager = None
+    mock_agent.extension_manager = None
+    mock_agent.run_interactive = Mock()
+    mock_agent_class.return_value = mock_agent
+
+    with patch("pig_coding_agent.cli.console"):
+        main(
+            ctx=ctx,
+            provider="openai",
+            workspace=tmp_path,
+            base_url="https://custom.example/v1",
+            compat_mode="qwen-chat-template",
+        )
+
+    assert mock_llm_class.call_args.kwargs["compat_mode"] == "qwen-chat-template"
+
+
+@patch.dict("os.environ", {"OPENAI_API_KEY": "test-key"})
+@patch("pig_coding_agent.cli.LLM")
+@patch("pig_coding_agent.cli.CodingAgent")
 def test_json_mode_does_not_print_rich_startup_to_stdout(
     mock_agent_class, mock_llm_class, tmp_path
 ):
