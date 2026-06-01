@@ -82,6 +82,9 @@ def main(
     if ctx.invoked_subcommand is not None:
         return
     protocol_mode = mode in {"json", "rpc"}
+    resolved_verbose = bool(verbose) if isinstance(verbose, bool) else True
+    if protocol_mode:
+        resolved_verbose = False
 
     # Get API key
     api_key = os.getenv(f"{provider.upper()}_API_KEY")
@@ -149,7 +152,7 @@ def main(
     agent = CodingAgent(
         llm=llm,
         workspace=str(workspace),
-        verbose=verbose,
+        verbose=resolved_verbose,
         session_name=name or session_name,
         session_id=session_id,
         session_path=session_path,

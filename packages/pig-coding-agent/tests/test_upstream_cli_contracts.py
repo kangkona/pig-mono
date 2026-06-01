@@ -78,6 +78,34 @@ def test_json_mode_does_not_print_rich_startup_to_stdout(
 
     run_json_mode.assert_called_once_with(mock_agent)
     console.print.assert_not_called()
+    assert mock_agent_class.call_args.kwargs["verbose"] is False
+
+
+@patch.dict("os.environ", {"OPENAI_API_KEY": "test-key"})
+@patch("pig_coding_agent.cli.LLM")
+@patch("pig_coding_agent.cli.CodingAgent")
+def test_rpc_mode_reserves_stdout_by_disabling_verbose_startup(
+    mock_agent_class, mock_llm_class, tmp_path
+):
+    ctx = Mock(invoked_subcommand=None)
+    mock_llm = Mock()
+    mock_llm.config = Mock(model="test-model")
+    mock_llm_class.return_value = mock_llm
+    mock_agent = Mock()
+    mock_agent.session = None
+    mock_agent.skill_manager = None
+    mock_agent.extension_manager = None
+    mock_agent_class.return_value = mock_agent
+
+    with (
+        patch("pig_coding_agent.cli.run_rpc_mode") as run_rpc_mode,
+        patch("pig_coding_agent.cli.console") as console,
+    ):
+        main(ctx=ctx, provider="openai", workspace=tmp_path, mode="rpc")
+
+    run_rpc_mode.assert_called_once_with(mock_agent)
+    console.print.assert_not_called()
+    assert mock_agent_class.call_args.kwargs["verbose"] is False
 
 
 def test_rpc_bash_can_exclude_output_from_context(monkeypatch) -> None:
