@@ -1,5 +1,6 @@
 """Tests for CLI commands."""
 
+import io
 import os
 from pathlib import Path
 from unittest.mock import Mock, patch
@@ -280,4 +281,29 @@ def test_run_json_mode_cleans_up_extensions_on_shutdown():
     ):
         run_json_mode(agent)
 
+    agent.extension_manager.cleanup.assert_called_once()
+
+
+def test_run_json_mode_piped_input_emits_shutdown_reason_and_cleanup(monkeypatch):
+    """Piped JSON mode should still terminate with explicit shutdown semantics."""
+    from pig_coding_agent.cli import run_json_mode
+
+    agent = Mock()
+    agent.agent.run.return_value = Mock(content="done")
+    agent.extension_manager = Mock()
+    json_mode = Mock()
+
+    monkeypatch.setattr("sys.stdin", io.StringIO('{"message":"hello"}\n'))
+
+    with (
+        patch("select.select", return_value=([object()], [], [])),
+        patch("pig_agent_core.JSONOutputMode", return_value=json_mode),
+    ):
+        run_json_mode(agent)
+
+    json_mode.emit_event.assert_any_call("shutdown", {"reason": "eof"})
+    agent.extension_manager.emit_event.assert_called_once_with(
+        "session_shutdown",
+        {"reason": "eof"},
+    )
     agent.extension_manager.cleanup.assert_called_once()
