@@ -124,6 +124,15 @@ class GoogleProvider(Provider):
 
         return None
 
+    @staticmethod
+    def _thinking_config(level: str | None):
+        """Map pig thinking levels onto google-genai ThinkingConfig."""
+        if level is None:
+            return None
+        if level == "off":
+            return types.ThinkingConfig(thinking_budget=0)
+        return types.ThinkingConfig(thinking_level=level)
+
     def complete(
         self,
         messages: list[Message],
@@ -145,6 +154,7 @@ class GoogleProvider(Provider):
             max_output_tokens=max_tokens,
             tools=tools,
             system_instruction=system_instruction,
+            thinking_config=self._thinking_config(kwargs.get("thinking_level")),
         )
 
         # Generate content
@@ -206,6 +216,7 @@ class GoogleProvider(Provider):
             max_output_tokens=max_tokens,
             tools=tools,
             system_instruction=system_instruction,
+            thinking_config=self._thinking_config(kwargs.get("thinking_level")),
         )
 
         # Generate content with streaming
@@ -243,6 +254,7 @@ class GoogleProvider(Provider):
             max_output_tokens=max_tokens,
             tools=tools,
             system_instruction=system_instruction,
+            thinking_config=self._thinking_config(kwargs.get("thinking_level")),
         )
 
         # Generate content (async)
@@ -304,6 +316,7 @@ class GoogleProvider(Provider):
             max_output_tokens=max_tokens,
             tools=tools,
             system_instruction=system_instruction,
+            thinking_config=self._thinking_config(kwargs.get("thinking_level")),
         )
 
         # Generate content with streaming (async)
