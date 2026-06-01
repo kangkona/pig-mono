@@ -168,6 +168,45 @@ def test_openrouter_sets_session_id_header_for_affinity() -> None:
     assert create.call_args.kwargs["extra_headers"] == {"session-id": "session-abc"}
 
 
+def test_openrouter_reasoning_models_send_explicit_reasoning_off_payload() -> None:
+    create = Mock(return_value=_completion_response())
+    client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+
+    with (
+        patch("pig_llm.providers.openrouter.openai.OpenAI", return_value=client),
+        patch("pig_llm.providers.openrouter.openai.AsyncOpenAI", return_value=client),
+    ):
+        provider = OpenRouterProvider(Config(provider="openrouter", api_key="test"))
+
+    provider.complete(
+        [Message(role="user", content="hello")],
+        model="deepseek/deepseek-r1",
+        thinking_level="off",
+    )
+
+    assert create.call_args.kwargs["reasoning"] == {"effort": "none"}
+
+
+def test_openrouter_reasoning_models_use_nested_reasoning_payload_when_enabled() -> None:
+    create = Mock(return_value=_completion_response())
+    client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+
+    with (
+        patch("pig_llm.providers.openrouter.openai.OpenAI", return_value=client),
+        patch("pig_llm.providers.openrouter.openai.AsyncOpenAI", return_value=client),
+    ):
+        provider = OpenRouterProvider(Config(provider="openrouter", api_key="test"))
+
+    provider.complete(
+        [Message(role="user", content="hello")],
+        model="deepseek/deepseek-r1",
+        thinking_level="high",
+    )
+
+    assert create.call_args.kwargs["reasoning"] == {"effort": "high"}
+    assert "reasoning_effort" not in create.call_args.kwargs
+
+
 def test_anthropic_opus_47_omits_temperature_param() -> None:
     create = Mock(return_value=_anthropic_completion_response())
     client = SimpleNamespace(messages=SimpleNamespace(create=create))

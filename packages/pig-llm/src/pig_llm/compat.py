@@ -93,6 +93,14 @@ OPENAI_COMPAT = ProviderCompat(
 OPENROUTER_COMPAT = ProviderCompat(
     system_role_policy="system",
     max_output_token_policy="send_when_explicit",
+    thinking_level_map={
+        "off": {"effort": "none"},
+        "minimal": {"effort": "low"},
+        "low": {"effort": "low"},
+        "medium": {"effort": "medium"},
+        "high": {"effort": "high"},
+        "xhigh": {"effort": "xhigh"},
+    },
     context_overflow_patterns=COMMON_CONTEXT_OVERFLOW_PATTERNS,
     quota_or_billing_patterns=COMMON_QUOTA_OR_BILLING_PATTERNS,
     retryable_patterns=COMMON_RETRYABLE_PATTERNS,
@@ -185,6 +193,11 @@ def apply_thinking_level(kwargs: dict[str, Any], compat: ProviderCompat) -> dict
         next_kwargs.pop("thinking", None)
         next_kwargs.pop("reasoning", None)
         next_kwargs.pop("reasoning_effort", None)
+        return next_kwargs
+
+    if compat is OPENROUTER_COMPAT:
+        next_kwargs["reasoning"] = mapped
+        next_kwargs.pop("thinking", None)
         return next_kwargs
 
     next_kwargs["thinking"] = mapped
