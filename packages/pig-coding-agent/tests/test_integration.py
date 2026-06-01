@@ -228,6 +228,27 @@ def test_extensions_command(mock_llm, temp_workspace):
     agent.ui.system.assert_called()
 
 
+def test_queue_command_reports_remaining_followups_after_single_drain(mock_llm, temp_workspace):
+    agent = CodingAgent(
+        llm=mock_llm,
+        workspace=str(temp_workspace),
+        verbose=False,
+    )
+    agent.ui = Mock()
+
+    agent.agent.message_queue.add_followup("F1")
+    agent.agent.message_queue.add_followup("F2")
+
+    drained = agent.agent.message_queue.get_followup_messages()
+    assert [m.content for m in drained] == ["F1"]
+
+    agent._show_queue()
+
+    agent.ui.panel.assert_called()
+    queue_text = agent.ui.panel.call_args.args[0]
+    assert "F2" in queue_text
+
+
 def test_skill_invocation(mock_llm, temp_workspace):
     """Test invoking a skill."""
     # Create skill
