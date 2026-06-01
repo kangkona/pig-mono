@@ -238,13 +238,14 @@ class ExtensionManager:
 
         return extensions
 
-    def cleanup(self) -> None:
+    def cleanup(self, reason: str = "normal") -> None:
         """Tear down loaded extensions for shutdown paths.
 
         Current extensions are plain Python modules without an explicit unload
         hook, so cleanup is intentionally conservative: clear the loaded-module
         registry and command/event handler state.
         """
+        self.emit_event("session_shutdown", {"reason": reason})
         self.extensions.clear()
         self.api._commands.clear()
         self.api._event_handlers.clear()
