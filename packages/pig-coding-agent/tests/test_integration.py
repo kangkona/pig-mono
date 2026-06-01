@@ -323,6 +323,25 @@ def test_run_interactive_emits_session_shutdown_reason_on_clean_exit(mock_llm, t
     )
 
 
+def test_run_interactive_cleans_up_extensions_on_shutdown(mock_llm, temp_workspace):
+    agent = CodingAgent(
+        llm=mock_llm,
+        workspace=str(temp_workspace),
+        verbose=False,
+        enable_extensions=False,
+    )
+    agent.ui = Mock()
+    agent.extension_manager = Mock()
+
+    prompt = Mock()
+    prompt.ask.side_effect = EOFError()
+
+    with patch("pig_coding_agent.agent.InteractivePrompt", return_value=prompt):
+        agent.run_interactive()
+
+    agent.extension_manager.cleanup.assert_called_once()
+
+
 def test_skill_invocation(mock_llm, temp_workspace):
     """Test invoking a skill."""
     # Create skill

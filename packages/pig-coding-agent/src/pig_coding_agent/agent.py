@@ -335,6 +335,10 @@ When generating code, provide clean, well-documented, production-ready code.
                     )
                 except Exception:
                     pass
+                try:
+                    self.extension_manager.cleanup()
+                except Exception:
+                    pass
 
             # Clean up queued messages
             if self.agent.message_queue:

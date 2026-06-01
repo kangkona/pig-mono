@@ -238,6 +238,17 @@ class ExtensionManager:
 
         return extensions
 
+    def cleanup(self) -> None:
+        """Tear down loaded extensions for shutdown paths.
+
+        Current extensions are plain Python modules without an explicit unload
+        hook, so cleanup is intentionally conservative: clear the loaded-module
+        registry and command/event handler state.
+        """
+        self.extensions.clear()
+        self.api._commands.clear()
+        self.api._event_handlers.clear()
+
     def load_from_directory(self, directory: Path | str) -> None:
         """Load all extensions from a directory.
 
