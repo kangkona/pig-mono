@@ -5,6 +5,7 @@ from unittest.mock import Mock, patch
 import pytest
 from pig_agent_core import ExtensionManager
 from pig_coding_agent.agent import CodingAgent
+from pig_tui import hyperlink
 
 
 @pytest.fixture
@@ -257,6 +258,31 @@ def extension(api):
     agent._reload_resources()
 
     assert "hello" not in agent.extension_manager.api.get_commands()
+
+
+def test_export_session_uses_clickable_file_hyperlink_when_supported(
+    mock_llm, temp_workspace, monkeypatch
+):
+    agent = CodingAgent(
+        llm=mock_llm,
+        workspace=str(temp_workspace),
+        verbose=False,
+    )
+    agent.ui = Mock()
+
+    export_path = temp_workspace / "demo.html"
+
+    monkeypatch.setenv("TERM_PROGRAM", "WezTerm")
+
+    with patch("pig_agent_core.SessionExporter.export_to_html", return_value=export_path):
+        agent._export_session(None)
+
+    expected = hyperlink(
+        str(export_path.absolute()),
+        f"file://{export_path.absolute()}",
+    )
+    messages = [call.args[0] for call in agent.ui.system.call_args_list]
+    assert f"  Open in browser: {expected}" in messages
 
 
 def test_reload_resources_clears_stale_extension_handlers(mock_llm, temp_workspace):

@@ -13,7 +13,7 @@ from pig_agent_core import (
 )
 from pig_agent_core.tools import Tool
 from pig_llm import LLM
-from pig_tui import ChatUI, InteractivePrompt
+from pig_tui import ChatUI, InteractivePrompt, hyperlink
 
 from .billing import CostTracker
 from .file_reference import FileReferenceParser
@@ -819,7 +819,8 @@ Files are automatically read and added to context!
                 self.session, output_path, title=self.session.name
             )
             self.ui.system(f"✓ Exported to: {exported}")
-            self.ui.system(f"  Open in browser: file://{exported.absolute()}")
+            export_url = f"file://{exported.absolute()}"
+            self.ui.system(f"  Open in browser: {hyperlink(str(exported.absolute()), export_url)}")
         except Exception as e:
             self.ui.error(f"Export failed: {e}")
 
