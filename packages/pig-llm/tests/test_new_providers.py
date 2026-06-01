@@ -1,6 +1,10 @@
 """Tests for newly added providers."""
 
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, Mock, patch
+
 import pytest
+from pig_llm.config import Config
 
 
 class TestNewProviders:
@@ -81,3 +85,56 @@ class TestProviderRegistration:
         # This test requires dependencies to be installed
         # Mark as integration test if needed
         pytest.skip("Requires dependencies and API keys - integration test")
+
+
+@pytest.mark.parametrize(
+    ("module_name", "class_name", "base_url"),
+    [
+        ("deepseek", "DeepSeekProvider", "https://api.deepseek.com"),
+        ("together", "TogetherProvider", "https://api.together.xyz/v1"),
+        ("xai", "XAIProvider", "https://api.x.ai/v1"),
+        ("perplexity", "PerplexityProvider", "https://api.perplexity.ai"),
+        ("cerebras", "CerebrasProvider", "https://api.cerebras.ai/v1"),
+    ],
+)
+def test_openai_compatible_providers_send_session_affinity_headers(
+    module_name: str,
+    class_name: str,
+    base_url: str,
+):
+    create = Mock(
+        return_value=SimpleNamespace(
+            id="resp-1",
+            model="test-model",
+            choices=[
+                SimpleNamespace(
+                    message=SimpleNamespace(content="ok", tool_calls=None),
+                    finish_reason="stop",
+                )
+            ],
+            usage=SimpleNamespace(prompt_tokens=1, completion_tokens=1, total_tokens=2),
+        )
+    )
+    sync_client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+    async_client = SimpleNamespace(
+        chat=SimpleNamespace(completions=SimpleNamespace(create=AsyncMock()))
+    )
+
+    with (
+        patch(f"pig_llm.providers.{module_name}.openai.OpenAI", return_value=sync_client),
+        patch(
+            f"pig_llm.providers.{module_name}.openai.AsyncOpenAI",
+            return_value=async_client,
+        ),
+    ):
+        module = __import__(f"pig_llm.providers.{module_name}", fromlist=[class_name])
+        provider_cls = getattr(module, class_name)
+        provider = provider_cls(Config(provider=module_name, api_key="test", base_url=base_url))
+
+    provider.complete(
+        [SimpleNamespace(role="user", content="hello", metadata=None)],
+        model="test-model",
+        session_id="session-42",
+    )
+
+    assert create.call_args.kwargs["extra_headers"]["session-id"] == "session-42"
