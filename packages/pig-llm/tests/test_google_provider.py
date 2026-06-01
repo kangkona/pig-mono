@@ -3,8 +3,12 @@
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
 
+import pytest
 from pig_llm.config import Config
 from pig_llm.models import Message
+
+pytest.importorskip("google.genai")
+
 from pig_llm.providers.google import GoogleProvider
 
 
