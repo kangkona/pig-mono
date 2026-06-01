@@ -351,6 +351,7 @@ def test_run_interactive_emits_session_shutdown_reason_on_interrupt(mock_llm, te
         "session_shutdown",
         {"reason": "interrupt"},
     )
+    agent.extension_manager.cleanup.assert_called_once()
 
 
 def test_run_interactive_emits_session_shutdown_reason_on_clean_exit(mock_llm, temp_workspace):

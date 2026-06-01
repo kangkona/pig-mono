@@ -263,7 +263,7 @@ When generating code, provide clean, well-documented, production-ready code.
                     user_input = prompt.ask("You> ")
                 except KeyboardInterrupt:
                     shutdown_reason = "interrupt"
-                    continue
+                    break
                 except EOFError:
                     shutdown_reason = "eof"
                     break
