@@ -94,7 +94,14 @@ def supports_osc8_hyperlinks(env: dict[str, str] | None = None) -> bool:
     env = env or os.environ
     if env.get("NO_COLOR"):
         return False
-    if env.get("TMUX") or env.get("STY") or env.get("TERM", "").startswith("screen"):
+    tmux_features = {
+        feature.strip().lower()
+        for feature in env.get("TMUX_CLIENT_TERMFEATURES", "").split(",")
+        if feature.strip()
+    }
+    if env.get("TMUX") or env.get("TERM", "").startswith("tmux"):
+        return "hyperlinks" in tmux_features
+    if env.get("STY") or env.get("TERM", "").startswith("screen"):
         return False
     term_program = env.get("TERM_PROGRAM", "").lower()
     if term_program in {"wezterm", "vscode", "iterm.app", "ghostty"}:

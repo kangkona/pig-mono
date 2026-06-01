@@ -58,6 +58,30 @@ def test_hyperlink_is_disabled_under_tmux_even_if_terminal_supports_it() -> None
     assert linked == "file.py"
 
 
+def test_hyperlink_is_enabled_under_tmux_when_client_supports_it() -> None:
+    linked = hyperlink(
+        "file.py",
+        "file:///tmp/file.py",
+        env={
+            "TERM_PROGRAM": "WezTerm",
+            "TMUX": "/tmp/tmux-1/default,123,0",
+            "TMUX_CLIENT_TERMFEATURES": "clipboard,hyperlinks,RGB",
+        },
+    )
+
+    assert linked.startswith("\033]8;;file:///tmp/file.py")
+    assert linked.endswith("\033]8;;\033\\")
+
+
+def test_tmux_termname_uses_client_hyperlink_capability() -> None:
+    assert supports_osc8_hyperlinks(
+        {
+            "TERM": "tmux-256color",
+            "TMUX_CLIENT_TERMFEATURES": "hyperlinks",
+        }
+    )
+
+
 def test_terminal_size_uses_environment_fallback() -> None:
     assert terminal_size(default=(1, 1)) in {(1, 1), terminal_size(default=(1, 1))}
     assert supports_osc8_hyperlinks({"WT_SESSION": "1"})
