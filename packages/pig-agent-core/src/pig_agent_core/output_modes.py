@@ -114,7 +114,6 @@ class RPCMode:
             return json.loads(line)
         except KeyboardInterrupt:
             self.last_shutdown_reason = "interrupt"
-            self.send_event("shutdown", {"reason": "interrupt"})
             return None
         except json.JSONDecodeError as e:
             self.send_error(f"Invalid JSON: {e}")
