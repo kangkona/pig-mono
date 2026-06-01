@@ -61,6 +61,7 @@ class CodingAgent:
         self.llm = llm or LLM()
         self.verbose = verbose
         self._session_start_reason = "startup"
+        self._previous_session_file: str | None = None
 
         # Initialize resilience (ProfileManager)
         self.profile_manager = None
@@ -81,6 +82,7 @@ class CodingAgent:
         if session_path and session_path.exists():
             self.session = Session.load(session_path)
             self._session_start_reason = "resume"
+            self._previous_session_file = str(session_path)
             print(f"✓ Loaded session: {self.session.name}")
         else:
             resolved_session_path = None
@@ -91,6 +93,7 @@ class CodingAgent:
             if resolved_session_path and resolved_session_path.exists():
                 self.session = Session.load(resolved_session_path)
                 self._session_start_reason = "resume"
+                self._previous_session_file = str(resolved_session_path)
                 print(f"✓ Loaded session: {self.session.name}")
             else:
                 self.session = Session(
@@ -157,10 +160,10 @@ class CodingAgent:
         self.agent.ui = self.ui
 
         if self.extension_manager:
-            self.extension_manager.emit_event(
-                "session_start",
-                {"reason": self._session_start_reason},
-            )
+            event = {"reason": self._session_start_reason}
+            if self._previous_session_file is not None:
+                event["previousSessionFile"] = self._previous_session_file
+            self.extension_manager.emit_event("session_start", event)
 
     def _load_extensions(self):
         """Load extensions from standard directories."""
