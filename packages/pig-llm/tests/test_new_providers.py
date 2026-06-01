@@ -225,6 +225,7 @@ def test_azure_openai_provider_preserves_explicit_max_tokens() -> None:
 
 
 def test_groq_provider_uses_session_affinity_headers() -> None:
+    pytest.importorskip("groq")
     create = Mock(
         return_value=SimpleNamespace(
             id="resp-1",
@@ -261,6 +262,7 @@ def test_groq_provider_uses_session_affinity_headers() -> None:
 
 
 def test_groq_provider_preserves_explicit_max_tokens() -> None:
+    pytest.importorskip("groq")
     create = Mock(
         return_value=SimpleNamespace(
             id="resp-1",
