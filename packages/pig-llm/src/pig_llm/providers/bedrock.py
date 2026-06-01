@@ -63,6 +63,7 @@ class BedrockProvider(Provider):
     ) -> dict:
         """Build request body for Bedrock."""
         system_prompt, converted_messages = self._convert_messages(messages)
+        resolved_max_tokens = max_tokens if max_tokens is not None else self.config.max_tokens
 
         body = {
             "messages": converted_messages,
@@ -71,8 +72,8 @@ class BedrockProvider(Provider):
             },
         }
 
-        if max_tokens:
-            body["inferenceConfig"]["maxTokens"] = max_tokens
+        if resolved_max_tokens:
+            body["inferenceConfig"]["maxTokens"] = resolved_max_tokens
 
         if system_prompt:
             body["system"] = [{"text": system_prompt}]

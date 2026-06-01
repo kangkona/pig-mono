@@ -85,6 +85,37 @@ def test_bedrock_provider_forwards_custom_request_headers() -> None:
     assert converse.call_args.kwargs["requestMetadata"] == {"X-Test": "1"}
 
 
+def test_bedrock_provider_uses_model_output_cap_by_default() -> None:
+    pytest.importorskip("boto3")
+
+    converse = Mock(
+        return_value={
+            "output": {"message": {"content": [{"text": "ok"}]}},
+            "usage": {"inputTokens": 1, "outputTokens": 1, "totalTokens": 2},
+            "stopReason": "end_turn",
+            "ResponseMetadata": {"RequestId": "req-1"},
+        }
+    )
+    client = SimpleNamespace(converse=converse)
+
+    with (
+        patch("pig_llm.providers.bedrock.boto3.client", return_value=client),
+        patch("pig_llm.providers.bedrock.BotoConfig", return_value=Mock()),
+    ):
+        from pig_llm.providers.bedrock import BedrockProvider
+
+        provider = BedrockProvider(
+            Config(provider="bedrock", api_key="us-east-1", max_tokens=16384)
+        )
+
+    provider.complete(
+        [SimpleNamespace(role="user", content="hello", metadata=None)],
+        model="anthropic.claude-opus-4-1",
+    )
+
+    assert converse.call_args.kwargs["inferenceConfig"]["maxTokens"] == 16384
+
+
 class TestProviderRegistration:
     """Test that providers are registered in client."""
 
