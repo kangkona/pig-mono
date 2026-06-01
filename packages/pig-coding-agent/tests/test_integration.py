@@ -271,6 +271,28 @@ def test_run_interactive_emits_session_shutdown_reason_on_eof(mock_llm, temp_wor
     )
 
 
+def test_run_interactive_emits_session_shutdown_reason_on_interrupt(mock_llm, temp_workspace):
+    agent = CodingAgent(
+        llm=mock_llm,
+        workspace=str(temp_workspace),
+        verbose=False,
+        enable_extensions=False,
+    )
+    agent.ui = Mock()
+    agent.extension_manager = Mock()
+
+    prompt = Mock()
+    prompt.ask.side_effect = KeyboardInterrupt()
+
+    with patch("pig_coding_agent.agent.InteractivePrompt", return_value=prompt):
+        agent.run_interactive()
+
+    agent.extension_manager.emit_event.assert_called_once_with(
+        "session_shutdown",
+        {"reason": "interrupt"},
+    )
+
+
 def test_skill_invocation(mock_llm, temp_workspace):
     """Test invoking a skill."""
     # Create skill
