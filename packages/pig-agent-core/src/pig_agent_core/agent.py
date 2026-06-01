@@ -15,7 +15,7 @@ from .models import AgentState
 from .observability.events import AgentEventCallback, BillingHook
 from .resilience.profile import ProfileManager
 from .resilience.retry import resilient_streaming_call
-from .tools import Tool
+from .tools import Tool, ToolResult
 from .tools.registry import ToolRegistry
 
 
@@ -41,6 +41,9 @@ class Agent:
         billing_hook: BillingHook | None = None,
         max_rounds: int | None = None,
         max_rounds_with_plan: int | None = None,
+        before_tool_call: Callable[[str, dict[str, Any]], ToolResult | None] | None = None,
+        after_tool_call: Callable[[str, dict[str, Any], ToolResult], ToolResult | None]
+        | None = None,
     ):
         """Initialize agent.
 
@@ -78,6 +81,8 @@ class Agent:
         self.memory_provider = memory_provider or InMemoryProvider()
         self.system_prompt_builder = system_prompt_builder
         self.billing_hook = billing_hook
+        self.before_tool_call = before_tool_call
+        self.after_tool_call = after_tool_call
 
         # Use enhanced ToolRegistry from tools/registry.py
         self.registry = ToolRegistry()
@@ -98,6 +103,75 @@ class Agent:
         self.message_queue = MessageQueue()
         self._plan_used = False  # Track if plan tool has been used
         self._rounds_since_plan = 0  # Track rounds since plan tool
+
+    @staticmethod
+    def _as_tool_result(value: Any) -> ToolResult:
+        """Normalize arbitrary tool return values into ToolResult."""
+        if isinstance(value, ToolResult):
+            return value
+        return ToolResult(ok=True, data=value)
+
+    def _execute_sync_tool_call(self, tool_call: dict[str, Any]) -> tuple[dict[str, str], bool]:
+        """Execute one sync tool call.
+
+        Returns the serialized tool message and whether the current tool batch
+        should abort before executing sibling calls.
+        """
+        tool_name = tool_call.get("function", {}).get("name")
+        tool_args = json.loads(tool_call.get("function", {}).get("arguments", "{}"))
+
+        self._log(f"[cyan]→ Calling tool: {tool_name}({tool_args})[/cyan]")
+
+        if self.before_tool_call:
+            preflight = self.before_tool_call(tool_name, tool_args)
+            if preflight is not None:
+                result = self._as_tool_result(preflight)
+                return self._tool_message(tool_call, tool_name, result), bool(
+                    result.meta.get("abort_batch")
+                )
+
+        if self.on_tool_start:
+            self.on_tool_start(tool_name, tool_args)
+
+        try:
+            if hasattr(self.registry, "execute_sync"):
+                result = self.registry.execute_sync(tool_name, tool_args)
+            else:
+                raw_result = self.registry.execute(tool_name, **tool_args)
+                result = self._as_tool_result(raw_result)
+            self._log(f"[green]✓ Result: {result.data if result.ok else result.error}[/green]")
+
+            if self.after_tool_call:
+                try:
+                    override = self.after_tool_call(tool_name, tool_args, result)
+                    if override is not None:
+                        result = self._as_tool_result(override)
+                except Exception as exc:
+                    result = ToolResult(ok=False, error=f"Error: {exc}")
+
+            if self.on_tool_end:
+                self.on_tool_end(tool_name, result)
+        except Exception as e:
+            result = ToolResult(ok=False, error=f"Error: {e}")
+            self._log(f"[red]✗ {result.error}[/red]")
+
+        return self._tool_message(tool_call, tool_name, result), False
+
+    @staticmethod
+    def _tool_message(
+        tool_call: dict[str, Any],
+        tool_name: str,
+        result: ToolResult,
+    ) -> dict[str, Any]:
+        """Convert ToolResult into a history-ready tool message."""
+        content = result.data if result.ok else result.error
+        return {
+            "tool_call_id": tool_call.get("id"),
+            "role": "tool",
+            "name": tool_name,
+            "content": str(content),
+            "result": result,
+        }
 
     def _log(self, message: str, style: str = "") -> None:
         """Log message if verbose.
@@ -153,42 +227,12 @@ class Agent:
             if hasattr(response, "tool_calls") and response.tool_calls:
                 self._log(f"[yellow]Tool calls requested: {len(response.tool_calls)}[/yellow]")
 
-                # Execute tools
                 tool_results = []
                 for tool_call in response.tool_calls:
-                    tool_name = tool_call.get("function", {}).get("name")
-                    tool_args = json.loads(tool_call.get("function", {}).get("arguments", "{}"))
-
-                    self._log(f"[cyan]→ Calling tool: {tool_name}({tool_args})[/cyan]")
-
-                    if self.on_tool_start:
-                        self.on_tool_start(tool_name, tool_args)
-
-                    try:
-                        result = self.registry.execute(tool_name, **tool_args)
-                        tool_results.append(
-                            {
-                                "tool_call_id": tool_call.get("id"),
-                                "role": "tool",
-                                "name": tool_name,
-                                "content": str(result),
-                            }
-                        )
-                        self._log(f"[green]✓ Result: {result}[/green]")
-
-                        if self.on_tool_end:
-                            self.on_tool_end(tool_name, result)
-                    except Exception as e:
-                        error_msg = f"Error: {e}"
-                        tool_results.append(
-                            {
-                                "tool_call_id": tool_call.get("id"),
-                                "role": "tool",
-                                "name": tool_name,
-                                "content": error_msg,
-                            }
-                        )
-                        self._log(f"[red]✗ {error_msg}[/red]")
+                    tool_result, abort_batch = self._execute_sync_tool_call(tool_call)
+                    tool_results.append(tool_result)
+                    if abort_batch:
+                        break
 
                 # Add assistant message and tool results to history
                 self.history.append(
@@ -209,6 +253,15 @@ class Agent:
                             },
                         )
                     )
+
+                if tool_results and all(
+                    tr.get("result") and tr["result"].ok and tr["result"].meta.get("terminate")
+                    for tr in tool_results
+                ):
+                    final_content = "\n".join(str(tr["content"]) for tr in tool_results)
+                    final_response = Response(content=final_content, model=self.llm.config.model)
+                    self.history.append(Message(role="assistant", content=final_response.content))
+                    return final_response
 
                 # Check for steering messages after tool execution
                 if check_queue and self.message_queue.has_steering():

@@ -1,6 +1,12 @@
 """Tests for token_counter module."""
 
-from pig_agent_core.token_counter import CHARS_PER_TOKEN, clear_cache, count_tokens
+from pig_agent_core.token_counter import (
+    CHARS_PER_TOKEN,
+    IMAGE_TOKEN_ESTIMATE,
+    clear_cache,
+    count_message_tokens,
+    count_tokens,
+)
 
 
 class TestTokenCounter:
@@ -124,6 +130,24 @@ def hello():
         text = "word " * 10000
         result = count_tokens(text)
         assert result > 1000  # Should have many tokens
+
+    def test_message_count_includes_image_and_tool_tokens(self):
+        """Test that multimodal and tool content participates in context estimates."""
+        messages = [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": "Look at this"},
+                    {"type": "image_url", "image_url": {"url": "data:image/png;base64,abc"}},
+                ],
+            },
+            {"role": "tool", "content": "x" * 1000, "tool_call_id": "call-1"},
+        ]
+
+        result = count_message_tokens(messages)
+
+        assert result >= IMAGE_TOKEN_ESTIMATE
+        assert result > count_tokens("Look at this")
 
     def test_estimation_consistency(self):
         """Test that estimation is consistent."""

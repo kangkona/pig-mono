@@ -1,0 +1,228 @@
+"""Regression tests for behavior absorbed from recent pi-mono agent changes."""
+
+from __future__ import annotations
+
+import json
+from types import SimpleNamespace
+
+from pig_agent_core.agent import Agent
+from pig_agent_core.session import Session, SessionTree, serialize_compaction_tool_result
+from pig_agent_core.tools import ToolResult
+
+
+def test_session_tree_loads_large_jsonl_incrementally(tmp_path) -> None:
+    path = tmp_path / "large.jsonl"
+    entries = []
+    for i in range(2000):
+        entries.append(
+            {
+                "id": f"entry-{i}",
+                "parent_id": f"entry-{i - 1}" if i else None,
+                "timestamp": f"2026-06-01T00:00:{i % 60:02d}",
+                "role": "user" if i % 2 else "assistant",
+                "content": f"message {i}",
+                "metadata": {},
+            }
+        )
+    path.write_text("\n".join(json.dumps(entry) for entry in entries))
+
+    tree = SessionTree.from_jsonl_iter(path.open())
+
+    assert len(tree.entries) == 2000
+    assert tree.root_id == "entry-0"
+    assert tree.current_id == "entry-1999"
+
+
+def test_session_load_streams_tree_lines_without_reading_full_tail(monkeypatch, tmp_path) -> None:
+    session = Session(name="streamed", workspace=str(tmp_path), auto_save=False)
+    session.add_message("user", "hello")
+    save_path = session.save()
+
+    class GuardedFile:
+        def __init__(self, wrapped):
+            self._wrapped = wrapped
+
+        def __enter__(self):
+            self._wrapped.__enter__()
+            return self
+
+        def __exit__(self, *args):
+            return self._wrapped.__exit__(*args)
+
+        def readline(self, *args, **kwargs):
+            return self._wrapped.readline(*args, **kwargs)
+
+        def __iter__(self):
+            return iter(self._wrapped)
+
+        def read(self, *args, **kwargs):
+            raise AssertionError("Session.load should not materialize the whole JSONL tail")
+
+    real_open = open
+
+    def guarded_open(*args, **kwargs):
+        return GuardedFile(real_open(*args, **kwargs))
+
+    monkeypatch.setattr("builtins.open", guarded_open)
+
+    loaded = Session.load(save_path)
+
+    assert loaded.name == "streamed"
+    assert len(loaded.tree.entries) == 1
+
+
+def test_compaction_tool_result_serialization_is_bounded_and_structured() -> None:
+    serialized = serialize_compaction_tool_result(
+        ToolResult(ok=True, data={"content": "x" * 5000}),
+        max_chars=500,
+    )
+
+    assert len(serialized) <= 500
+    payload = json.loads(serialized)
+    assert payload["ok"] is True
+
+
+def test_session_compact_keeps_recent_messages_and_bounded_tool_summary() -> None:
+    session = Session(name="compact", auto_save=False)
+    for i in range(6):
+        session.add_message("user", f"user {i}")
+        session.add_message("tool", "x" * 2000, name="read_file")
+
+    compacted = session.compact(max_tool_chars=200)
+
+    assert len(compacted) == 6
+    summary = compacted[0]
+    assert summary.metadata["compacted"] is True
+    assert len(summary.content) < 1000
+    assert "Tool outputs:" in summary.content
+
+
+def test_agent_before_tool_call_abort_skips_sibling_tools() -> None:
+    executed: list[str] = []
+
+    class FakeLLM:
+        config = SimpleNamespace(model="fake")
+
+        def __init__(self):
+            self.calls = 0
+
+        def chat(self, messages, tools=None):
+            self.calls += 1
+            if self.calls == 1:
+                return SimpleNamespace(
+                    content="",
+                    tool_calls=[
+                        {
+                            "id": "call-1",
+                            "function": {"name": "first", "arguments": "{}"},
+                        },
+                        {
+                            "id": "call-2",
+                            "function": {"name": "second", "arguments": "{}"},
+                        },
+                    ],
+                )
+            return SimpleNamespace(content="done", tool_calls=None)
+
+    def first():
+        executed.append("first")
+        return "first"
+
+    def second():
+        executed.append("second")
+        return "second"
+
+    def before_tool_call(name, args):
+        if name == "first":
+            return ToolResult(ok=False, error="blocked", meta={"abort_batch": True})
+        return None
+
+    agent = Agent(
+        llm=FakeLLM(),
+        tools=[],
+        before_tool_call=before_tool_call,
+        verbose=False,
+    )
+    agent.registry.register("first", first, {"type": "function", "function": {"name": "first"}})
+    agent.registry.register("second", second, {"type": "function", "function": {"name": "second"}})
+
+    response = agent.run("go")
+
+    assert response.content == "done"
+    assert executed == []
+    tool_messages = [message for message in agent.history if message.role == "tool"]
+    assert len(tool_messages) == 1
+    assert "blocked" in tool_messages[0].content
+
+
+def test_agent_after_tool_call_exception_becomes_error_tool_result() -> None:
+    class FakeLLM:
+        config = SimpleNamespace(model="fake")
+
+        def __init__(self):
+            self.calls = 0
+
+        def chat(self, messages, tools=None):
+            self.calls += 1
+            if self.calls == 1:
+                return SimpleNamespace(
+                    content="",
+                    tool_calls=[
+                        {
+                            "id": "call-1",
+                            "function": {"name": "ok_tool", "arguments": "{}"},
+                        }
+                    ],
+                )
+            return SimpleNamespace(content="done", tool_calls=None)
+
+    def ok_tool():
+        return "ok"
+
+    def after_tool_call(name, args, result):
+        raise RuntimeError("after failed")
+
+    agent = Agent(llm=FakeLLM(), tools=[], after_tool_call=after_tool_call, verbose=False)
+    agent.registry.register(
+        "ok_tool", ok_tool, {"type": "function", "function": {"name": "ok_tool"}}
+    )
+
+    agent.run("go")
+
+    tool_messages = [message for message in agent.history if message.role == "tool"]
+    assert "after failed" in tool_messages[0].content
+
+
+def test_agent_terminate_tool_result_skips_follow_up_llm_call() -> None:
+    class FakeLLM:
+        config = SimpleNamespace(model="fake")
+
+        def __init__(self):
+            self.calls = 0
+
+        def chat(self, messages, tools=None):
+            self.calls += 1
+            return SimpleNamespace(
+                content="",
+                tool_calls=[
+                    {
+                        "id": "call-1",
+                        "function": {"name": "terminate", "arguments": "{}"},
+                    }
+                ],
+            )
+
+    def terminate():
+        return ToolResult(ok=True, data="finished", meta={"terminate": True})
+
+    agent = Agent(llm=FakeLLM(), tools=[], verbose=False)
+    agent.registry.register(
+        "terminate",
+        terminate,
+        {"type": "function", "function": {"name": "terminate"}},
+    )
+
+    response = agent.run("go")
+
+    assert response.content == "finished"
+    assert agent.llm.calls == 1

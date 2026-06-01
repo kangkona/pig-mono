@@ -1,6 +1,7 @@
 """Enhanced tool registry with lazy loading and execution management."""
 
 import asyncio
+import inspect
 import json
 import threading
 from collections.abc import Callable
@@ -351,6 +352,42 @@ class ToolRegistry:
                     return fallback_result
 
         return result
+
+    def execute_sync(
+        self,
+        name: str,
+        args: dict[str, Any] | None = None,
+        *,
+        user_id: str = "default",
+        meta: dict[str, Any] | None = None,
+    ) -> ToolResult:
+        """Execute a tool synchronously for the legacy Agent.run() path."""
+        args = args or {}
+        meta = meta or {}
+
+        if self.requires_confirmation(name):
+            return ToolResult(
+                ok=False,
+                error=f"Tool '{name}' requires confirmation before execution (write permission)",
+                meta={"requires_confirmation": True, "tool_name": name},
+            )
+
+        handler = self._handlers.get(name)
+        if not handler:
+            return ToolResult(ok=False, error=f"Tool '{name}' not found")
+
+        try:
+            signature = inspect.signature(handler)
+            params = list(signature.parameters)
+            if params[:4] == ["args", "user_id", "meta", "cancel"]:
+                value = handler(args, user_id, meta, None)
+            else:
+                value = handler(**args)
+            if isinstance(value, ToolResult):
+                return value
+            return ToolResult(ok=True, data=value)
+        except Exception as exc:
+            return ToolResult(ok=False, error=str(exc))
 
     async def _execute_tool(
         self,

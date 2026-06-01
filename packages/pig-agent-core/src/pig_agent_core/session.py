@@ -2,11 +2,22 @@
 
 import json
 import uuid
+from collections.abc import Iterable
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel, Field
+
+from .tools import ToolResult
+
+
+def serialize_compaction_tool_result(result: ToolResult | Any, max_chars: int = 4000) -> str:
+    """Serialize tool output for compaction without letting huge outputs dominate."""
+    if isinstance(result, ToolResult):
+        return result.serialize(max_chars=max_chars)
+
+    return ToolResult(ok=True, data=result).serialize(max_chars=max_chars)
 
 
 class SessionEntry(BaseModel):
@@ -149,22 +160,30 @@ class SessionTree:
         Returns:
             Loaded session tree
         """
+        return cls.from_jsonl_iter(jsonl.splitlines())
+
+    @classmethod
+    def from_jsonl_iter(cls, lines: Iterable[str]) -> "SessionTree":
+        """Load tree from an iterable of JSONL lines.
+
+        This avoids materializing large session files in memory before parsing.
+        """
         tree = cls()
 
-        for line in jsonl.strip().split("\n"):
+        last_entry: SessionEntry | None = None
+        for line in lines:
+            line = line.strip()
             if not line:
                 continue
 
             entry = SessionEntry.model_validate_json(line)
             tree.entries[entry.id] = entry
+            last_entry = entry
 
-            # Find root
             if entry.parent_id is None:
                 tree.root_id = entry.id
 
-        # Set current to last entry (chronologically)
-        if tree.entries:
-            last_entry = max(tree.entries.values(), key=lambda e: e.timestamp)
+        if last_entry is not None:
             tree.current_id = last_entry.id
 
         return tree
@@ -243,7 +262,12 @@ class Session:
         if self.auto_save:
             self.save()
 
-    def compact(self, instructions: str | None = None) -> list[SessionEntry]:
+    def compact(
+        self,
+        instructions: str | None = None,
+        *,
+        max_tool_chars: int = 1000,
+    ) -> list[SessionEntry]:
         """Compact old messages.
 
         Args:
@@ -261,20 +285,31 @@ class Session:
         # Keep recent messages
         recent = path[-5:]
 
-        # Compact older messages
+        # Compact older messages without embedding full tool payloads.
         old = path[:-5]
 
-        # Create summary (simplified - real implementation would use LLM)
+        tool_summaries = []
+        for entry in old:
+            if entry.role == "tool":
+                tool_name = entry.metadata.get("name", "tool")
+                tool_summaries.append(
+                    f"- {tool_name}: "
+                    + serialize_compaction_tool_result(entry.content, max_chars=max_tool_chars)
+                )
+
         summary_content = f"[Compacted {len(old)} messages]\n"
         if instructions:
             summary_content += f"Instructions: {instructions}\n"
         summary_content += f"Topics covered: {len({e.role for e in old})} roles"
+        if tool_summaries:
+            summary_content += "\nTool outputs:\n" + "\n".join(tool_summaries[:10])
 
         # Create compacted entry
         compacted = self.add_message(
             role="system",
             content=summary_content,
-            metadata={"compacted": True, "original_count": len(old)},
+            compacted=True,
+            original_count=len(old),
         )
 
         # Return compacted path
@@ -350,8 +385,7 @@ class Session:
             # Read header
             header = json.loads(f.readline())
 
-            # Read tree
-            tree_jsonl = f.read()
+            tree = SessionTree.from_jsonl_iter(f)
 
         # Create session
         session = cls(name=header["name"], workspace=str(path.parent.parent), auto_save=False)
@@ -360,7 +394,7 @@ class Session:
         session.created_at = datetime.fromisoformat(header["created_at"])
         session.updated_at = datetime.fromisoformat(header["updated_at"])
         session.metadata = header["metadata"]
-        session.tree = SessionTree.from_jsonl(tree_jsonl)
+        session.tree = tree
 
         return session
 
