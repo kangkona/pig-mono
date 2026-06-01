@@ -21,6 +21,10 @@ from .resilience import create_profile_manager_from_env, get_profile_status
 from .tools import CodeTools, FileTools, ShellTools
 
 
+class SessionExitRequested(Exception):
+    """Raised for explicit user-driven session exits like /exit and /quit."""
+
+
 class CodingAgent:
     """Interactive coding agent with file and code tools."""
 
@@ -318,6 +322,8 @@ When generating code, provide clean, well-documented, production-ready code.
                     self.session.add_message("user", user_input)
                     self.session.add_message("assistant", response.content)
 
+        except SessionExitRequested:
+            shutdown_reason = "normal"
         except KeyboardInterrupt:
             shutdown_reason = "interrupt"
         finally:
@@ -346,7 +352,7 @@ When generating code, provide clean, well-documented, production-ready code.
         cmd = command.lower().strip()
 
         if cmd == "/exit" or cmd == "/quit":
-            raise KeyboardInterrupt()
+            raise SessionExitRequested()
 
         elif cmd == "/clear":
             self.agent.clear_history()

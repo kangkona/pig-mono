@@ -242,3 +242,24 @@ def test_run_json_mode_emits_extension_shutdown_event_on_eof():
         "session_shutdown",
         {"reason": "eof"},
     )
+
+
+def test_run_json_mode_emits_extension_shutdown_event_on_interrupt():
+    """JSON mode should forward interrupt shutdown reasons to extensions."""
+    from pig_coding_agent.cli import run_json_mode
+
+    agent = Mock()
+    agent.extension_manager = Mock()
+    json_mode = Mock()
+
+    with (
+        patch("select.select", return_value=([], [], [])),
+        patch("builtins.input", side_effect=KeyboardInterrupt()),
+        patch("pig_agent_core.JSONOutputMode", return_value=json_mode),
+    ):
+        run_json_mode(agent)
+
+    agent.extension_manager.emit_event.assert_called_once_with(
+        "session_shutdown",
+        {"reason": "interrupt"},
+    )
