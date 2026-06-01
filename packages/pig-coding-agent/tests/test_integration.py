@@ -303,6 +303,55 @@ def test_fork_command(mock_llm, temp_workspace):
     assert len(fork_files) == 1
 
 
+def test_fork_command_switches_current_session_and_emits_fork_lifecycle(mock_llm, temp_workspace):
+    ext_dir = temp_workspace / ".agents" / "extensions"
+    ext_dir.mkdir(parents=True)
+    log_file = temp_workspace / "fork_events.log"
+
+    ext_file = ext_dir / "fork_ext.py"
+    ext_file.write_text(
+        f"""
+from pathlib import Path
+
+LOG = Path({str(log_file)!r})
+
+def extension(api):
+    @api.on("session_start")
+    def on_start(event, ctx):
+        with LOG.open("a", encoding="utf-8") as handle:
+            handle.write(
+                f"start:{{event['reason']}}:{{event.get('previousSessionFile')}}:"
+                f"{{api.agent.session.name}}\\n"
+            )
+
+    @api.on("session_shutdown")
+    def on_shutdown(event, ctx):
+        with LOG.open("a", encoding="utf-8") as handle:
+            handle.write(f"shutdown:{{event['reason']}}\\n")
+"""
+    )
+
+    agent = CodingAgent(
+        llm=mock_llm,
+        workspace=str(temp_workspace),
+        session_name="original",
+        enable_extensions=True,
+        verbose=False,
+    )
+    agent.ui = Mock()
+    agent.session.add_message("user", "Message")
+    previous_session_file = agent.session.save()
+
+    agent._handle_command("/fork test-fork")
+
+    assert agent.session.name == "test-fork"
+    assert log_file.read_text().splitlines() == [
+        "start:startup:None:original",
+        "shutdown:fork",
+        f"start:fork:{previous_session_file}:test-fork",
+    ]
+
+
 def test_compact_command(mock_llm, temp_workspace):
     """Test /compact command."""
     agent = CodingAgent(

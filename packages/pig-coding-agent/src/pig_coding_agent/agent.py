@@ -139,6 +139,7 @@ class CodingAgent:
             profile_manager=self.profile_manager,
             billing_hook=self.cost_tracker,
         )
+        self.agent.session = self.session
 
         # Initialize extension manager
         self.extension_manager = None
@@ -537,9 +538,22 @@ Tools: {len(self.agent.registry)}
 
         # Fork from last message
         name = fork_name or f"{self.session.name}-fork"
+        previous_session_file = self.session.save()
         fork = self.session.fork(conversation[-1].id, name)
-
         save_path = fork.save()
+        if self.extension_manager:
+            self.extension_manager.cleanup(reason="fork")
+
+        self.session = fork
+        self.agent.session = self.session
+
+        if self.extension_manager:
+            self._load_extensions()
+            self.extension_manager.emit_event(
+                "session_start",
+                {"reason": "fork", "previousSessionFile": str(previous_session_file)},
+            )
+
         self.ui.system(f"✓ Forked session: {name}")
         self.ui.system(f"  Copied {len(fork.tree.entries)} entries")
         self.ui.system(f"  Saved to: {save_path}")
