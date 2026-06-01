@@ -61,6 +61,10 @@ def test_google_provider_thinking_off_does_not_break_generation() -> None:
 
     provider.client.models.generate_content.assert_called_once()
 
+    config = provider.client.models.generate_content.call_args.kwargs["config"]
+    assert config.thinking_config is not None
+    assert config.thinking_config.thinking_budget == 0
+
 
 def test_google_provider_maps_thinking_level_into_thinking_config() -> None:
     response = SimpleNamespace(
@@ -79,3 +83,23 @@ def test_google_provider_maps_thinking_level_into_thinking_config() -> None:
     config = provider.client.models.generate_content.call_args.kwargs["config"]
     assert config.thinking_config is not None
     assert config.thinking_config.thinking_level is not None
+
+
+def test_google_provider_uses_google_thinking_level_enum() -> None:
+    from google.genai import types
+
+    response = SimpleNamespace(
+        candidates=[],
+        usage_metadata=None,
+        id="resp-1",
+    )
+    provider = _provider_with_client(Mock(return_value=response), AsyncMock(return_value=response))
+
+    provider.complete(
+        [Message(role="user", content="hello")],
+        model="gemini-2.5-flash",
+        thinking_level="high",
+    )
+
+    config = provider.client.models.generate_content.call_args.kwargs["config"]
+    assert config.thinking_config.thinking_level == types.ThinkingLevel.HIGH
