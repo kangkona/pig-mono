@@ -146,6 +146,9 @@ class CodingAgent:
         if len(self.prompt_manager) > 0:
             print(f"✓ Loaded {len(self.prompt_manager)} prompt templates")
 
+        if self.extension_manager:
+            self.extension_manager.emit_event("session_start", {"reason": "startup"})
+
         # Initialize file reference parser
         self.file_ref_parser = FileReferenceParser(self.workspace)
 
@@ -1054,6 +1057,7 @@ Project: .agents/config.json
             old_count = len(self.extension_manager.extensions)
             self.extension_manager.cleanup(reason="reload")
             self._load_extensions()
+            self.extension_manager.emit_event("session_start", {"reason": "reload"})
             new_count = len(self.extension_manager.extensions)
             reloaded.append(f"Extensions: {new_count} (was {old_count})")
 

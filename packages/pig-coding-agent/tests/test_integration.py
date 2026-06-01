@@ -91,6 +91,36 @@ def extension(api):
     assert len(agent.extension_manager.extensions) > 0
 
 
+def test_coding_agent_emits_session_start_on_extension_startup(mock_llm, temp_workspace):
+    ext_dir = temp_workspace / ".agents" / "extensions"
+    ext_dir.mkdir(parents=True)
+    log_file = temp_workspace / "session_events.log"
+
+    ext_file = ext_dir / "session_ext.py"
+    ext_file.write_text(
+        f"""
+from pathlib import Path
+
+LOG = Path({str(log_file)!r})
+
+def extension(api):
+    @api.on("session_start")
+    def on_start(event, ctx):
+        with LOG.open("a", encoding="utf-8") as handle:
+            handle.write(f"start:{{event['reason']}}\\n")
+"""
+    )
+
+    CodingAgent(
+        llm=mock_llm,
+        workspace=str(temp_workspace),
+        enable_extensions=True,
+        verbose=False,
+    )
+
+    assert log_file.read_text().splitlines() == ["start:startup"]
+
+
 def test_coding_agent_with_skills(mock_llm, temp_workspace):
     """Test coding agent with skills."""
     # Create skill
@@ -258,6 +288,48 @@ def extension(api):
     agent._reload_resources()
 
     assert "hello" not in agent.extension_manager.api.get_commands()
+
+
+def test_reload_resources_emits_session_shutdown_then_session_start(mock_llm, temp_workspace):
+    ext_dir = temp_workspace / ".agents" / "extensions"
+    ext_dir.mkdir(parents=True)
+    log_file = temp_workspace / "reload_events.log"
+
+    ext_file = ext_dir / "reload_ext.py"
+    ext_file.write_text(
+        f"""
+from pathlib import Path
+
+LOG = Path({str(log_file)!r})
+
+def extension(api):
+    @api.on("session_start")
+    def on_start(event, ctx):
+        with LOG.open("a", encoding="utf-8") as handle:
+            handle.write(f"start:{{event['reason']}}\\n")
+
+    @api.on("session_shutdown")
+    def on_shutdown(event, ctx):
+        with LOG.open("a", encoding="utf-8") as handle:
+            handle.write(f"shutdown:{{event['reason']}}\\n")
+"""
+    )
+
+    agent = CodingAgent(
+        llm=mock_llm,
+        workspace=str(temp_workspace),
+        enable_extensions=True,
+        verbose=False,
+    )
+    agent.ui = Mock()
+
+    agent._reload_resources()
+
+    assert log_file.read_text().splitlines() == [
+        "start:startup",
+        "shutdown:reload",
+        "start:reload",
+    ]
 
 
 def test_export_session_uses_clickable_file_hyperlink_when_supported(
