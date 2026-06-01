@@ -84,6 +84,14 @@ COMMON_RETRYABLE_PATTERNS = _compile_many(
 
 OPENAI_COMPAT = ProviderCompat(
     max_output_token_policy="send_when_explicit",
+    thinking_level_map={
+        "off": "none",
+        "minimal": "minimal",
+        "low": "low",
+        "medium": "medium",
+        "high": "high",
+        "xhigh": "xhigh",
+    },
     unsupported_params=frozenset({"max_tokens"}),
     context_overflow_patterns=COMMON_CONTEXT_OVERFLOW_PATTERNS,
     quota_or_billing_patterns=COMMON_QUOTA_OR_BILLING_PATTERNS,
@@ -266,6 +274,12 @@ def apply_thinking_level(kwargs: dict[str, Any], compat: ProviderCompat) -> dict
     if compat is OPENROUTER_COMPAT:
         next_kwargs["reasoning"] = mapped
         next_kwargs.pop("thinking", None)
+        return next_kwargs
+
+    if compat is OPENAI_COMPAT:
+        next_kwargs["reasoning_effort"] = mapped
+        next_kwargs.pop("thinking", None)
+        next_kwargs.pop("reasoning", None)
         return next_kwargs
 
     if compat is TOGETHER_COMPAT:

@@ -151,6 +151,34 @@ def test_complete_falls_back_to_choice_usage_when_response_usage_missing() -> No
     }
 
 
+def test_native_openai_maps_thinking_level_to_reasoning_effort() -> None:
+    sync_create = Mock(return_value=_completion_response())
+    provider = _provider_with_clients(sync_create, AsyncMock())
+
+    provider.complete(
+        _messages(),
+        model="gpt-5.2",
+        thinking_level="high",
+    )
+
+    assert sync_create.call_args.kwargs["reasoning_effort"] == "high"
+    assert "thinking" not in sync_create.call_args.kwargs
+
+
+def test_native_openai_maps_thinking_off_to_none_reasoning_effort() -> None:
+    sync_create = Mock(return_value=_completion_response())
+    provider = _provider_with_clients(sync_create, AsyncMock())
+
+    provider.complete(
+        _messages(),
+        model="gpt-5.2",
+        thinking_level="off",
+    )
+
+    assert sync_create.call_args.kwargs["reasoning_effort"] == "none"
+    assert "thinking" not in sync_create.call_args.kwargs
+
+
 def test_custom_qwen_base_url_uses_enable_thinking_toggle() -> None:
     sync_create = Mock(return_value=_completion_response())
     provider = _provider_with_clients(
