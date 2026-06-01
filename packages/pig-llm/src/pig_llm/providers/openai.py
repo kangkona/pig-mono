@@ -6,6 +6,7 @@ import openai
 
 from ..compat import (
     OPENAI_COMPAT,
+    OPENCODE_GO_KIMI_COMPAT,
     QWEN_COMPAT,
     ZAI_COMPAT,
     apply_request_headers,
@@ -21,8 +22,11 @@ from ._base import Provider
 class OpenAIProvider(Provider):
     """OpenAI provider implementation."""
 
-    def _compat(self):
+    def _compat(self, model: str | None = None):
         base_url = (self.config.base_url or "").lower()
+        model_name = (model or self.config.model or "").lower()
+        if "opencode.ai/zen/go" in base_url and model_name == "kimi-k2.6":
+            return OPENCODE_GO_KIMI_COMPAT
         if "dashscope.aliyuncs.com" in base_url:
             return QWEN_COMPAT
         if "api.z.ai" in base_url:
@@ -104,7 +108,7 @@ class OpenAIProvider(Provider):
         **kwargs,
     ) -> Response:
         """Generate a completion."""
-        compat = self._compat()
+        compat = self._compat(model)
         kwargs = apply_thinking_level(kwargs, compat)
         kwargs = apply_request_headers(kwargs)
         response = self.client.chat.completions.create(
@@ -136,7 +140,7 @@ class OpenAIProvider(Provider):
         **kwargs,
     ) -> Iterator[StreamChunk]:
         """Stream a completion."""
-        kwargs = apply_thinking_level(kwargs, self._compat())
+        kwargs = apply_thinking_level(kwargs, self._compat(model))
         kwargs = apply_request_headers(kwargs)
         stream = self.client.chat.completions.create(
             model=model,
@@ -165,7 +169,7 @@ class OpenAIProvider(Provider):
         **kwargs,
     ) -> Response:
         """Async generate a completion."""
-        kwargs = apply_thinking_level(kwargs, self._compat())
+        kwargs = apply_thinking_level(kwargs, self._compat(model))
         kwargs = apply_request_headers(kwargs)
         response = await self.async_client.chat.completions.create(
             model=model,
@@ -196,7 +200,7 @@ class OpenAIProvider(Provider):
         **kwargs,
     ) -> AsyncIterator[StreamChunk]:
         """Async stream a completion."""
-        kwargs = apply_thinking_level(kwargs, self._compat())
+        kwargs = apply_thinking_level(kwargs, self._compat(model))
         kwargs = apply_request_headers(kwargs)
         stream = await self.async_client.chat.completions.create(
             model=model,
