@@ -77,13 +77,22 @@ class CodingAgent:
             self.session = Session.load(session_path)
             print(f"✓ Loaded session: {self.session.name}")
         else:
-            self.session = Session(
-                name=session_name or "coding-session",
-                workspace=str(self.workspace),
-                auto_save=True,
-            )
+            resolved_session_path = None
             if session_id:
-                self.session.id = session_id
+                session_manager = SessionManager(self.workspace)
+                resolved_session_path = session_manager.find_session(session_id)
+
+            if resolved_session_path and resolved_session_path.exists():
+                self.session = Session.load(resolved_session_path)
+                print(f"✓ Loaded session: {self.session.name}")
+            else:
+                self.session = Session(
+                    name=session_name or "coding-session",
+                    workspace=str(self.workspace),
+                    auto_save=True,
+                )
+                if session_id:
+                    self.session.id = session_id
 
         # Initialize tools
         file_tools = FileTools(str(self.workspace))

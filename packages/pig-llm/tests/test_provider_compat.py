@@ -136,3 +136,22 @@ def test_async_openrouter_uses_same_system_role_policy() -> None:
     messages = create.call_args.kwargs["messages"]
     assert messages[0]["role"] == "system"
     assert "max_tokens" not in create.call_args.kwargs
+
+
+def test_openrouter_sets_session_id_header_for_affinity() -> None:
+    create = Mock(return_value=_completion_response())
+    client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+
+    with (
+        patch("pig_llm.providers.openrouter.openai.OpenAI", return_value=client),
+        patch("pig_llm.providers.openrouter.openai.AsyncOpenAI", return_value=client),
+    ):
+        provider = OpenRouterProvider(Config(provider="openrouter", api_key="test"))
+
+    provider.complete(
+        [Message(role="user", content="hello")],
+        model="moonshotai/kimi-k2.6",
+        session_id="session-abc",
+    )
+
+    assert create.call_args.kwargs["extra_headers"] == {"session-id": "session-abc"}

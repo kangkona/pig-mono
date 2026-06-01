@@ -4,7 +4,12 @@ from collections.abc import AsyncIterator, Iterator
 
 import openai
 
-from ..compat import OPENAI_COMPAT, apply_thinking_level, build_token_limit_param
+from ..compat import (
+    OPENAI_COMPAT,
+    apply_request_headers,
+    apply_thinking_level,
+    build_token_limit_param,
+)
 from ..config import Config
 from ..models import Message, Response, StreamChunk
 from ._base import Provider
@@ -89,6 +94,7 @@ class OpenAIProvider(Provider):
     ) -> Response:
         """Generate a completion."""
         kwargs = apply_thinking_level(kwargs, OPENAI_COMPAT)
+        kwargs = apply_request_headers(kwargs)
         response = self.client.chat.completions.create(
             model=model,
             messages=self._convert_messages(messages),
@@ -123,6 +129,7 @@ class OpenAIProvider(Provider):
     ) -> Iterator[StreamChunk]:
         """Stream a completion."""
         kwargs = apply_thinking_level(kwargs, OPENAI_COMPAT)
+        kwargs = apply_request_headers(kwargs)
         stream = self.client.chat.completions.create(
             model=model,
             messages=self._convert_messages(messages),
@@ -151,6 +158,7 @@ class OpenAIProvider(Provider):
     ) -> Response:
         """Async generate a completion."""
         kwargs = apply_thinking_level(kwargs, OPENAI_COMPAT)
+        kwargs = apply_request_headers(kwargs)
         response = await self.async_client.chat.completions.create(
             model=model,
             messages=self._convert_messages(messages),
@@ -185,6 +193,7 @@ class OpenAIProvider(Provider):
     ) -> AsyncIterator[StreamChunk]:
         """Async stream a completion."""
         kwargs = apply_thinking_level(kwargs, OPENAI_COMPAT)
+        kwargs = apply_request_headers(kwargs)
         stream = await self.async_client.chat.completions.create(
             model=model,
             messages=self._convert_messages(messages),

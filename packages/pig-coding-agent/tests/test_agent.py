@@ -3,6 +3,7 @@
 from unittest.mock import Mock, patch
 
 import pytest
+from pig_agent_core import Session
 from pig_coding_agent.agent import CodingAgent
 
 
@@ -161,3 +162,32 @@ def test_coding_agent_verbose_mode(mock_llm, temp_workspace):
 
     assert agent.verbose is True
     assert agent.agent.verbose is True
+
+
+def test_coding_agent_reuses_existing_session_by_session_id(mock_llm, temp_workspace):
+    session = Session(name="existing", workspace=str(temp_workspace), auto_save=False)
+    session.add_message("user", "hello")
+    save_path = session.save()
+    assert save_path.exists()
+
+    agent = CodingAgent(
+        llm=mock_llm,
+        workspace=str(temp_workspace),
+        verbose=False,
+        session_id=session.id,
+    )
+
+    assert agent.session.id == session.id
+    assert agent.session.name == "existing"
+    assert len(agent.session.tree.entries) == 1
+
+
+def test_coding_agent_creates_new_session_when_session_id_missing(mock_llm, temp_workspace):
+    agent = CodingAgent(
+        llm=mock_llm,
+        workspace=str(temp_workspace),
+        verbose=False,
+        session_id="manual-session-id",
+    )
+
+    assert agent.session.id == "manual-session-id"

@@ -101,6 +101,25 @@ def test_stream_sends_max_completion_tokens_to_openai() -> None:
     _assert_uses_max_completion_tokens(sync_create.call_args.kwargs)
 
 
+def test_complete_merges_session_id_and_custom_headers() -> None:
+    sync_create = Mock(return_value=_completion_response())
+    provider = _provider_with_clients(sync_create, AsyncMock())
+
+    provider.complete(
+        _messages(),
+        model="gpt-5.2",
+        session_id="session-123",
+        headers={"X-Test": "1"},
+    )
+
+    assert sync_create.call_args.kwargs["extra_headers"] == {
+        "session-id": "session-123",
+        "X-Test": "1",
+    }
+    assert "headers" not in sync_create.call_args.kwargs
+    assert "session_id" not in sync_create.call_args.kwargs
+
+
 @pytest.mark.asyncio
 async def test_acomplete_sends_max_completion_tokens_to_openai() -> None:
     async_create = AsyncMock(return_value=_completion_response())

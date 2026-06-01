@@ -94,6 +94,8 @@ def supports_osc8_hyperlinks(env: dict[str, str] | None = None) -> bool:
     env = env or os.environ
     if env.get("NO_COLOR"):
         return False
+    if env.get("TMUX") or env.get("STY") or env.get("TERM", "").startswith("screen"):
+        return False
     term_program = env.get("TERM_PROGRAM", "").lower()
     if term_program in {"wezterm", "vscode", "iterm.app", "ghostty"}:
         return True
