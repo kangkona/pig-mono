@@ -266,6 +266,14 @@ def run_rpc_mode(agent):
 
     rpc = RPCMode()
 
+    def emit_shutdown(reason: str) -> None:
+        rpc.send_event("shutdown", {"reason": reason})
+        if getattr(agent, "extension_manager", None):
+            agent.extension_manager.emit_event(
+                "session_shutdown",
+                {"reason": reason},
+            )
+
     def handle_request(method: str, params: dict) -> Any:
         """Handle RPC requests.
 
@@ -327,7 +335,7 @@ def run_rpc_mode(agent):
 
     # Run server
     rpc.run_server(handle_request)
-    rpc.send_event("shutdown", {"reason": "eof"})
+    emit_shutdown("eof")
 
 
 @app.command()

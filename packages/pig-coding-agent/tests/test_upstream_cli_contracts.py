@@ -123,3 +123,20 @@ def test_rpc_mode_emits_shutdown_reason_on_eof(monkeypatch) -> None:
     event = json.loads(lines[0])
     assert event["event"] == "shutdown"
     assert event["data"] == {"reason": "eof"}
+
+
+def test_rpc_mode_emits_extension_shutdown_event_on_eof(monkeypatch) -> None:
+    requests = iter([""])
+    out = io.StringIO()
+    agent = Mock()
+    agent.extension_manager = Mock()
+
+    monkeypatch.setattr("sys.stdin.readline", lambda: next(requests))
+    monkeypatch.setattr("sys.stdout", out)
+
+    run_rpc_mode(agent)
+
+    agent.extension_manager.emit_event.assert_called_once_with(
+        "session_shutdown",
+        {"reason": "eof"},
+    )
