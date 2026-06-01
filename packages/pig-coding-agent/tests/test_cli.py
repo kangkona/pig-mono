@@ -201,3 +201,23 @@ def test_run_json_mode_emits_shutdown_reason():
         "shutdown",
         {"reason": "eof"},
     )
+
+
+def test_run_json_mode_emits_interrupt_shutdown_reason():
+    """Interactive JSON mode should distinguish keyboard interrupts."""
+    from pig_coding_agent.cli import run_json_mode
+
+    agent = Mock()
+    json_mode = Mock()
+
+    with (
+        patch("select.select", return_value=([], [], [])),
+        patch("builtins.input", side_effect=KeyboardInterrupt()),
+        patch("pig_agent_core.JSONOutputMode", return_value=json_mode),
+    ):
+        run_json_mode(agent)
+
+    json_mode.emit_event.assert_any_call(
+        "shutdown",
+        {"reason": "interrupt"},
+    )
