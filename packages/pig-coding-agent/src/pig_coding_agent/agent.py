@@ -146,14 +146,15 @@ class CodingAgent:
         if len(self.prompt_manager) > 0:
             print(f"✓ Loaded {len(self.prompt_manager)} prompt templates")
 
-        if self.extension_manager:
-            self.extension_manager.emit_event("session_start", {"reason": "startup"})
-
         # Initialize file reference parser
         self.file_ref_parser = FileReferenceParser(self.workspace)
 
         # Create UI
         self.ui = ChatUI(title="Coding Agent", show_timestamps=False)
+        self.agent.ui = self.ui
+
+        if self.extension_manager:
+            self.extension_manager.emit_event("session_start", {"reason": "startup"})
 
     def _load_extensions(self):
         """Load extensions from standard directories."""

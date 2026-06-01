@@ -121,6 +121,37 @@ def extension(api):
     assert log_file.read_text().splitlines() == ["start:startup"]
 
 
+def test_coding_agent_session_start_handlers_can_access_ui(mock_llm, temp_workspace):
+    ext_dir = temp_workspace / ".agents" / "extensions"
+    ext_dir.mkdir(parents=True)
+    log_file = temp_workspace / "session_ui_ready.log"
+
+    ext_file = ext_dir / "ui_ext.py"
+    ext_file.write_text(
+        f"""
+from pathlib import Path
+
+LOG = Path({str(log_file)!r})
+
+def extension(api):
+    @api.on("session_start")
+    def on_start(event, ctx):
+        ui_ready = hasattr(api.agent, "ui")
+        with LOG.open("a", encoding="utf-8") as handle:
+            handle.write(f"ui_ready:{{ui_ready}}\\n")
+"""
+    )
+
+    CodingAgent(
+        llm=mock_llm,
+        workspace=str(temp_workspace),
+        enable_extensions=True,
+        verbose=False,
+    )
+
+    assert log_file.read_text().splitlines() == ["ui_ready:True"]
+
+
 def test_coding_agent_with_skills(mock_llm, temp_workspace):
     """Test coding agent with skills."""
     # Create skill
