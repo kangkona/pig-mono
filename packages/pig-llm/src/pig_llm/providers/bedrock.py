@@ -95,6 +95,9 @@ class BedrockProvider(Provider):
                 **body.get("additionalModelRequestFields", {}),
                 "thinking": kwargs.pop("thinking"),
             }
+        headers = kwargs.pop("headers", None)
+        if headers:
+            body["requestMetadata"] = dict(headers)
 
         response = self.client.converse(
             modelId=model,
@@ -136,6 +139,9 @@ class BedrockProvider(Provider):
                 **body.get("additionalModelRequestFields", {}),
                 "thinking": kwargs.pop("thinking"),
             }
+        headers = kwargs.pop("headers", None)
+        if headers:
+            body["requestMetadata"] = dict(headers)
 
         response = self.client.converse_stream(
             modelId=model,
