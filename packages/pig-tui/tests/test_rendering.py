@@ -89,6 +89,19 @@ def test_tmux_termname_uses_client_hyperlink_capability() -> None:
     )
 
 
+def test_jetbrains_terminal_disables_hyperlinks_but_keeps_truecolor_detection() -> None:
+    assert not supports_osc8_hyperlinks(
+        {
+            "TERMINAL_EMULATOR": "JetBrains-JediTerm",
+            "COLORTERM": "truecolor",
+        }
+    )
+
+
+def test_alacritty_terminal_supports_hyperlinks() -> None:
+    assert supports_osc8_hyperlinks({"TERM_PROGRAM": "alacritty"})
+
+
 def test_terminal_size_uses_environment_fallback() -> None:
     assert terminal_size(default=(1, 1)) in {(1, 1), terminal_size(default=(1, 1))}
     assert supports_osc8_hyperlinks({"WT_SESSION": "1"})
