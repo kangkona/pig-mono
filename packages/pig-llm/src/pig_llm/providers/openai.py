@@ -69,6 +69,13 @@ class OpenAIProvider(Provider):
             for tc in message.tool_calls
         ]
 
+    @staticmethod
+    def _token_limit_param(max_tokens: int | None) -> dict[str, int]:
+        """Build token limit parameters for current OpenAI chat models."""
+        if max_tokens is None:
+            return {}
+        return {"max_completion_tokens": max_tokens}
+
     def complete(
         self,
         messages: list[Message],
@@ -82,7 +89,7 @@ class OpenAIProvider(Provider):
             model=model,
             messages=self._convert_messages(messages),
             temperature=temperature,
-            max_tokens=max_tokens,
+            **self._token_limit_param(max_tokens),
             **kwargs,
         )
 
@@ -115,8 +122,8 @@ class OpenAIProvider(Provider):
             model=model,
             messages=self._convert_messages(messages),
             temperature=temperature,
-            max_tokens=max_tokens,
             stream=True,
+            **self._token_limit_param(max_tokens),
             **kwargs,
         )
 
@@ -142,7 +149,7 @@ class OpenAIProvider(Provider):
             model=model,
             messages=self._convert_messages(messages),
             temperature=temperature,
-            max_tokens=max_tokens,
+            **self._token_limit_param(max_tokens),
             **kwargs,
         )
 
@@ -175,8 +182,8 @@ class OpenAIProvider(Provider):
             model=model,
             messages=self._convert_messages(messages),
             temperature=temperature,
-            max_tokens=max_tokens,
             stream=True,
+            **self._token_limit_param(max_tokens),
             **kwargs,
         )
 

@@ -82,8 +82,9 @@ class ChatServer:
         async def home(request: Request):
             """Serve chat UI."""
             return self.templates.TemplateResponse(
+                request,
                 "chat.html",
-                {
+                context={
                     "request": request,
                     "title": self.title,
                     "theme": self.theme,
