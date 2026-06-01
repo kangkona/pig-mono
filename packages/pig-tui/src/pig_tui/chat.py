@@ -8,6 +8,7 @@ from rich.console import Console
 from rich.markdown import Markdown
 from rich.panel import Panel
 
+from .rendering import normalize_markdown_for_terminal
 from .theme import Theme
 
 
@@ -79,7 +80,7 @@ class ChatUI:
 
         if self.markdown_mode:
             self.console.print(prefix, end="")
-            self.console.print(Markdown(message))
+            self.console.print(Markdown(normalize_markdown_for_terminal(message)))
         else:
             self.console.print(f"{prefix}{message}")
 
@@ -94,7 +95,7 @@ class ChatUI:
 
         if self.markdown_mode:
             self.console.print(prefix, end="")
-            self.console.print(Markdown(message))
+            self.console.print(Markdown(normalize_markdown_for_terminal(message)))
         else:
             self.console.print(f"{prefix}{message}")
 

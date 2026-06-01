@@ -2,8 +2,6 @@
 
 from pathlib import Path
 
-import httpx
-
 from .export import SessionExporter
 from .session import Session
 
@@ -42,6 +40,14 @@ class GistSharer:
             ValueError: If no GitHub token provided
             httpx.HTTPError: If GitHub API fails
         """
+        try:
+            import httpx
+        except ModuleNotFoundError as exc:
+            raise ModuleNotFoundError(
+                "httpx is required for session sharing. "
+                "Install pig-agent-core with share dependencies."
+            ) from exc
+
         if not self.github_token:
             raise ValueError(
                 "GitHub token required. Set GITHUB_TOKEN env var or pass to constructor.\n"

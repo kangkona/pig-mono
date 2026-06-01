@@ -37,11 +37,24 @@ def test_share_session_uses_exported_safe_names(tmp_path: Path) -> None:
     }
     fake_response.raise_for_status = Mock()
 
+    fake_httpx = Mock()
+    fake_httpx.post.return_value = fake_response
     sharer = GistSharer(github_token="token")
-    with patch("pig_agent_core.share.httpx.post", return_value=fake_response) as post:
+    with patch.dict("sys.modules", {"httpx": fake_httpx}):
         result = sharer.share_session(session, public=False)
 
-    payload = post.call_args.kwargs["json"]
+    payload = fake_httpx.post.call_args.kwargs["json"]
     assert "demo-session.html" in payload["files"]
     assert "demo-session.md" in payload["files"]
     assert result["id"] == "gist123"
+
+
+def test_share_session_raises_clear_error_without_httpx(tmp_path: Path) -> None:
+    sharer = GistSharer(github_token="token")
+    session = Session(name="demo", workspace=str(tmp_path), auto_save=False)
+
+    with patch("builtins.__import__", side_effect=ModuleNotFoundError("httpx")):
+        try:
+            sharer.share_session(session)
+        except ModuleNotFoundError as exc:
+            assert "httpx is required for session sharing" in str(exc)

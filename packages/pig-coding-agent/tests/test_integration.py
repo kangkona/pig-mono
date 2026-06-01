@@ -154,8 +154,8 @@ def test_fork_command(mock_llm, temp_workspace):
     agent._handle_command("/fork test-fork")
 
     # Should save the fork
-    fork_file = temp_workspace / ".sessions" / "test-fork.jsonl"
-    assert fork_file.exists()
+    fork_files = list((temp_workspace / ".sessions").glob("test-fork-*.jsonl"))
+    assert len(fork_files) == 1
 
 
 def test_compact_command(mock_llm, temp_workspace):

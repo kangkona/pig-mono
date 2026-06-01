@@ -3,6 +3,7 @@
 from unittest.mock import patch
 
 from pig_tui.chat import ChatUI
+from pig_tui.rendering import normalize_markdown_for_terminal
 from pig_tui.theme import Theme
 
 
@@ -40,6 +41,18 @@ def test_chat_ui_assistant_message(mock_console):
     chat.assistant("Hi there!")
 
     chat.console.print.assert_called()
+
+
+@patch("pig_tui.chat.Console")
+@patch("pig_tui.chat.Markdown")
+def test_chat_ui_normalizes_markdown_before_render(mock_markdown, mock_console):
+    chat = ChatUI()
+
+    chat.assistant("10. keep marker\n- [x] done")
+
+    mock_markdown.assert_called_once_with(
+        normalize_markdown_for_terminal("10. keep marker\n- [x] done")
+    )
 
 
 @patch("pig_tui.chat.Console")
