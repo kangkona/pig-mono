@@ -1,6 +1,6 @@
 """Integration tests for py-coding-agent with session/extension/skills."""
 
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 import pytest
 from pig_coding_agent.agent import CodingAgent
@@ -247,6 +247,28 @@ def test_queue_command_reports_remaining_followups_after_single_drain(mock_llm, 
     agent.ui.panel.assert_called()
     queue_text = agent.ui.panel.call_args.args[0]
     assert "F2" in queue_text
+
+
+def test_run_interactive_emits_session_shutdown_reason_on_eof(mock_llm, temp_workspace):
+    agent = CodingAgent(
+        llm=mock_llm,
+        workspace=str(temp_workspace),
+        verbose=False,
+        enable_extensions=False,
+    )
+    agent.ui = Mock()
+    agent.extension_manager = Mock()
+
+    prompt = Mock()
+    prompt.ask.side_effect = EOFError()
+
+    with patch("pig_coding_agent.agent.InteractivePrompt", return_value=prompt):
+        agent.run_interactive()
+
+    agent.extension_manager.emit_event.assert_called_once_with(
+        "session_shutdown",
+        {"reason": "eof"},
+    )
 
 
 def test_skill_invocation(mock_llm, temp_workspace):

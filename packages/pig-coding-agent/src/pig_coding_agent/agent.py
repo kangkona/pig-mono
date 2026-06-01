@@ -236,6 +236,7 @@ When generating code, provide clean, well-documented, production-ready code.
         """Run interactive chat session."""
         self.ui.system(f"Workspace: {self.workspace}")
         self.ui.separator()
+        shutdown_reason = "normal"
 
         # Set up interactive prompt with completion and history
         history_file = str(self.workspace / ".sessions" / ".input_history")
@@ -257,8 +258,10 @@ When generating code, provide clean, well-documented, production-ready code.
                 try:
                     user_input = prompt.ask("You> ")
                 except KeyboardInterrupt:
+                    shutdown_reason = "interrupt"
                     continue
                 except EOFError:
+                    shutdown_reason = "eof"
                     break
 
                 if not user_input:
@@ -316,8 +319,17 @@ When generating code, provide clean, well-documented, production-ready code.
                     self.session.add_message("assistant", response.content)
 
         except KeyboardInterrupt:
-            pass
+            shutdown_reason = "interrupt"
         finally:
+            if self.extension_manager:
+                try:
+                    self.extension_manager.emit_event(
+                        "session_shutdown",
+                        {"reason": shutdown_reason},
+                    )
+                except Exception:
+                    pass
+
             # Clean up queued messages
             if self.agent.message_queue:
                 cleared = self.agent.message_queue.clear()
