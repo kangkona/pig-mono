@@ -12,6 +12,12 @@ import re
 import textwrap
 
 ANSI_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
+OSC8_RE = re.compile(r"\x1b]8;[^\x1b\x07]*?(?:\x1b\\|\x07)")
+
+
+def strip_terminal_sequences(text: str) -> str:
+    """Strip non-printing ANSI and OSC 8 hyperlink sequences."""
+    return ANSI_RE.sub("", OSC8_RE.sub("", text))
 
 
 def terminal_size(default: tuple[int, int] = (80, 24)) -> tuple[int, int]:
@@ -30,7 +36,7 @@ def terminal_size(default: tuple[int, int] = (80, 24)) -> tuple[int, int]:
 
 def visible_length(text: str) -> int:
     """Return display length ignoring ANSI escape sequences."""
-    return len(ANSI_RE.sub("", text))
+    return len(strip_terminal_sequences(text))
 
 
 def safe_wrap(text: str, width: int, *, max_lines: int | None = None) -> list[str]:
@@ -65,7 +71,7 @@ def truncate_visible(text: str, width: int, *, suffix: str = "…") -> str:
         return text
     if width <= len(suffix):
         return suffix[:width]
-    return ANSI_RE.sub("", text)[: width - len(suffix)] + suffix
+    return strip_terminal_sequences(text)[: width - len(suffix)] + suffix
 
 
 def normalize_markdown_for_terminal(markdown: str) -> str:

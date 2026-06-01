@@ -27,6 +27,13 @@ def test_visible_truncate_counts_visible_text_not_ansi_sequences() -> None:
     assert truncate_visible(text, 6) == "hello…"
 
 
+def test_visible_truncate_ignores_osc8_hyperlink_sequences() -> None:
+    text = "\033]8;;https://example.com/file.py\033\\file.py\033]8;;\033\\"
+
+    assert visible_length(text) == len("file.py")
+    assert truncate_visible(text, 4) == "fil…"
+
+
 def test_markdown_normalization_preserves_ordered_markers_and_tasks() -> None:
     markdown = "10. keep marker\n- [x] shipped\n- [ ] pending"
 
