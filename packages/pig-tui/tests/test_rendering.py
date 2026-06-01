@@ -61,3 +61,14 @@ def test_hyperlink_is_disabled_under_tmux_even_if_terminal_supports_it() -> None
 def test_terminal_size_uses_environment_fallback() -> None:
     assert terminal_size(default=(1, 1)) in {(1, 1), terminal_size(default=(1, 1))}
     assert supports_osc8_hyperlinks({"WT_SESSION": "1"})
+
+
+def test_terminal_size_ignores_invalid_environment_values() -> None:
+    import os
+    from unittest.mock import patch
+
+    with (
+        patch.dict(os.environ, {"COLUMNS": "abc", "LINES": "xyz"}, clear=False),
+        patch("os.get_terminal_size", side_effect=OSError()),
+    ):
+        assert terminal_size(default=(3, 2)) == (3, 2)
