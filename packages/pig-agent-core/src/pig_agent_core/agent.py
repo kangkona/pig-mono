@@ -183,6 +183,19 @@ class Agent:
         if self.verbose:
             print(message)
 
+    def _drain_followup_messages(
+        self, messages: list[Any], *, check_queue: bool
+    ) -> Response | None:
+        """Process queued follow-up messages in delivery order."""
+        if not check_queue or not messages:
+            return None
+
+        response: Response | None = None
+        for message in messages:
+            self._log(f"[cyan]→ Follow-up: {message.content}[/cyan]")
+            response = self.run(message.content, check_queue=True)
+        return response
+
     def add_tool(self, tool: Tool) -> None:
         """Add a tool to the agent.
 
@@ -280,10 +293,9 @@ class Agent:
                 # Check for follow-up messages
                 if check_queue and self.message_queue.has_followup():
                     followup = self.message_queue.get_followup_messages()
-                    if followup:
-                        # Process first follow-up recursively
-                        self._log(f"[cyan]→ Follow-up: {followup[0].content}[/cyan]")
-                        return self.run(followup[0].content, check_queue=True)
+                    response = self._drain_followup_messages(followup, check_queue=check_queue)
+                    if response is not None:
+                        return response
 
                 return response
 
@@ -468,9 +480,12 @@ class Agent:
                 if check_queue and self.message_queue.has_followup():
                     followup = self.message_queue.get_followup_messages()
                     if followup:
-                        # Process first follow-up recursively
-                        self._log(f"→ Follow-up: {followup[0].content}")
-                        return await self.arun(followup[0].content, check_queue=True)
+                        response: Response | None = None
+                        for queued in followup:
+                            self._log(f"→ Follow-up: {queued.content}")
+                            response = await self.arun(queued.content, check_queue=True)
+                        if response is not None:
+                            return response
 
                 return Response(
                     content=response_content,

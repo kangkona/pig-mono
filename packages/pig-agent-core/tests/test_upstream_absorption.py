@@ -281,3 +281,26 @@ def test_agent_followup_queue_processes_all_messages_in_fifo_order() -> None:
 
     assert response.content == "reply:follow-2"
     assert agent.llm.messages == ["start", "follow-1", "follow-2"]
+
+
+def test_agent_followup_all_mode_processes_entire_batch() -> None:
+    class FakeLLM:
+        config = SimpleNamespace(model="fake")
+
+        def __init__(self):
+            self.messages: list[str] = []
+
+        def chat(self, messages, tools=None):
+            latest = messages[-1].content
+            self.messages.append(latest)
+            return SimpleNamespace(content=f"reply:{latest}", tool_calls=None)
+
+    agent = Agent(llm=FakeLLM(), tools=[], verbose=False)
+    agent.message_queue.followup_mode = "all"
+    agent.message_queue.add_followup("follow-1")
+    agent.message_queue.add_followup("follow-2")
+
+    response = agent.run("start")
+
+    assert response.content == "reply:follow-2"
+    assert agent.llm.messages == ["start", "follow-1", "follow-2"]
