@@ -263,3 +263,21 @@ def test_run_json_mode_emits_extension_shutdown_event_on_interrupt():
         "session_shutdown",
         {"reason": "interrupt"},
     )
+
+
+def test_run_json_mode_cleans_up_extensions_on_shutdown():
+    """JSON mode should clean up extensions after shutdown."""
+    from pig_coding_agent.cli import run_json_mode
+
+    agent = Mock()
+    agent.extension_manager = Mock()
+    json_mode = Mock()
+
+    with (
+        patch("select.select", return_value=([], [], [])),
+        patch("builtins.input", side_effect=EOFError()),
+        patch("pig_agent_core.JSONOutputMode", return_value=json_mode),
+    ):
+        run_json_mode(agent)
+
+    agent.extension_manager.cleanup.assert_called_once()

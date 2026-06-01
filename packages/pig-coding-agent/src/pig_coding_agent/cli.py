@@ -199,6 +199,7 @@ def run_json_mode(agent):
                 "session_shutdown",
                 {"reason": reason},
             )
+            agent.extension_manager.cleanup()
 
     # Read from stdin if piped, otherwise interactive
     import select
