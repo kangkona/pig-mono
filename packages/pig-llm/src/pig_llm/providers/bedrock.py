@@ -17,6 +17,11 @@ from ._base import Provider
 class BedrockProvider(Provider):
     """Amazon Bedrock provider implementation."""
 
+    @staticmethod
+    def _is_adaptive_claude_model(model: str) -> bool:
+        model_name = (model or "").lower()
+        return "claude-opus-4-8" in model_name
+
     def __init__(self, config: Config):
         """Initialize Bedrock provider.
 
@@ -91,10 +96,18 @@ class BedrockProvider(Provider):
         """Generate a completion."""
         kwargs = apply_thinking_level(kwargs, BEDROCK_COMPAT)
         body = self._build_request_body(messages, model, temperature, max_tokens)
-        if "thinking" in kwargs:
+        thinking = kwargs.pop("thinking", None)
+        if thinking is not None:
             body["additionalModelRequestFields"] = {
                 **body.get("additionalModelRequestFields", {}),
-                "thinking": kwargs.pop("thinking"),
+                "thinking": thinking,
+            }
+        if self._is_adaptive_claude_model(model) and thinking is not None:
+            effort = "xhigh" if thinking.get("budget_tokens") == 16384 else "high"
+            body["additionalModelRequestFields"] = {
+                **body.get("additionalModelRequestFields", {}),
+                "thinking": {"type": "adaptive", "display": "summarized"},
+                "output_config": {"effort": effort},
             }
         headers = kwargs.pop("headers", None)
         if headers:
@@ -135,10 +148,18 @@ class BedrockProvider(Provider):
         """Stream a completion."""
         kwargs = apply_thinking_level(kwargs, BEDROCK_COMPAT)
         body = self._build_request_body(messages, model, temperature, max_tokens)
-        if "thinking" in kwargs:
+        thinking = kwargs.pop("thinking", None)
+        if thinking is not None:
             body["additionalModelRequestFields"] = {
                 **body.get("additionalModelRequestFields", {}),
-                "thinking": kwargs.pop("thinking"),
+                "thinking": thinking,
+            }
+        if self._is_adaptive_claude_model(model) and thinking is not None:
+            effort = "xhigh" if thinking.get("budget_tokens") == 16384 else "high"
+            body["additionalModelRequestFields"] = {
+                **body.get("additionalModelRequestFields", {}),
+                "thinking": {"type": "adaptive", "display": "summarized"},
+                "output_config": {"effort": effort},
             }
         headers = kwargs.pop("headers", None)
         if headers:
