@@ -14,7 +14,8 @@ class SessionInfo:
             path: Path to session file
         """
         self.path = path
-        self.name = path.stem
+        self.file_stem = path.stem
+        self.name = self.file_stem
         self.modified = datetime.fromtimestamp(path.stat().st_mtime)
         self.size = path.stat().st_size
 
@@ -24,11 +25,12 @@ class SessionInfo:
 
             with open(path) as f:
                 header = json.loads(f.readline())
-                self.session_name = header.get("name", self.name)
+                self.session_name = header.get("name", self.file_stem)
+                self.name = self.session_name
                 self.created = datetime.fromisoformat(header["created_at"])
                 self.entries = header.get("metadata", {}).get("entries", 0)
         except Exception:
-            self.session_name = self.name
+            self.session_name = self.file_stem
             self.created = self.modified
             self.entries = 0
 
@@ -98,7 +100,11 @@ class SessionManager:
 
         for info in sessions:
             # Match by name
-            if info.session_name == name_or_id or info.name == name_or_id:
+            if (
+                info.session_name == name_or_id
+                or info.name == name_or_id
+                or info.file_stem == name_or_id
+            ):
                 return info.path
 
             # Match by partial ID (from header)

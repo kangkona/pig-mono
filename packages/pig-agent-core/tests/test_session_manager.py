@@ -27,6 +27,7 @@ def test_session_info_creation(temp_workspace):
 
     info = SessionInfo(path)
     assert info.name == "test"
+    assert info.file_stem.startswith("test-")
     assert info.path == path
 
 
@@ -109,6 +110,16 @@ def test_session_manager_get_most_recent(temp_workspace):
 
     assert recent is not None
     assert recent.name == "second"
+
+
+def test_session_manager_find_by_file_stem(temp_workspace):
+    session = Session(name="file-stem", workspace=str(temp_workspace), auto_save=False)
+    path = session.save()
+
+    mgr = SessionManager(temp_workspace)
+    found = mgr.find_session(path.stem)
+
+    assert found == path
 
 
 def test_session_manager_find_by_name(temp_workspace):
