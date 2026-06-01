@@ -192,6 +192,14 @@ def run_json_mode(agent):
 
     json_out = JSONOutputMode()
 
+    def emit_shutdown(reason: str) -> None:
+        json_out.emit_event("shutdown", {"reason": reason})
+        if getattr(agent, "extension_manager", None):
+            agent.extension_manager.emit_event(
+                "session_shutdown",
+                {"reason": reason},
+            )
+
     # Read from stdin if piped, otherwise interactive
     import select
 
@@ -241,10 +249,10 @@ def run_json_mode(agent):
                 json_out.done()
 
             except KeyboardInterrupt:
-                json_out.emit_event("shutdown", {"reason": "interrupt"})
+                emit_shutdown("interrupt")
                 break
             except EOFError:
-                json_out.emit_event("shutdown", {"reason": "eof"})
+                emit_shutdown("eof")
                 break
 
 
