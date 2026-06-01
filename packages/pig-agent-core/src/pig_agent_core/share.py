@@ -1,5 +1,6 @@
 """Share sessions via GitHub Gist."""
 
+import tempfile
 from pathlib import Path
 
 from .export import SessionExporter
@@ -55,13 +56,14 @@ class GistSharer:
             )
 
         # Export session to HTML (in-memory)
-        html_path = Path(f"/tmp/{session.name}.html")
+        temp_dir = Path(tempfile.gettempdir())
+        html_path = temp_dir / f"{session.name}.html"
         SessionExporter.export_to_html(session, html_path, title=session.name)
         html_content = html_path.read_text()
         html_path.unlink()  # Clean up
 
         # Also export as markdown
-        md_path = Path(f"/tmp/{session.name}.md")
+        md_path = temp_dir / f"{session.name}.md"
         SessionExporter.export_to_markdown(session, md_path)
         md_content = md_path.read_text()
         md_path.unlink()  # Clean up

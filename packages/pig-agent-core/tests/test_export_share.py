@@ -1,5 +1,6 @@
 """Regression tests for export/share behavior absorbed from pi-mono."""
 
+import tempfile
 from pathlib import Path
 from unittest.mock import Mock, patch
 
@@ -47,6 +48,46 @@ def test_share_session_uses_exported_safe_names(tmp_path: Path) -> None:
     assert "demo-session.html" in payload["files"]
     assert "demo-session.md" in payload["files"]
     assert result["id"] == "gist123"
+
+
+def test_share_session_uses_platform_temp_directory(tmp_path: Path) -> None:
+    session = Session(name="demo-session", workspace=str(tmp_path), auto_save=False)
+    session.add_message("user", "hello")
+
+    fake_response = Mock()
+    fake_response.json.return_value = {
+        "id": "gist123",
+        "html_url": "https://gist.github.com/example/gist123",
+        "created_at": "2026-06-02T00:00:00Z",
+        "files": {"demo-session.html": {"raw_url": "https://gist.githubusercontent.com/raw"}},
+    }
+    fake_response.raise_for_status = Mock()
+    fake_httpx = Mock()
+    fake_httpx.post.return_value = fake_response
+    sharer = GistSharer(github_token="token")
+
+    exported_paths: list[Path] = []
+
+    def capture_html(_session, output_path, title=None):
+        exported_paths.append(output_path)
+        output_path.write_text("<html></html>")
+        return output_path
+
+    def capture_md(_session, output_path):
+        exported_paths.append(output_path)
+        output_path.write_text("# md")
+        return output_path
+
+    with (
+        patch.dict("sys.modules", {"httpx": fake_httpx}),
+        patch("pig_agent_core.share.SessionExporter.export_to_html", side_effect=capture_html),
+        patch("pig_agent_core.share.SessionExporter.export_to_markdown", side_effect=capture_md),
+    ):
+        sharer.share_session(session, public=False)
+
+    temp_dir = Path(tempfile.gettempdir()).resolve()
+    assert exported_paths
+    assert all(path.parent.resolve() == temp_dir for path in exported_paths)
 
 
 def test_share_session_raises_clear_error_without_httpx(tmp_path: Path) -> None:
