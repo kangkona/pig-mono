@@ -274,6 +274,7 @@ def run_rpc_mode(agent):
                 "session_shutdown",
                 {"reason": reason},
             )
+            agent.extension_manager.cleanup()
 
     rpc._shutdown_callback = emit_shutdown
 
