@@ -168,7 +168,7 @@ def build_token_limit_param(
         return {}
     if compat.max_output_token_policy == "omit_default" and not explicit:
         return {}
-    if param_name in compat.unsupported_params:
+    if param_name in compat.unsupported_params and not explicit:
         return {}
     return {param_name: max_tokens}
 

@@ -180,3 +180,45 @@ def test_azure_openai_provider_uses_session_affinity_headers() -> None:
     )
 
     assert create.call_args.kwargs["extra_headers"]["session-id"] == "session-99"
+
+
+def test_azure_openai_provider_preserves_explicit_max_tokens() -> None:
+    create = Mock(
+        return_value=SimpleNamespace(
+            id="resp-1",
+            model="test-model",
+            choices=[
+                SimpleNamespace(
+                    message=SimpleNamespace(content="ok", tool_calls=None),
+                    finish_reason="stop",
+                )
+            ],
+            usage=SimpleNamespace(prompt_tokens=1, completion_tokens=1, total_tokens=2),
+        )
+    )
+    sync_client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+    async_client = SimpleNamespace(
+        chat=SimpleNamespace(completions=SimpleNamespace(create=AsyncMock()))
+    )
+
+    with (
+        patch("pig_llm.providers.azure.openai.AzureOpenAI", return_value=sync_client),
+        patch("pig_llm.providers.azure.openai.AsyncAzureOpenAI", return_value=async_client),
+    ):
+        from pig_llm.providers.azure import AzureOpenAIProvider
+
+        provider = AzureOpenAIProvider(
+            Config(
+                provider="azure",
+                api_key="test",
+                base_url="https://example.openai.azure.com",
+            )
+        )
+
+    provider.complete(
+        [SimpleNamespace(role="user", content="hello", metadata=None)],
+        model="test-model",
+        max_tokens=321,
+    )
+
+    assert create.call_args.kwargs["max_tokens"] == 321
