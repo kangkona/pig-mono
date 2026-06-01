@@ -55,7 +55,9 @@ class _AsyncChunks:
             raise StopAsyncIteration from exc
 
 
-def _provider_with_clients(sync_create: Mock, async_create: AsyncMock) -> OpenAIProvider:
+def _provider_with_clients(
+    sync_create: Mock, async_create: AsyncMock, config: Config | None = None
+) -> OpenAIProvider:
     sync_client = SimpleNamespace(
         chat=SimpleNamespace(
             completions=SimpleNamespace(create=sync_create),
@@ -71,7 +73,7 @@ def _provider_with_clients(sync_create: Mock, async_create: AsyncMock) -> OpenAI
         patch("pig_llm.providers.openai.openai.OpenAI", return_value=sync_client),
         patch("pig_llm.providers.openai.openai.AsyncOpenAI", return_value=async_client),
     ):
-        return OpenAIProvider(Config(api_key="test-key"))
+        return OpenAIProvider(config or Config(api_key="test-key"))
 
 
 def _messages() -> list[Message]:
@@ -147,6 +149,50 @@ def test_complete_falls_back_to_choice_usage_when_response_usage_missing() -> No
         "completion_tokens": 3,
         "total_tokens": 10,
     }
+
+
+def test_custom_qwen_base_url_uses_enable_thinking_toggle() -> None:
+    sync_create = Mock(return_value=_completion_response())
+    provider = _provider_with_clients(
+        sync_create,
+        AsyncMock(),
+        Config(
+            provider="openai",
+            api_key="test-key",
+            base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
+        ),
+    )
+
+    provider.complete(
+        _messages(),
+        model="qwen/qwen3-coder",
+        thinking_level="high",
+    )
+
+    assert sync_create.call_args.kwargs["enable_thinking"] is True
+    assert "reasoning_effort" not in sync_create.call_args.kwargs
+
+
+def test_custom_zai_base_url_disables_thinking_when_off() -> None:
+    sync_create = Mock(return_value=_completion_response())
+    provider = _provider_with_clients(
+        sync_create,
+        AsyncMock(),
+        Config(
+            provider="openai",
+            api_key="test-key",
+            base_url="https://api.z.ai/v1",
+        ),
+    )
+
+    provider.complete(
+        _messages(),
+        model="glm-4.5-air",
+        thinking_level="off",
+    )
+
+    assert sync_create.call_args.kwargs["enable_thinking"] is False
+    assert "reasoning_effort" not in sync_create.call_args.kwargs
 
 
 @pytest.mark.asyncio

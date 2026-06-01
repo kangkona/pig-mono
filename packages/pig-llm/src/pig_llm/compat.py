@@ -159,6 +159,29 @@ TOGETHER_COMPAT = ProviderCompat(
     retryable_patterns=COMMON_RETRYABLE_PATTERNS,
 )
 
+QWEN_COMPAT = ProviderCompat(
+    max_output_token_policy="send_when_explicit",
+    thinking_level_map={
+        "off": False,
+        "minimal": True,
+        "low": True,
+        "medium": True,
+        "high": True,
+        "xhigh": True,
+    },
+    context_overflow_patterns=COMMON_CONTEXT_OVERFLOW_PATTERNS,
+    quota_or_billing_patterns=COMMON_QUOTA_OR_BILLING_PATTERNS,
+    retryable_patterns=COMMON_RETRYABLE_PATTERNS,
+)
+
+ZAI_COMPAT = ProviderCompat(
+    max_output_token_policy="send_when_explicit",
+    thinking_level_map=QWEN_COMPAT.thinking_level_map,
+    context_overflow_patterns=COMMON_CONTEXT_OVERFLOW_PATTERNS,
+    quota_or_billing_patterns=COMMON_QUOTA_OR_BILLING_PATTERNS,
+    retryable_patterns=COMMON_RETRYABLE_PATTERNS,
+)
+
 
 def normalize_messages(
     messages: list[Message],
@@ -233,6 +256,13 @@ def apply_thinking_level(kwargs: dict[str, Any], compat: ProviderCompat) -> dict
     if compat is TOGETHER_COMPAT:
         next_kwargs["reasoning"] = mapped
         next_kwargs.pop("thinking", None)
+        return next_kwargs
+
+    if compat is QWEN_COMPAT or compat is ZAI_COMPAT:
+        next_kwargs["enable_thinking"] = mapped
+        next_kwargs.pop("thinking", None)
+        next_kwargs.pop("reasoning", None)
+        next_kwargs.pop("reasoning_effort", None)
         return next_kwargs
 
     next_kwargs["thinking"] = mapped
