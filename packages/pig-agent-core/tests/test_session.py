@@ -146,8 +146,9 @@ def test_session_compact():
     # Compact
     compacted = session.compact("Summarize")
 
-    # Should have summary + recent messages
-    assert len(compacted) < len(session.get_current_conversation())
+    # Current conversation should now be the compacted summary + recent tail
+    assert compacted == session.get_current_conversation()
+    assert len(compacted) < 30
     assert any("Compacted" in e.content for e in compacted)
 
 

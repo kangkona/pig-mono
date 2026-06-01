@@ -304,16 +304,30 @@ class Session:
         if tool_summaries:
             summary_content += "\nTool outputs:\n" + "\n".join(tool_summaries[:10])
 
-        # Create compacted entry
-        compacted = self.add_message(
+        summary_entry = SessionEntry(
             role="system",
             content=summary_content,
-            compacted=True,
-            original_count=len(old),
+            metadata={
+                "compacted": True,
+                "original_count": len(old),
+            },
         )
+        self.tree.entries[summary_entry.id] = summary_entry
+        self.tree.root_id = summary_entry.id
+
+        if recent:
+            recent[0].parent_id = summary_entry.id
+            self.tree.current_id = recent[-1].id
+        else:
+            self.tree.current_id = summary_entry.id
+
+        self.updated_at = datetime.utcnow()
+
+        if self.auto_save:
+            self.save()
 
         # Return compacted path
-        return [compacted] + recent
+        return self.get_current_conversation()
 
     def fork(self, entry_id: str, new_name: str | None = None) -> "Session":
         """Fork session from a point.

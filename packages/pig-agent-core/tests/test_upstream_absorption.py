@@ -97,6 +97,39 @@ def test_session_compact_keeps_recent_messages_and_bounded_tool_summary() -> Non
     assert "Tool outputs:" in summary.content
 
 
+def test_session_compact_updates_current_path_to_summary_plus_recent_tail() -> None:
+    session = Session(name="compact-path", auto_save=False)
+    for i in range(6):
+        session.add_message("user", f"user {i}")
+        session.add_message("tool", f"tool {i}", name="read_file")
+
+    tail_before = session.get_current_conversation()[-5:]
+
+    compacted = session.compact(max_tool_chars=200)
+    current = session.get_current_conversation()
+
+    assert compacted == current
+    assert current[0].metadata["compacted"] is True
+    assert [entry.id for entry in current[1:]] == [entry.id for entry in tail_before]
+    assert current[-1].role == tail_before[-1].role
+
+
+def test_repeated_session_compact_keeps_single_summary_and_same_tail() -> None:
+    session = Session(name="compact-repeat", auto_save=False)
+    for i in range(6):
+        session.add_message("user", f"user {i}")
+        session.add_message("tool", f"tool {i}", name="read_file")
+
+    first = session.compact(max_tool_chars=200)
+    entry_count_after_first = len(session.tree.entries)
+
+    second = session.compact(max_tool_chars=200)
+
+    assert [entry.id for entry in second] == [entry.id for entry in first]
+    assert sum(1 for entry in second if entry.metadata.get("compacted")) == 1
+    assert len(session.tree.entries) == entry_count_after_first
+
+
 def test_agent_before_tool_call_abort_skips_sibling_tools() -> None:
     executed: list[str] = []
 
