@@ -7,6 +7,8 @@ from rich.json import JSON
 from rich.markdown import Markdown
 from rich.syntax import Syntax
 
+from .rendering import normalize_markdown_for_terminal
+
 
 class Console:
     """Enhanced console for rich terminal output."""
@@ -36,7 +38,7 @@ class Console:
         Args:
             text: Markdown text to render
         """
-        md = Markdown(text)
+        md = Markdown(normalize_markdown_for_terminal(text))
         self.console.print(md)
 
     def code(self, code: str, language: str = "python", line_numbers: bool = False) -> None:
