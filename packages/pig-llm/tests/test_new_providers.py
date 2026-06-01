@@ -201,6 +201,80 @@ def test_openai_compatible_providers_send_session_affinity_headers(
     assert create.call_args.kwargs["extra_headers"]["session-id"] == "session-42"
 
 
+def test_deepseek_provider_sends_explicit_thinking_disabled_payload() -> None:
+    create = Mock(
+        return_value=SimpleNamespace(
+            id="resp-1",
+            model="deepseek-reasoner",
+            choices=[
+                SimpleNamespace(
+                    message=SimpleNamespace(content="ok", tool_calls=None),
+                    finish_reason="stop",
+                )
+            ],
+            usage=SimpleNamespace(prompt_tokens=1, completion_tokens=1, total_tokens=2),
+        )
+    )
+    sync_client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+    async_client = SimpleNamespace(
+        chat=SimpleNamespace(completions=SimpleNamespace(create=AsyncMock()))
+    )
+
+    with (
+        patch("pig_llm.providers.deepseek.openai.OpenAI", return_value=sync_client),
+        patch("pig_llm.providers.deepseek.openai.AsyncOpenAI", return_value=async_client),
+    ):
+        from pig_llm.providers.deepseek import DeepSeekProvider
+
+        provider = DeepSeekProvider(Config(provider="deepseek", api_key="test"))
+
+    provider.complete(
+        [SimpleNamespace(role="user", content="hello", metadata=None)],
+        model="deepseek-reasoner",
+        thinking_level="off",
+    )
+
+    assert create.call_args.kwargs["thinking"] == {"type": "disabled"}
+    assert "reasoning_effort" not in create.call_args.kwargs
+
+
+def test_deepseek_provider_sends_explicit_thinking_enabled_payload() -> None:
+    create = Mock(
+        return_value=SimpleNamespace(
+            id="resp-1",
+            model="deepseek-reasoner",
+            choices=[
+                SimpleNamespace(
+                    message=SimpleNamespace(content="ok", tool_calls=None),
+                    finish_reason="stop",
+                )
+            ],
+            usage=SimpleNamespace(prompt_tokens=1, completion_tokens=1, total_tokens=2),
+        )
+    )
+    sync_client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+    async_client = SimpleNamespace(
+        chat=SimpleNamespace(completions=SimpleNamespace(create=AsyncMock()))
+    )
+
+    with (
+        patch("pig_llm.providers.deepseek.openai.OpenAI", return_value=sync_client),
+        patch("pig_llm.providers.deepseek.openai.AsyncOpenAI", return_value=async_client),
+    ):
+        from pig_llm.providers.deepseek import DeepSeekProvider
+
+        provider = DeepSeekProvider(Config(provider="deepseek", api_key="test"))
+
+    provider.complete(
+        [SimpleNamespace(role="user", content="hello", metadata=None)],
+        model="deepseek-reasoner",
+        thinking_level="high",
+    )
+
+    assert create.call_args.kwargs["thinking"] == {"type": "enabled"}
+    assert "reasoning_effort" not in create.call_args.kwargs
+
+
 def test_azure_openai_provider_uses_session_affinity_headers() -> None:
     create = Mock(
         return_value=SimpleNamespace(

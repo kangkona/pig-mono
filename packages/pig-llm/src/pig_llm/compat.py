@@ -129,6 +129,21 @@ BEDROCK_COMPAT = ProviderCompat(
     retryable_patterns=COMMON_RETRYABLE_PATTERNS,
 )
 
+DEEPSEEK_COMPAT = ProviderCompat(
+    max_output_token_policy="send_when_explicit",
+    thinking_level_map={
+        "off": {"type": "disabled"},
+        "minimal": {"type": "enabled"},
+        "low": {"type": "enabled"},
+        "medium": {"type": "enabled"},
+        "high": {"type": "enabled"},
+        "xhigh": {"type": "enabled"},
+    },
+    context_overflow_patterns=COMMON_CONTEXT_OVERFLOW_PATTERNS,
+    quota_or_billing_patterns=COMMON_QUOTA_OR_BILLING_PATTERNS,
+    retryable_patterns=COMMON_RETRYABLE_PATTERNS,
+)
+
 
 def normalize_messages(
     messages: list[Message],
