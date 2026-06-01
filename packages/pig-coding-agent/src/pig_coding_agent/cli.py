@@ -319,6 +319,7 @@ def run_rpc_mode(agent):
 
     # Run server
     rpc.run_server(handle_request)
+    rpc.send_event("shutdown", {"reason": "eof"})
 
 
 @app.command()

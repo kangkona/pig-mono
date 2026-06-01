@@ -106,3 +106,20 @@ def test_rpc_bash_can_exclude_output_from_context(monkeypatch) -> None:
     assert response["error"] is None
     assert response["result"]["excludedFromContext"] is True
     assert response["result"]["output"] == "[Output excluded from model context]"
+
+
+def test_rpc_mode_emits_shutdown_reason_on_eof(monkeypatch) -> None:
+    requests = iter([""])
+    out = io.StringIO()
+    agent = Mock()
+
+    monkeypatch.setattr("sys.stdin.readline", lambda: next(requests))
+    monkeypatch.setattr("sys.stdout", out)
+
+    run_rpc_mode(agent)
+
+    lines = out.getvalue().splitlines()
+    assert len(lines) == 1
+    event = json.loads(lines[0])
+    assert event["event"] == "shutdown"
+    assert event["data"] == {"reason": "eof"}
