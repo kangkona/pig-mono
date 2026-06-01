@@ -327,7 +327,9 @@ def extension(api):
     @api.on("session_shutdown")
     def on_shutdown(event, ctx):
         with LOG.open("a", encoding="utf-8") as handle:
-            handle.write(f"shutdown:{{event['reason']}}\\n")
+            handle.write(
+                f"shutdown:{{event['reason']}}:{{event.get('targetSessionFile')}}\\n"
+            )
 """
     )
 
@@ -347,7 +349,7 @@ def extension(api):
     assert agent.session.name == "test-fork"
     assert log_file.read_text().splitlines() == [
         "start:startup:None:original",
-        "shutdown:fork",
+        f"shutdown:fork:{previous_session_file}",
         f"start:fork:{previous_session_file}:test-fork",
     ]
 
@@ -473,7 +475,9 @@ def extension(api):
     @api.on("session_shutdown")
     def on_shutdown(event, ctx):
         with LOG.open("a", encoding="utf-8") as handle:
-            handle.write(f"shutdown:{{event['reason']}}\\n")
+            handle.write(
+                f"shutdown:{{event['reason']}}:{{event.get('targetSessionFile')}}\\n"
+            )
 """
     )
 
@@ -484,12 +488,13 @@ def extension(api):
         verbose=False,
     )
     agent.ui = Mock()
+    session_path = agent.session.save()
 
     agent._reload_resources()
 
     assert log_file.read_text().splitlines() == [
         "start:startup",
-        "shutdown:reload",
+        f"shutdown:reload:{session_path}",
         "start:reload",
     ]
 

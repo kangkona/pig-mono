@@ -542,7 +542,10 @@ Tools: {len(self.agent.registry)}
         fork = self.session.fork(conversation[-1].id, name)
         save_path = fork.save()
         if self.extension_manager:
-            self.extension_manager.cleanup(reason="fork")
+            self.extension_manager.cleanup(
+                reason="fork",
+                target_session_file=str(previous_session_file),
+            )
 
         self.session = fork
         self.agent.session = self.session
@@ -1079,7 +1082,11 @@ Project: .agents/config.json
         if self.extension_manager:
             # Clear and reload
             old_count = len(self.extension_manager.extensions)
-            self.extension_manager.cleanup(reason="reload")
+            session_file = str(self.session.save()) if self.session else None
+            self.extension_manager.cleanup(
+                reason="reload",
+                target_session_file=session_file,
+            )
             self._load_extensions()
             self.extension_manager.emit_event("session_start", {"reason": "reload"})
             new_count = len(self.extension_manager.extensions)
