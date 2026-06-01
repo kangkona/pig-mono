@@ -261,12 +261,18 @@ class ShellTools:
     """Shell command execution tools."""
 
     @tool(description="Execute a shell command")
-    def run_command(self, command: str, cwd: str | None = None) -> str:
+    def run_command(
+        self,
+        command: str,
+        cwd: str | None = None,
+        exclude_from_context: bool = False,
+    ) -> str:
         """Execute shell command safely.
 
         Args:
             command: Command to execute
             cwd: Working directory
+            exclude_from_context: Hint that callers should not add output to model context
 
         Returns:
             Command output
@@ -283,6 +289,8 @@ class ShellTools:
             output = result.stdout
             if result.stderr:
                 output += f"\nErrors:\n{result.stderr}"
+            if exclude_from_context:
+                return "[Output excluded from model context]"
             return output
         except subprocess.TimeoutExpired:
             return "Error: Command timed out"

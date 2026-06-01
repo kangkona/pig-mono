@@ -21,6 +21,24 @@ app = typer.Typer(
 console = Console()
 
 
+class JsonLineWriter:
+    """Strict JSONL protocol writer for non-interactive modes."""
+
+    def __init__(self, output=None):
+        self.output = output or sys.stdout
+
+    def write(self, payload: dict[str, Any]) -> None:
+        self.output.write(json.dumps(payload, ensure_ascii=False) + "\n")
+        self.output.flush()
+
+
+def _parse_excluded_tools(value: str | None) -> set[str]:
+    """Parse comma-separated tool names."""
+    if not value or not isinstance(value, str):
+        return set()
+    return {part.strip() for part in value.split(",") if part.strip()}
+
+
 @app.callback(invoke_without_command=True)
 def main(
     ctx: typer.Context,
@@ -31,6 +49,16 @@ def main(
     resume: bool = typer.Option(False, "--resume", "-r", help="Resume last session"),
     continue_session: bool = typer.Option(False, "--continue", "-c", help="Continue last session"),
     session_name: str | None = typer.Option(None, "--session", "-s", help="Session name"),
+    name: str | None = typer.Option(None, "--name", "-n", help="Startup session display name"),
+    session_id: str | None = typer.Option(
+        None, "--session-id", help="Explicit session ID for automation"
+    ),
+    exclude_tools: str | None = typer.Option(
+        None,
+        "--exclude-tools",
+        "-xt",
+        help="Comma-separated built-in tool names to disable",
+    ),
     no_extensions: bool = typer.Option(False, "--no-extensions", help="Disable extensions"),
     no_skills: bool = typer.Option(False, "--no-skills", help="Disable skills"),
     no_resilience: bool = typer.Option(False, "--no-resilience", help="Disable resilience"),
@@ -45,6 +73,8 @@ def main(
     """Start interactive coding agent."""
     if ctx.invoked_subcommand is not None:
         return
+    protocol_mode = mode in {"json", "rpc"}
+
     # Get API key
     api_key = os.getenv(f"{provider.upper()}_API_KEY")
     if not api_key:
@@ -69,16 +99,19 @@ def main(
         sessions = session_mgr.list_sessions(limit=10)
 
         if not sessions:
-            console.print("[yellow]No previous sessions found[/yellow]")
+            if not protocol_mode:
+                console.print("[yellow]No previous sessions found[/yellow]")
         elif continue_session or len(sessions) == 1:
             # Auto-continue most recent
             session_path = sessions[0].path
-            console.print(f"[cyan]Continuing:[/cyan] {sessions[0].session_name}")
+            if not protocol_mode:
+                console.print(f"[cyan]Continuing:[/cyan] {sessions[0].session_name}")
         else:
             # Show selection UI
-            console.print("[cyan]Recent sessions:[/cyan]\n")
-            console.print(session_mgr.format_session_list(sessions))
-            console.print()
+            if not protocol_mode:
+                console.print("[cyan]Recent sessions:[/cyan]\n")
+                console.print(session_mgr.format_session_list(sessions))
+                console.print()
 
             from pig_tui import Prompt
 
@@ -96,46 +129,51 @@ def main(
                     if found:
                         session_path = found
                     else:
-                        console.print(
-                            f"[yellow]Session '{choice}' not found, starting new[/yellow]"
-                        )
+                        if not protocol_mode:
+                            console.print(
+                                f"[yellow]Session '{choice}' not found, starting new[/yellow]"
+                            )
             except (KeyboardInterrupt, EOFError):
-                console.print("[yellow]Starting new session[/yellow]")
+                if not protocol_mode:
+                    console.print("[yellow]Starting new session[/yellow]")
 
     # Create and run agent
     agent = CodingAgent(
         llm=llm,
         workspace=str(workspace),
         verbose=verbose,
-        session_name=session_name,
+        session_name=name or session_name,
+        session_id=session_id,
         session_path=session_path,
         enable_extensions=not no_extensions,
         enable_skills=not no_skills,
         enable_resilience=not no_resilience,
         enable_cost_tracking=not no_cost_tracking,
+        excluded_tools=_parse_excluded_tools(exclude_tools),
     )
 
-    console.print("[green]✓ Coding Agent started[/green]")
-    console.print(f"Model: [cyan]{llm.config.model}[/cyan]")
-    console.print(f"Workspace: [cyan]{workspace.resolve()}[/cyan]")
+    if not protocol_mode:
+        console.print("[green]✓ Coding Agent started[/green]")
+        console.print(f"Model: [cyan]{llm.config.model}[/cyan]")
+        console.print(f"Workspace: [cyan]{workspace.resolve()}[/cyan]")
 
-    if agent.session:
+    if not protocol_mode and agent.session:
         console.print(f"Session: [cyan]{agent.session.name}[/cyan]")
 
-    if agent.skill_manager and len(agent.skill_manager) > 0:
+    if not protocol_mode and agent.skill_manager and len(agent.skill_manager) > 0:
         console.print(f"Skills: [cyan]{len(agent.skill_manager)} loaded[/cyan]")
 
-    if agent.extension_manager and len(agent.extension_manager.extensions) > 0:
+    if (
+        not protocol_mode
+        and agent.extension_manager
+        and len(agent.extension_manager.extensions) > 0
+    ):
         console.print(f"Extensions: [cyan]{len(agent.extension_manager.extensions)} loaded[/cyan]")
 
     # Handle different output modes
     if mode == "json":
-        console.print("[cyan]JSON mode enabled[/cyan]")
-        console.print("[dim]Outputting JSON events to stdout[/dim]")
         run_json_mode(agent)
     elif mode == "rpc":
-        console.print("[cyan]RPC mode enabled[/cyan]")
-        console.print("[dim]Listening on stdin/stdout[/dim]")
         run_rpc_mode(agent)
     else:
         console.print()
@@ -245,6 +283,23 @@ def run_rpc_mode(agent):
                 rpc.send_event("token", {"content": chunk.content})
 
             return {"done": True}
+
+        elif method == "bash":
+            command = params.get("command")
+            if not command:
+                raise ValueError("Missing 'command' parameter")
+
+            from .tools import ShellTools
+
+            output = ShellTools().run_command(
+                command,
+                cwd=params.get("cwd"),
+                exclude_from_context=bool(params.get("excludeFromContext")),
+            )
+            return {
+                "output": output,
+                "excludedFromContext": bool(params.get("excludeFromContext")),
+            }
 
         elif method == "ping":
             return {"pong": True}

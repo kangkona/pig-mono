@@ -30,11 +30,13 @@ class CodingAgent:
         workspace: str = ".",
         verbose: bool = True,
         session_name: str | None = None,
+        session_id: str | None = None,
         session_path: Path | None = None,
         enable_extensions: bool = True,
         enable_skills: bool = True,
         enable_resilience: bool = True,
         enable_cost_tracking: bool = True,
+        excluded_tools: set[str] | None = None,
     ):
         """Initialize coding agent.
 
@@ -43,11 +45,13 @@ class CodingAgent:
             workspace: Working directory
             verbose: Enable verbose output
             session_name: Session name for auto-save
+            session_id: Explicit session ID for automation
             session_path: Path to load existing session
             enable_extensions: Enable extension system
             enable_skills: Enable skills system
             enable_resilience: Enable resilience (API key rotation, fallback)
             enable_cost_tracking: Enable cost tracking
+            excluded_tools: Tool names to disable for this agent
         """
         self.workspace = Path(workspace).resolve()
         self.llm = llm or LLM()
@@ -78,6 +82,8 @@ class CodingAgent:
                 workspace=str(self.workspace),
                 auto_save=True,
             )
+            if session_id:
+                self.session.id = session_id
 
         # Initialize tools
         file_tools = FileTools(str(self.workspace))
@@ -85,11 +91,12 @@ class CodingAgent:
         shell_tools = ShellTools()
 
         # Get all tool methods (descriptor protocol auto-binds self)
+        excluded_tools = excluded_tools or set()
         tools = []
         for tool_instance in [file_tools, code_tools, shell_tools]:
             for attr_name in dir(tool_instance):
                 attr = getattr(tool_instance, attr_name)
-                if isinstance(attr, Tool):
+                if isinstance(attr, Tool) and attr.name not in excluded_tools:
                     tools.append(attr)
 
         # Initialize context manager (needed by _get_system_prompt)
