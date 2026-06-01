@@ -6,6 +6,7 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 
 import pytest
+from pig_agent_core import ExtensionManager
 
 
 @pytest.fixture
@@ -225,7 +226,7 @@ def test_run_json_mode_emits_interrupt_shutdown_reason():
 
 
 def test_run_json_mode_emits_extension_shutdown_event_on_eof():
-    """JSON mode should forward shutdown reason to extensions when present."""
+    """JSON mode should pass EOF shutdown reasons into extension cleanup."""
     from pig_coding_agent.cli import run_json_mode
 
     agent = Mock()
@@ -239,14 +240,11 @@ def test_run_json_mode_emits_extension_shutdown_event_on_eof():
     ):
         run_json_mode(agent)
 
-    agent.extension_manager.emit_event.assert_called_once_with(
-        "session_shutdown",
-        {"reason": "eof"},
-    )
+    agent.extension_manager.cleanup.assert_called_once_with(reason="eof")
 
 
 def test_run_json_mode_emits_extension_shutdown_event_on_interrupt():
-    """JSON mode should forward interrupt shutdown reasons to extensions."""
+    """JSON mode should pass interrupt shutdown reasons into extension cleanup."""
     from pig_coding_agent.cli import run_json_mode
 
     agent = Mock()
@@ -260,10 +258,7 @@ def test_run_json_mode_emits_extension_shutdown_event_on_interrupt():
     ):
         run_json_mode(agent)
 
-    agent.extension_manager.emit_event.assert_called_once_with(
-        "session_shutdown",
-        {"reason": "interrupt"},
-    )
+    agent.extension_manager.cleanup.assert_called_once_with(reason="interrupt")
 
 
 def test_run_json_mode_cleans_up_extensions_on_shutdown():
@@ -281,7 +276,7 @@ def test_run_json_mode_cleans_up_extensions_on_shutdown():
     ):
         run_json_mode(agent)
 
-    agent.extension_manager.cleanup.assert_called_once()
+    agent.extension_manager.cleanup.assert_called_once_with(reason="eof")
 
 
 def test_run_json_mode_piped_input_emits_shutdown_reason_and_cleanup(monkeypatch):
@@ -302,8 +297,29 @@ def test_run_json_mode_piped_input_emits_shutdown_reason_and_cleanup(monkeypatch
         run_json_mode(agent)
 
     json_mode.emit_event.assert_any_call("shutdown", {"reason": "eof"})
-    agent.extension_manager.emit_event.assert_called_once_with(
-        "session_shutdown",
-        {"reason": "eof"},
-    )
-    agent.extension_manager.cleanup.assert_called_once()
+    agent.extension_manager.cleanup.assert_called_once_with(reason="eof")
+
+
+def test_run_json_mode_emits_extension_shutdown_once_with_real_extension_manager() -> None:
+    """JSON mode should not duplicate extension shutdown events."""
+    from pig_coding_agent.cli import run_json_mode
+
+    agent = Mock()
+    manager = ExtensionManager(Mock())
+    shutdown_events = []
+
+    @manager.api.on("session_shutdown")
+    def on_shutdown(event, ctx):
+        shutdown_events.append(event)
+
+    agent.extension_manager = manager
+    json_mode = Mock()
+
+    with (
+        patch("select.select", return_value=([], [], [])),
+        patch("builtins.input", side_effect=EOFError()),
+        patch("pig_agent_core.JSONOutputMode", return_value=json_mode),
+    ):
+        run_json_mode(agent)
+
+    assert shutdown_events == [{"reason": "eof"}]

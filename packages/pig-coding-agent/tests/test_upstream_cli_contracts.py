@@ -6,6 +6,7 @@ import io
 import json
 from unittest.mock import Mock, patch
 
+from pig_agent_core import ExtensionManager
 from pig_coding_agent.cli import JsonLineWriter, main, run_rpc_mode
 
 
@@ -136,10 +137,7 @@ def test_rpc_mode_emits_extension_shutdown_event_on_eof(monkeypatch) -> None:
 
     run_rpc_mode(agent)
 
-    agent.extension_manager.emit_event.assert_called_once_with(
-        "session_shutdown",
-        {"reason": "eof"},
-    )
+    agent.extension_manager.cleanup.assert_called_once_with(reason="eof")
 
 
 def test_rpc_mode_emits_shutdown_reason_on_interrupt(monkeypatch) -> None:
@@ -176,10 +174,7 @@ def test_rpc_mode_emits_extension_shutdown_event_on_interrupt(monkeypatch) -> No
     with patch("sys.stdout", out):
         run_rpc_mode(agent)
 
-    agent.extension_manager.emit_event.assert_called_once_with(
-        "session_shutdown",
-        {"reason": "interrupt"},
-    )
+    agent.extension_manager.cleanup.assert_called_once_with(reason="interrupt")
 
 
 def test_rpc_mode_cleans_up_extensions_on_shutdown(monkeypatch) -> None:
@@ -193,7 +188,7 @@ def test_rpc_mode_cleans_up_extensions_on_shutdown(monkeypatch) -> None:
 
     run_rpc_mode(agent)
 
-    agent.extension_manager.cleanup.assert_called_once()
+    agent.extension_manager.cleanup.assert_called_once_with(reason="eof")
 
 
 def test_rpc_mode_cleans_up_extensions_on_interrupt(monkeypatch) -> None:
@@ -210,4 +205,27 @@ def test_rpc_mode_cleans_up_extensions_on_interrupt(monkeypatch) -> None:
     with patch("sys.stdout", out):
         run_rpc_mode(agent)
 
-    agent.extension_manager.cleanup.assert_called_once()
+    agent.extension_manager.cleanup.assert_called_once_with(reason="interrupt")
+
+
+def test_rpc_mode_emits_extension_shutdown_once_with_real_extension_manager(
+    monkeypatch,
+) -> None:
+    requests = iter([""])
+    out = io.StringIO()
+    agent = Mock()
+    manager = ExtensionManager(Mock())
+    shutdown_events = []
+
+    @manager.api.on("session_shutdown")
+    def on_shutdown(event, ctx):
+        shutdown_events.append(event)
+
+    agent.extension_manager = manager
+
+    monkeypatch.setattr("sys.stdin.readline", lambda: next(requests))
+    monkeypatch.setattr("sys.stdout", out)
+
+    run_rpc_mode(agent)
+
+    assert shutdown_events == [{"reason": "eof"}]

@@ -32,6 +32,14 @@ class JsonLineWriter:
         self.output.flush()
 
 
+def _shutdown_extensions(agent: Any, reason: str) -> None:
+    """Forward protocol shutdown reasons into extension cleanup."""
+    extension_manager = getattr(agent, "extension_manager", None)
+    if extension_manager is None:
+        return
+    extension_manager.cleanup(reason=reason)
+
+
 def _parse_excluded_tools(value: str | None) -> set[str]:
     """Parse comma-separated tool names."""
     if not value or not isinstance(value, str):
@@ -194,12 +202,7 @@ def run_json_mode(agent):
 
     def emit_shutdown(reason: str) -> None:
         json_out.emit_event("shutdown", {"reason": reason})
-        if getattr(agent, "extension_manager", None):
-            agent.extension_manager.emit_event(
-                "session_shutdown",
-                {"reason": reason},
-            )
-            agent.extension_manager.cleanup()
+        _shutdown_extensions(agent, reason)
 
     # Read from stdin if piped, otherwise interactive
     import select
@@ -270,12 +273,7 @@ def run_rpc_mode(agent):
 
     def emit_shutdown(reason: str) -> None:
         rpc.send_event("shutdown", {"reason": reason})
-        if getattr(agent, "extension_manager", None):
-            agent.extension_manager.emit_event(
-                "session_shutdown",
-                {"reason": reason},
-            )
-            agent.extension_manager.cleanup()
+        _shutdown_extensions(agent, reason)
 
     rpc._shutdown_callback = emit_shutdown
 
