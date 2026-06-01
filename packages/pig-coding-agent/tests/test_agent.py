@@ -4,7 +4,7 @@ from unittest.mock import Mock, patch
 
 import pytest
 from pig_agent_core import Session
-from pig_coding_agent.agent import CodingAgent
+from pig_coding_agent.agent import CodingAgent, SessionExitRequested
 
 
 @pytest.fixture
@@ -88,7 +88,7 @@ def test_coding_agent_handle_exit_command(mock_llm, temp_workspace):
     """Test handling exit command."""
     agent = CodingAgent(llm=mock_llm, workspace=str(temp_workspace))
 
-    with pytest.raises(KeyboardInterrupt):
+    with pytest.raises(SessionExitRequested):
         agent._handle_command("/exit")
 
 
@@ -96,7 +96,7 @@ def test_coding_agent_handle_quit_command(mock_llm, temp_workspace):
     """Test handling quit command."""
     agent = CodingAgent(llm=mock_llm, workspace=str(temp_workspace))
 
-    with pytest.raises(KeyboardInterrupt):
+    with pytest.raises(SessionExitRequested):
         agent._handle_command("/quit")
 
 
