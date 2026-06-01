@@ -226,3 +226,25 @@ def test_agent_terminate_tool_result_skips_follow_up_llm_call() -> None:
 
     assert response.content == "finished"
     assert agent.llm.calls == 1
+
+
+def test_agent_followup_queue_processes_all_messages_in_fifo_order() -> None:
+    class FakeLLM:
+        config = SimpleNamespace(model="fake")
+
+        def __init__(self):
+            self.messages: list[str] = []
+
+        def chat(self, messages, tools=None):
+            latest = messages[-1].content
+            self.messages.append(latest)
+            return SimpleNamespace(content=f"reply:{latest}", tool_calls=None)
+
+    agent = Agent(llm=FakeLLM(), tools=[], verbose=False)
+    agent.message_queue.add_followup("follow-1")
+    agent.message_queue.add_followup("follow-2")
+
+    response = agent.run("start")
+
+    assert response.content == "reply:follow-2"
+    assert agent.llm.messages == ["start", "follow-1", "follow-2"]
