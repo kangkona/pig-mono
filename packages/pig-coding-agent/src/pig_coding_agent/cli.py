@@ -241,7 +241,7 @@ def run_json_mode(agent):
                 json_out.done()
 
             except (KeyboardInterrupt, EOFError):
-                json_out.emit_event("shutdown", {})
+                json_out.emit_event("shutdown", {"reason": "eof"})
                 break
 
 

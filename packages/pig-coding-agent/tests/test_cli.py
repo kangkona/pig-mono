@@ -181,3 +181,23 @@ def test_main_with_workspace(mock_agent_class, mock_llm_class, mock_env, mock_ct
 
         # Verify agent created with correct workspace
         assert mock_agent_class.call_args.kwargs.get("workspace") == str(tmp_path)
+
+
+def test_run_json_mode_emits_shutdown_reason():
+    """Interactive JSON mode should emit shutdown with a concrete reason."""
+    from pig_coding_agent.cli import run_json_mode
+
+    agent = Mock()
+    json_mode = Mock()
+
+    with (
+        patch("select.select", return_value=([], [], [])),
+        patch("builtins.input", side_effect=EOFError()),
+        patch("pig_agent_core.JSONOutputMode", return_value=json_mode),
+    ):
+        run_json_mode(agent)
+
+    json_mode.emit_event.assert_any_call(
+        "shutdown",
+        {"reason": "eof"},
+    )
