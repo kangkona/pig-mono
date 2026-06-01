@@ -168,6 +168,15 @@ class CodingAgent:
             if path.exists():
                 self.extension_manager.load_from_directory(path)
 
+    def _shutdown_extensions(self, reason: str) -> None:
+        """Forward shutdown reason into extension cleanup lifecycle."""
+        if not self.extension_manager:
+            return
+        try:
+            self.extension_manager.cleanup(reason=reason)
+        except Exception:
+            pass
+
     def _get_system_prompt(self) -> str:
         """Get system prompt for coding agent."""
         # Default prompt
@@ -331,18 +340,7 @@ When generating code, provide clean, well-documented, production-ready code.
                 shutdown_reason = "lost_terminal"
             raise
         finally:
-            if self.extension_manager:
-                try:
-                    self.extension_manager.emit_event(
-                        "session_shutdown",
-                        {"reason": shutdown_reason},
-                    )
-                except Exception:
-                    pass
-                try:
-                    self.extension_manager.cleanup()
-                except Exception:
-                    pass
+            self._shutdown_extensions(shutdown_reason)
 
             # Clean up queued messages
             if self.agent.message_queue:

@@ -3,6 +3,7 @@
 from unittest.mock import Mock, patch
 
 import pytest
+from pig_agent_core import ExtensionManager
 from pig_coding_agent.agent import CodingAgent
 
 
@@ -325,10 +326,7 @@ def test_run_interactive_emits_session_shutdown_reason_on_eof(mock_llm, temp_wor
     with patch("pig_coding_agent.agent.InteractivePrompt", return_value=prompt):
         agent.run_interactive()
 
-    agent.extension_manager.emit_event.assert_called_once_with(
-        "session_shutdown",
-        {"reason": "eof"},
-    )
+    agent.extension_manager.cleanup.assert_called_once_with(reason="eof")
 
 
 def test_run_interactive_emits_session_shutdown_reason_on_interrupt(mock_llm, temp_workspace):
@@ -347,11 +345,7 @@ def test_run_interactive_emits_session_shutdown_reason_on_interrupt(mock_llm, te
     with patch("pig_coding_agent.agent.InteractivePrompt", return_value=prompt):
         agent.run_interactive()
 
-    agent.extension_manager.emit_event.assert_called_once_with(
-        "session_shutdown",
-        {"reason": "interrupt"},
-    )
-    agent.extension_manager.cleanup.assert_called_once()
+    agent.extension_manager.cleanup.assert_called_once_with(reason="interrupt")
 
 
 def test_run_interactive_emits_session_shutdown_reason_on_clean_exit(mock_llm, temp_workspace):
@@ -378,10 +372,7 @@ def test_run_interactive_emits_session_shutdown_reason_on_clean_exit(mock_llm, t
     ):
         agent.run_interactive()
 
-    agent.extension_manager.emit_event.assert_called_once_with(
-        "session_shutdown",
-        {"reason": "normal"},
-    )
+    agent.extension_manager.cleanup.assert_called_once_with(reason="normal")
 
 
 def test_run_interactive_cleans_up_extensions_on_shutdown(mock_llm, temp_workspace):
@@ -400,7 +391,7 @@ def test_run_interactive_cleans_up_extensions_on_shutdown(mock_llm, temp_workspa
     with patch("pig_coding_agent.agent.InteractivePrompt", return_value=prompt):
         agent.run_interactive()
 
-    agent.extension_manager.cleanup.assert_called_once()
+    agent.extension_manager.cleanup.assert_called_once_with(reason="eof")
 
 
 def test_run_interactive_emits_session_shutdown_reason_on_terminal_loss(mock_llm, temp_workspace):
@@ -420,10 +411,44 @@ def test_run_interactive_emits_session_shutdown_reason_on_terminal_loss(mock_llm
         with pytest.raises(RuntimeError, match="lost terminal"):
             agent.run_interactive()
 
-    agent.extension_manager.emit_event.assert_called_once_with(
-        "session_shutdown",
-        {"reason": "lost_terminal"},
+    agent.extension_manager.cleanup.assert_called_once_with(reason="lost_terminal")
+
+
+def test_shutdown_extensions_helper_emits_signal_reason_and_cleans_up(mock_llm, temp_workspace):
+    agent = CodingAgent(
+        llm=mock_llm,
+        workspace=str(temp_workspace),
+        verbose=False,
+        enable_extensions=False,
     )
+    agent.extension_manager = Mock()
+
+    agent._shutdown_extensions("sigterm")
+
+    agent.extension_manager.cleanup.assert_called_once_with(reason="sigterm")
+
+
+def test_shutdown_extensions_helper_emits_signal_reason_once_with_real_extension_manager(
+    mock_llm, temp_workspace
+):
+    agent = CodingAgent(
+        llm=mock_llm,
+        workspace=str(temp_workspace),
+        verbose=False,
+        enable_extensions=False,
+    )
+    manager = ExtensionManager(agent.agent)
+    shutdown_events = []
+
+    @manager.api.on("session_shutdown")
+    def on_shutdown(event, ctx):
+        shutdown_events.append(event)
+
+    agent.extension_manager = manager
+
+    agent._shutdown_extensions("sigterm")
+
+    assert shutdown_events == [{"reason": "sigterm"}]
 
 
 def test_skill_invocation(mock_llm, temp_workspace):
