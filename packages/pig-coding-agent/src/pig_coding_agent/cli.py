@@ -335,7 +335,8 @@ def run_rpc_mode(agent):
 
     # Run server
     rpc.run_server(handle_request)
-    emit_shutdown("eof")
+    if getattr(rpc, "last_shutdown_reason", None) is None:
+        emit_shutdown("eof")
 
 
 @app.command()

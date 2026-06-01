@@ -140,3 +140,23 @@ def test_rpc_mode_emits_extension_shutdown_event_on_eof(monkeypatch) -> None:
         "session_shutdown",
         {"reason": "eof"},
     )
+
+
+def test_rpc_mode_emits_shutdown_reason_on_interrupt(monkeypatch) -> None:
+    requests = iter(KeyboardInterrupt() for _ in range(1))
+    out = io.StringIO()
+    agent = Mock()
+
+    def interrupted_readline():
+        raise next(requests)
+
+    monkeypatch.setattr("sys.stdin.readline", interrupted_readline)
+
+    with patch("sys.stdout", out):
+        run_rpc_mode(agent)
+
+    lines = out.getvalue().splitlines()
+    assert len(lines) == 1
+    event = json.loads(lines[0])
+    assert event["event"] == "shutdown"
+    assert event["data"] == {"reason": "interrupt"}
