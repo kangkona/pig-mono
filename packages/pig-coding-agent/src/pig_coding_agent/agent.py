@@ -1047,7 +1047,7 @@ Project: .agents/config.json
         if self.extension_manager:
             # Clear and reload
             old_count = len(self.extension_manager.extensions)
-            self.extension_manager.extensions.clear()
+            self.extension_manager.cleanup(reason="reload")
             self._load_extensions()
             new_count = len(self.extension_manager.extensions)
             reloaded.append(f"Extensions: {new_count} (was {old_count})")

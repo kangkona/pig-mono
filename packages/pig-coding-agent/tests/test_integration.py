@@ -228,6 +228,36 @@ def test_extensions_command(mock_llm, temp_workspace):
     agent.ui.system.assert_called()
 
 
+def test_reload_resources_clears_stale_extension_commands(mock_llm, temp_workspace):
+    ext_dir = temp_workspace / ".agents" / "extensions"
+    ext_dir.mkdir(parents=True)
+
+    ext_file = ext_dir / "test_ext.py"
+    ext_file.write_text(
+        """
+def extension(api):
+    @api.command("hello")
+    def hello_cmd():
+        return "Hello!"
+"""
+    )
+
+    agent = CodingAgent(
+        llm=mock_llm,
+        workspace=str(temp_workspace),
+        enable_extensions=True,
+        verbose=False,
+    )
+    agent.ui = Mock()
+
+    assert "hello" in agent.extension_manager.api.get_commands()
+
+    ext_file.unlink()
+    agent._reload_resources()
+
+    assert "hello" not in agent.extension_manager.api.get_commands()
+
+
 def test_queue_command_reports_remaining_followups_after_single_drain(mock_llm, temp_workspace):
     agent = CodingAgent(
         llm=mock_llm,
