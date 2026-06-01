@@ -180,3 +180,17 @@ def test_rpc_mode_emits_extension_shutdown_event_on_interrupt(monkeypatch) -> No
         "session_shutdown",
         {"reason": "interrupt"},
     )
+
+
+def test_rpc_mode_cleans_up_extensions_on_shutdown(monkeypatch) -> None:
+    requests = iter([""])
+    out = io.StringIO()
+    agent = Mock()
+    agent.extension_manager = Mock()
+
+    monkeypatch.setattr("sys.stdin.readline", lambda: next(requests))
+    monkeypatch.setattr("sys.stdout", out)
+
+    run_rpc_mode(agent)
+
+    agent.extension_manager.cleanup.assert_called_once()
