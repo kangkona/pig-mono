@@ -121,6 +121,48 @@ def extension(api):
     assert log_file.read_text().splitlines() == ["start:startup"]
 
 
+def test_coding_agent_emits_resume_session_start_when_loading_existing_session(
+    mock_llm, temp_workspace
+):
+    session = CodingAgent(
+        llm=mock_llm,
+        workspace=str(temp_workspace),
+        session_name="existing",
+        verbose=False,
+        enable_extensions=False,
+    ).session
+    session_path = session.save()
+
+    ext_dir = temp_workspace / ".agents" / "extensions"
+    ext_dir.mkdir(parents=True)
+    log_file = temp_workspace / "resume_events.log"
+
+    ext_file = ext_dir / "resume_ext.py"
+    ext_file.write_text(
+        f"""
+from pathlib import Path
+
+LOG = Path({str(log_file)!r})
+
+def extension(api):
+    @api.on("session_start")
+    def on_start(event, ctx):
+        with LOG.open("a", encoding="utf-8") as handle:
+            handle.write(f"start:{{event['reason']}}\\n")
+"""
+    )
+
+    CodingAgent(
+        llm=mock_llm,
+        workspace=str(temp_workspace),
+        session_path=session_path,
+        enable_extensions=True,
+        verbose=False,
+    )
+
+    assert log_file.read_text().splitlines() == ["start:resume"]
+
+
 def test_coding_agent_session_start_handlers_can_access_ui(mock_llm, temp_workspace):
     ext_dir = temp_workspace / ".agents" / "extensions"
     ext_dir.mkdir(parents=True)
