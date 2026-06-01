@@ -244,3 +244,22 @@ def classify_provider_error(
 def is_context_overflow(error: BaseException | str, compat: ProviderCompat | None = None) -> bool:
     """Return True if an error looks like a context-window overflow."""
     return classify_provider_error(error, compat or OPENAI_COMPAT) == "context_overflow"
+
+
+def extract_openai_usage(response: Any) -> dict[str, int]:
+    """Extract usage from OpenAI-compatible responses.
+
+    Some compatible providers report usage on choice objects instead of the
+    top-level response envelope.
+    """
+    usage = getattr(response, "usage", None)
+    if usage is None:
+        choices = getattr(response, "choices", None) or []
+        if choices:
+            usage = getattr(choices[0], "usage", None)
+
+    return {
+        "prompt_tokens": getattr(usage, "prompt_tokens", 0) if usage else 0,
+        "completion_tokens": getattr(usage, "completion_tokens", 0) if usage else 0,
+        "total_tokens": getattr(usage, "total_tokens", 0) if usage else 0,
+    }

@@ -9,6 +9,7 @@ from ..compat import (
     apply_request_headers,
     apply_thinking_level,
     build_token_limit_param,
+    extract_openai_usage,
 )
 from ..config import Config
 from ..models import Message, Response, StreamChunk
@@ -105,11 +106,7 @@ class OpenRouterProvider(Provider):
         )
 
         choice = response.choices[0]
-        usage = {
-            "prompt_tokens": response.usage.prompt_tokens if response.usage else 0,
-            "completion_tokens": response.usage.completion_tokens if response.usage else 0,
-            "total_tokens": response.usage.total_tokens if response.usage else 0,
-        }
+        usage = extract_openai_usage(response)
 
         return Response(
             content=choice.message.content or "",
@@ -177,11 +174,7 @@ class OpenRouterProvider(Provider):
         )
 
         choice = response.choices[0]
-        usage = {
-            "prompt_tokens": response.usage.prompt_tokens if response.usage else 0,
-            "completion_tokens": response.usage.completion_tokens if response.usage else 0,
-            "total_tokens": response.usage.total_tokens if response.usage else 0,
-        }
+        usage = extract_openai_usage(response)
 
         return Response(
             content=choice.message.content or "",

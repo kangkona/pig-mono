@@ -207,6 +207,40 @@ def test_openrouter_reasoning_models_use_nested_reasoning_payload_when_enabled()
     assert "reasoning_effort" not in create.call_args.kwargs
 
 
+def test_openrouter_falls_back_to_choice_usage_when_top_level_usage_missing() -> None:
+    response = SimpleNamespace(
+        id="chatcmpl-test",
+        model="moonshotai/kimi-k2.6",
+        choices=[
+            SimpleNamespace(
+                message=SimpleNamespace(content="ok", tool_calls=None),
+                finish_reason="stop",
+                usage=SimpleNamespace(prompt_tokens=20, completion_tokens=5, total_tokens=25),
+            )
+        ],
+        usage=None,
+    )
+    create = Mock(return_value=response)
+    client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+
+    with (
+        patch("pig_llm.providers.openrouter.openai.OpenAI", return_value=client),
+        patch("pig_llm.providers.openrouter.openai.AsyncOpenAI", return_value=client),
+    ):
+        provider = OpenRouterProvider(Config(provider="openrouter", api_key="test"))
+
+    result = provider.complete(
+        [Message(role="user", content="hello")],
+        model="moonshotai/kimi-k2.6",
+    )
+
+    assert result.usage == {
+        "prompt_tokens": 20,
+        "completion_tokens": 5,
+        "total_tokens": 25,
+    }
+
+
 def test_anthropic_opus_47_omits_temperature_param() -> None:
     create = Mock(return_value=_anthropic_completion_response())
     client = SimpleNamespace(messages=SimpleNamespace(create=create))

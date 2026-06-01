@@ -120,6 +120,35 @@ def test_complete_merges_session_id_and_custom_headers() -> None:
     assert "session_id" not in sync_create.call_args.kwargs
 
 
+def test_complete_falls_back_to_choice_usage_when_response_usage_missing() -> None:
+    response = SimpleNamespace(
+        id="chatcmpl-test",
+        model="gpt-5.2",
+        choices=[
+            SimpleNamespace(
+                message=SimpleNamespace(content="ok"),
+                finish_reason="stop",
+                usage=SimpleNamespace(
+                    prompt_tokens=7,
+                    completion_tokens=3,
+                    total_tokens=10,
+                ),
+            )
+        ],
+        usage=None,
+    )
+    sync_create = Mock(return_value=response)
+    provider = _provider_with_clients(sync_create, AsyncMock())
+
+    result = provider.complete(_messages(), model="gpt-5.2")
+
+    assert result.usage == {
+        "prompt_tokens": 7,
+        "completion_tokens": 3,
+        "total_tokens": 10,
+    }
+
+
 @pytest.mark.asyncio
 async def test_acomplete_sends_max_completion_tokens_to_openai() -> None:
     async_create = AsyncMock(return_value=_completion_response())
