@@ -4,6 +4,7 @@ from collections.abc import AsyncIterator, Iterator
 
 import openai
 
+from ..compat import OPENAI_COMPAT, apply_thinking_level, build_token_limit_param
 from ..config import Config
 from ..models import Message, Response, StreamChunk
 from ._base import Provider
@@ -72,9 +73,11 @@ class OpenAIProvider(Provider):
     @staticmethod
     def _token_limit_param(max_tokens: int | None) -> dict[str, int]:
         """Build token limit parameters for current OpenAI chat models."""
-        if max_tokens is None:
-            return {}
-        return {"max_completion_tokens": max_tokens}
+        return build_token_limit_param(
+            max_tokens,
+            param_name="max_completion_tokens",
+            compat=OPENAI_COMPAT,
+        )
 
     def complete(
         self,
@@ -85,6 +88,7 @@ class OpenAIProvider(Provider):
         **kwargs,
     ) -> Response:
         """Generate a completion."""
+        kwargs = apply_thinking_level(kwargs, OPENAI_COMPAT)
         response = self.client.chat.completions.create(
             model=model,
             messages=self._convert_messages(messages),
@@ -118,6 +122,7 @@ class OpenAIProvider(Provider):
         **kwargs,
     ) -> Iterator[StreamChunk]:
         """Stream a completion."""
+        kwargs = apply_thinking_level(kwargs, OPENAI_COMPAT)
         stream = self.client.chat.completions.create(
             model=model,
             messages=self._convert_messages(messages),
@@ -145,6 +150,7 @@ class OpenAIProvider(Provider):
         **kwargs,
     ) -> Response:
         """Async generate a completion."""
+        kwargs = apply_thinking_level(kwargs, OPENAI_COMPAT)
         response = await self.async_client.chat.completions.create(
             model=model,
             messages=self._convert_messages(messages),
@@ -178,6 +184,7 @@ class OpenAIProvider(Provider):
         **kwargs,
     ) -> AsyncIterator[StreamChunk]:
         """Async stream a completion."""
+        kwargs = apply_thinking_level(kwargs, OPENAI_COMPAT)
         stream = await self.async_client.chat.completions.create(
             model=model,
             messages=self._convert_messages(messages),

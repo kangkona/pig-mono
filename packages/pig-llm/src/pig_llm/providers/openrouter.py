@@ -4,6 +4,7 @@ from collections.abc import AsyncIterator, Iterator
 
 import openai
 
+from ..compat import OPENROUTER_COMPAT, apply_thinking_level, build_token_limit_param
 from ..config import Config
 from ..models import Message, Response, StreamChunk
 from ._base import Provider
@@ -84,11 +85,16 @@ class OpenRouterProvider(Provider):
         **kwargs,
     ) -> Response:
         """Generate a completion."""
+        kwargs = apply_thinking_level(kwargs, OPENROUTER_COMPAT)
         response = self.client.chat.completions.create(
             model=model,
             messages=self._convert_messages(messages),
             temperature=temperature,
-            max_tokens=max_tokens,
+            **build_token_limit_param(
+                max_tokens,
+                param_name="max_tokens",
+                compat=OPENROUTER_COMPAT,
+            ),
             **kwargs,
         )
 
@@ -117,12 +123,17 @@ class OpenRouterProvider(Provider):
         **kwargs,
     ) -> Iterator[StreamChunk]:
         """Stream a completion."""
+        kwargs = apply_thinking_level(kwargs, OPENROUTER_COMPAT)
         stream = self.client.chat.completions.create(
             model=model,
             messages=self._convert_messages(messages),
             temperature=temperature,
-            max_tokens=max_tokens,
             stream=True,
+            **build_token_limit_param(
+                max_tokens,
+                param_name="max_tokens",
+                compat=OPENROUTER_COMPAT,
+            ),
             **kwargs,
         )
 
@@ -144,11 +155,16 @@ class OpenRouterProvider(Provider):
         **kwargs,
     ) -> Response:
         """Async generate a completion."""
+        kwargs = apply_thinking_level(kwargs, OPENROUTER_COMPAT)
         response = await self.async_client.chat.completions.create(
             model=model,
             messages=self._convert_messages(messages),
             temperature=temperature,
-            max_tokens=max_tokens,
+            **build_token_limit_param(
+                max_tokens,
+                param_name="max_tokens",
+                compat=OPENROUTER_COMPAT,
+            ),
             **kwargs,
         )
 
@@ -177,12 +193,17 @@ class OpenRouterProvider(Provider):
         **kwargs,
     ) -> AsyncIterator[StreamChunk]:
         """Async stream a completion."""
+        kwargs = apply_thinking_level(kwargs, OPENROUTER_COMPAT)
         stream = await self.async_client.chat.completions.create(
             model=model,
             messages=self._convert_messages(messages),
             temperature=temperature,
-            max_tokens=max_tokens,
             stream=True,
+            **build_token_limit_param(
+                max_tokens,
+                param_name="max_tokens",
+                compat=OPENROUTER_COMPAT,
+            ),
             **kwargs,
         )
 

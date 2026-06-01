@@ -5,6 +5,7 @@ from collections.abc import AsyncIterator, Iterator
 
 import anthropic
 
+from ..compat import ANTHROPIC_COMPAT, apply_thinking_level
 from ..config import Config
 from ..models import Message, Response, StreamChunk
 from ._base import Provider
@@ -134,6 +135,7 @@ class AnthropicProvider(Provider):
         system, anthropic_messages = self._convert_messages(messages)
 
         # Convert tools if present
+        kwargs = apply_thinking_level(kwargs, ANTHROPIC_COMPAT)
         tools = self._convert_tools(kwargs.get("tools"))
         if tools:
             kwargs = {k: v for k, v in kwargs.items() if k != "tools"}
@@ -182,6 +184,7 @@ class AnthropicProvider(Provider):
     ) -> Iterator[StreamChunk]:
         """Stream a completion."""
         system, anthropic_messages = self._convert_messages(messages)
+        kwargs = apply_thinking_level(kwargs, ANTHROPIC_COMPAT)
 
         with self.client.messages.stream(
             model=model,
@@ -206,6 +209,7 @@ class AnthropicProvider(Provider):
         system, anthropic_messages = self._convert_messages(messages)
 
         # Convert tools if present
+        kwargs = apply_thinking_level(kwargs, ANTHROPIC_COMPAT)
         tools = self._convert_tools(kwargs.get("tools"))
         if tools:
             kwargs = {k: v for k, v in kwargs.items() if k != "tools"}
