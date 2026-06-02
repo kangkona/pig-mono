@@ -416,3 +416,41 @@ def test_agent_llm_failure_emits_agent_end_failure_event() -> None:
     assert len(events) == 1
     assert events[0].data["success"] is False
     assert events[0].data["error"] == "boom"
+
+
+@pytest.mark.asyncio
+async def test_respond_stream_emits_agent_end_success_event() -> None:
+    class FakeChunk:
+        def __init__(self, content: str):
+            self.choices = [
+                SimpleNamespace(
+                    delta=SimpleNamespace(content=content, tool_calls=None),
+                    finish_reason=None,
+                )
+            ]
+
+    class FakeLLM:
+        config = SimpleNamespace(model="fake")
+
+        def achat_stream(self, messages, tools=None):
+            async def stream():
+                yield FakeChunk("hello")
+                yield FakeChunk(" world")
+
+            return stream()
+
+    events = []
+
+    def on_event(event):
+        if event.type.value == "agent_end":
+            events.append(event)
+
+    agent = Agent(llm=FakeLLM(), tools=[], verbose=False, event_callback=on_event)
+
+    chunks = []
+    async for chunk in agent.respond_stream("start"):
+        chunks.append(chunk)
+
+    assert chunks == ["hello", " world"]
+    assert len(events) == 1
+    assert events[0].data["success"] is True

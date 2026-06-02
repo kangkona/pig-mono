@@ -720,6 +720,7 @@ class Agent:
                 self._log(f"[bold green]Agent:[/bold green] {final_content}")
                 for part in buffered:
                     yield part
+                self._emit_agent_end(success=True)
                 return
 
             # Process tool calls
@@ -750,6 +751,10 @@ class Agent:
             # Continue loop for next iteration
 
         # Max iterations reached
+        self._emit_agent_end(
+            success=False,
+            error="Maximum iterations reached without completion.",
+        )
         yield "Maximum iterations reached without completion."
 
     async def _execute_tool_calls_from_dict(
