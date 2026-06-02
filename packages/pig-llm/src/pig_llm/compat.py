@@ -94,6 +94,14 @@ OPENAI_COMPAT = ProviderCompat(
     system_role_policy="developer",
     max_output_token_policy="send_when_explicit",
     reasoning_effort_level_map={
+        "gpt-5.5": {
+            "off": None,
+            "minimal": None,
+            "low": "low",
+            "medium": "medium",
+            "high": "high",
+            "xhigh": "xhigh",
+        },
         "gpt-5.5-pro": {
             "off": None,
             "minimal": None,
@@ -101,7 +109,7 @@ OPENAI_COMPAT = ProviderCompat(
             "medium": "medium",
             "high": "high",
             "xhigh": "xhigh",
-        }
+        },
     },
     thinking_level_map={
         "off": "none",

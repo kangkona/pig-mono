@@ -267,6 +267,19 @@ def test_native_openai_gpt_55_pro_omits_unsupported_minimal_reasoning() -> None:
     assert "reasoning_effort" not in sync_create.call_args.kwargs
 
 
+def test_native_openai_gpt_55_omits_unsupported_minimal_reasoning() -> None:
+    sync_create = Mock(return_value=_completion_response())
+    provider = _provider_with_clients(sync_create, AsyncMock())
+
+    provider.complete(
+        _messages(),
+        model="gpt-5.5",
+        thinking_level="minimal",
+    )
+
+    assert "reasoning_effort" not in sync_create.call_args.kwargs
+
+
 def test_custom_qwen_base_url_uses_enable_thinking_toggle() -> None:
     sync_create = Mock(return_value=_completion_response())
     provider = _provider_with_clients(
