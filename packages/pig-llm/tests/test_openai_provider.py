@@ -472,6 +472,30 @@ def test_explicit_together_compat_uses_max_tokens_field() -> None:
     assert "max_completion_tokens" not in sync_create.call_args.kwargs
 
 
+def test_explicit_together_compat_omits_prompt_cache_retention() -> None:
+    sync_create = Mock(return_value=_completion_response())
+    provider = _provider_with_clients(
+        sync_create,
+        AsyncMock(),
+        Config(
+            provider="openai",
+            api_key="test-key",
+            base_url="https://together-gateway.example/v1",
+            compat_mode="together",
+        ),
+    )
+
+    provider.complete(
+        _messages(),
+        model="moonshotai/Kimi-K2.6",
+        session_id="session-123",
+        cache_retention="long",
+    )
+
+    assert "prompt_cache_key" not in sync_create.call_args.kwargs
+    assert "prompt_cache_retention" not in sync_create.call_args.kwargs
+
+
 def test_explicit_moonshot_compat_uses_max_tokens_field() -> None:
     sync_create = Mock(return_value=_completion_response())
     provider = _provider_with_clients(

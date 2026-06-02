@@ -165,6 +165,7 @@ DEEPSEEK_COMPAT = ProviderCompat(
 TOGETHER_COMPAT = ProviderCompat(
     max_output_token_policy="send_when_explicit",
     token_limit_field="max_tokens",
+    supports_long_cache_retention=False,
     send_session_affinity_headers=True,
     thinking_level_map={
         "off": {"enabled": False},
