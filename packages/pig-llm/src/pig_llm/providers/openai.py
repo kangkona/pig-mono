@@ -51,8 +51,12 @@ class OpenAIProvider(Provider):
             return self._COMPAT_MODE_MAP[compat_mode]
         if "api.moonshot.ai" in base_url or "api.moonshot.cn" in base_url:
             return MOONSHOT_COMPAT
-        if "opencode.ai/zen/go" in base_url and model_name == "kimi-k2.6":
-            return OPENCODE_GO_KIMI_COMPAT
+        if "opencode.ai/zen/go" in base_url and model_name in {
+            "kimi-k2.6",
+            "deepseek-v4-flash",
+            "deepseek-v4-pro",
+        }:
+            return OPENCODE_GO_KIMI_COMPAT if model_name == "kimi-k2.6" else DEEPSEEK_COMPAT
         if "dashscope.aliyuncs.com" in base_url:
             return QWEN_COMPAT
         if "api.z.ai" in base_url:

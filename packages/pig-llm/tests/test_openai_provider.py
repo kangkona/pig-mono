@@ -491,6 +491,29 @@ def test_explicit_deepseek_compat_uses_max_tokens_field() -> None:
     assert "max_completion_tokens" not in sync_create.call_args.kwargs
 
 
+def test_explicit_deepseek_compat_deepseek_v4_flash_omits_unsupported_medium_thinking() -> None:
+    sync_create = Mock(return_value=_completion_response())
+    provider = _provider_with_clients(
+        sync_create,
+        AsyncMock(),
+        Config(
+            provider="openai",
+            api_key="test-key",
+            base_url="https://reasoner.example/v1",
+            compat_mode="deepseek",
+        ),
+    )
+
+    provider.complete(
+        _messages(),
+        model="deepseek-v4-flash",
+        thinking_level="medium",
+    )
+
+    assert "thinking" not in sync_create.call_args.kwargs
+    assert "reasoning_effort" not in sync_create.call_args.kwargs
+
+
 def test_explicit_string_thinking_compat_uses_string_payload() -> None:
     sync_create = Mock(return_value=_completion_response())
     provider = _provider_with_clients(
@@ -798,6 +821,28 @@ def test_custom_opencode_go_kimi_omits_unsupported_medium_thinking() -> None:
     provider.complete(
         _messages(),
         model="kimi-k2.6",
+        thinking_level="medium",
+    )
+
+    assert "thinking" not in sync_create.call_args.kwargs
+    assert "reasoning_effort" not in sync_create.call_args.kwargs
+
+
+def test_custom_opencode_go_deepseek_v4_flash_omits_unsupported_medium_thinking() -> None:
+    sync_create = Mock(return_value=_completion_response())
+    provider = _provider_with_clients(
+        sync_create,
+        AsyncMock(),
+        Config(
+            provider="openai",
+            api_key="test-key",
+            base_url="https://opencode.ai/zen/go/v1",
+        ),
+    )
+
+    provider.complete(
+        _messages(),
+        model="deepseek-v4-flash",
         thinking_level="medium",
     )
 
