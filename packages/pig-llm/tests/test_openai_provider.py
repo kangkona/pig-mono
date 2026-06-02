@@ -41,6 +41,20 @@ def _stream_chunk() -> SimpleNamespace:
     )
 
 
+def _terminal_stream_chunk(
+    *, content: str | None = None, finish_reason: str = "stop"
+) -> SimpleNamespace:
+    return SimpleNamespace(
+        id="chunk-terminal",
+        choices=[
+            SimpleNamespace(
+                delta=SimpleNamespace(content=content),
+                finish_reason=finish_reason,
+            )
+        ],
+    )
+
+
 class _AsyncChunks:
     def __init__(self, chunks: list[SimpleNamespace]):
         self._chunks = iter(chunks)
@@ -101,6 +115,23 @@ def test_stream_sends_max_completion_tokens_to_openai() -> None:
     list(provider.stream(_messages(), model="gpt-5.2", max_tokens=128))
 
     _assert_uses_max_completion_tokens(sync_create.call_args.kwargs)
+
+
+def test_stream_stops_consuming_after_terminal_finish_reason() -> None:
+    sync_create = Mock(
+        return_value=iter(
+            [
+                _stream_chunk(),
+                _terminal_stream_chunk(finish_reason="stop"),
+                _stream_chunk(),
+            ]
+        )
+    )
+    provider = _provider_with_clients(sync_create, AsyncMock())
+
+    chunks = list(provider.stream(_messages(), model="gpt-5.2"))
+
+    assert [chunk.content for chunk in chunks] == ["ok"]
 
 
 def test_complete_merges_session_id_and_custom_headers() -> None:
@@ -1113,3 +1144,21 @@ async def test_astream_sends_max_completion_tokens_to_openai() -> None:
 
     assert len(chunks) == 1
     _assert_uses_max_completion_tokens(async_create.call_args.kwargs)
+
+
+@pytest.mark.asyncio
+async def test_astream_stops_consuming_after_terminal_finish_reason() -> None:
+    async_create = AsyncMock(
+        return_value=_AsyncChunks(
+            [
+                _stream_chunk(),
+                _terminal_stream_chunk(finish_reason="stop"),
+                _stream_chunk(),
+            ]
+        )
+    )
+    provider = _provider_with_clients(Mock(), async_create)
+
+    chunks = [chunk async for chunk in provider.astream(_messages(), model="gpt-5.2")]
+
+    assert [chunk.content for chunk in chunks] == ["ok"]

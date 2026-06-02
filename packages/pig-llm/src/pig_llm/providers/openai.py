@@ -219,6 +219,8 @@ class OpenAIProvider(Provider):
                     finish_reason=choice.finish_reason,
                     metadata={"id": chunk.id},
                 )
+            if choice.finish_reason:
+                break
 
     async def acomplete(
         self,
@@ -299,3 +301,5 @@ class OpenAIProvider(Provider):
                     finish_reason=choice.finish_reason,
                     metadata={"id": chunk.id},
                 )
+            if choice.finish_reason:
+                break
