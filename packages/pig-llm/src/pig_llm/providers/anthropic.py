@@ -194,14 +194,16 @@ class AnthropicProvider(Provider):
         """Stream a completion."""
         system, anthropic_messages = self._convert_messages(messages)
         kwargs = apply_thinking_level(kwargs, ANTHROPIC_COMPAT)
+        request_kwargs = dict(kwargs)
+        if self._supports_temperature(model):
+            request_kwargs["temperature"] = temperature
 
         with self.client.messages.stream(
             model=model,
             messages=anthropic_messages,
             system=system,
-            temperature=temperature,
             max_tokens=max_tokens or 4096,
-            **kwargs,
+            **request_kwargs,
         ) as stream:
             for text in stream.text_stream:
                 yield StreamChunk(content=text, finish_reason=None)
@@ -270,14 +272,16 @@ class AnthropicProvider(Provider):
     ) -> AsyncIterator[StreamChunk]:
         """Async stream a completion."""
         system, anthropic_messages = self._convert_messages(messages)
-
+        kwargs = apply_thinking_level(kwargs, ANTHROPIC_COMPAT)
+        request_kwargs = dict(kwargs)
+        if self._supports_temperature(model):
+            request_kwargs["temperature"] = temperature
         async with self.async_client.messages.stream(
             model=model,
             messages=anthropic_messages,
             system=system,
-            temperature=temperature,
             max_tokens=max_tokens or 4096,
-            **kwargs,
+            **request_kwargs,
         ) as stream:
             async for text in stream.text_stream:
                 yield StreamChunk(content=text, finish_reason=None)

@@ -5,6 +5,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
 
+import pytest
 from pig_llm.compat import (
     ANTHROPIC_COMPAT,
     OPENAI_COMPAT,
@@ -17,6 +18,20 @@ from pig_llm.compat import (
 from pig_llm.config import Config
 from pig_llm.models import Message
 from pig_llm.providers.openrouter import OpenRouterProvider
+
+
+class _AsyncTextStream:
+    def __init__(self, items):
+        self._items = iter(items)
+
+    def __aiter__(self):
+        return self
+
+    async def __anext__(self):
+        try:
+            return next(self._items)
+        except StopIteration as exc:
+            raise StopAsyncIteration from exc
 
 
 def _anthropic_completion_response() -> SimpleNamespace:
@@ -352,3 +367,60 @@ def test_anthropic_non_opus_47_models_keep_temperature_param() -> None:
     )
 
     assert create.call_args.kwargs["temperature"] == 0
+
+
+def test_anthropic_opus_47_stream_omits_temperature_param() -> None:
+    stream_ctx = Mock()
+    stream_ctx.__enter__ = Mock(return_value=SimpleNamespace(text_stream=[]))
+    stream_ctx.__exit__ = Mock(return_value=False)
+    client = SimpleNamespace(messages=SimpleNamespace(stream=Mock(return_value=stream_ctx)))
+    async_client = SimpleNamespace(messages=SimpleNamespace(create=AsyncMock()))
+
+    with (
+        patch("pig_llm.providers.anthropic.anthropic.Anthropic", return_value=client),
+        patch("pig_llm.providers.anthropic.anthropic.AsyncAnthropic", return_value=async_client),
+    ):
+        from pig_llm.providers.anthropic import AnthropicProvider
+
+        provider = AnthropicProvider(Config(provider="anthropic", api_key="test"))
+
+    list(
+        provider.stream(
+            [Message(role="user", content="hello")],
+            model="claude-opus-4-7",
+            temperature=0,
+        )
+    )
+
+    assert "temperature" not in client.messages.stream.call_args.kwargs
+
+
+@patch("pig_llm.providers.anthropic.anthropic.AsyncAnthropic")
+@patch("pig_llm.providers.anthropic.anthropic.Anthropic")
+@pytest.mark.asyncio
+async def test_anthropic_opus_47_astream_omits_temperature_param(
+    mock_anthropic, mock_async_anthropic
+) -> None:
+    stream_ctx = AsyncMock()
+    stream_ctx.__aenter__.return_value = SimpleNamespace(text_stream=_AsyncTextStream([]))
+    stream_ctx.__aexit__.return_value = False
+    mock_async_anthropic.return_value = SimpleNamespace(
+        messages=SimpleNamespace(stream=Mock(return_value=stream_ctx))
+    )
+    mock_anthropic.return_value = SimpleNamespace(messages=SimpleNamespace(create=Mock()))
+
+    from pig_llm.providers.anthropic import AnthropicProvider
+
+    provider = AnthropicProvider(Config(provider="anthropic", api_key="test"))
+
+    chunks = [
+        chunk
+        async for chunk in provider.astream(
+            [Message(role="user", content="hello")],
+            model="claude-opus-4-7",
+            temperature=0,
+        )
+    ]
+
+    assert chunks == []
+    assert "temperature" not in mock_async_anthropic.return_value.messages.stream.call_args.kwargs
