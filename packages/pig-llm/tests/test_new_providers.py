@@ -269,6 +269,44 @@ def test_openai_compatible_providers_send_session_affinity_headers(
     assert create.call_args.kwargs["extra_headers"]["session-id"] == "session-42"
 
 
+def test_xai_provider_uses_prompt_cache_for_long_retention() -> None:
+    create = Mock(
+        return_value=SimpleNamespace(
+            id="resp-1",
+            model="test-model",
+            choices=[
+                SimpleNamespace(
+                    message=SimpleNamespace(content="ok", tool_calls=None),
+                    finish_reason="stop",
+                )
+            ],
+            usage=SimpleNamespace(prompt_tokens=1, completion_tokens=1, total_tokens=2),
+        )
+    )
+    sync_client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+    async_client = SimpleNamespace(
+        chat=SimpleNamespace(completions=SimpleNamespace(create=AsyncMock()))
+    )
+
+    with (
+        patch("pig_llm.providers.xai.openai.OpenAI", return_value=sync_client),
+        patch("pig_llm.providers.xai.openai.AsyncOpenAI", return_value=async_client),
+    ):
+        from pig_llm.providers.xai import XAIProvider
+
+        provider = XAIProvider(Config(provider="xai", api_key="test"))
+
+    provider.complete(
+        [SimpleNamespace(role="user", content="hello", metadata=None)],
+        model="test-model",
+        session_id="session-xai",
+        cache_retention="long",
+    )
+
+    assert create.call_args.kwargs["prompt_cache_key"] == "session-xai"
+    assert create.call_args.kwargs["prompt_cache_retention"] == "24h"
+
+
 @pytest.mark.parametrize(
     ("module_name", "class_name", "base_url"),
     [
