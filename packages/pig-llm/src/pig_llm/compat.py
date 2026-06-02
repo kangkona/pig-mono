@@ -83,6 +83,7 @@ COMMON_RETRYABLE_PATTERNS = _compile_many(
 
 
 OPENAI_COMPAT = ProviderCompat(
+    system_role_policy="developer",
     max_output_token_policy="send_when_explicit",
     thinking_level_map={
         "off": "none",

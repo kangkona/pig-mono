@@ -165,6 +165,22 @@ def test_native_openai_maps_thinking_level_to_reasoning_effort() -> None:
     assert "thinking" not in sync_create.call_args.kwargs
 
 
+def test_native_openai_promotes_developer_metadata_role() -> None:
+    sync_create = Mock(return_value=_completion_response())
+    provider = _provider_with_clients(sync_create, AsyncMock())
+
+    provider.complete(
+        [
+            Message(role="system", content="rules", metadata={"role": "developer"}),
+            Message(role="user", content="hi"),
+        ],
+        model="gpt-5.2",
+    )
+
+    messages = sync_create.call_args.kwargs["messages"]
+    assert messages[0] == {"role": "developer", "content": "rules"}
+
+
 def test_native_openai_maps_thinking_off_to_none_reasoning_effort() -> None:
     sync_create = Mock(return_value=_completion_response())
     provider = _provider_with_clients(sync_create, AsyncMock())

@@ -18,6 +18,7 @@ from ..compat import (
     apply_thinking_level,
     build_token_limit_param,
     extract_openai_usage,
+    normalize_messages,
 )
 from ..config import Config
 from ..models import Message, Response, StreamChunk
@@ -135,9 +136,14 @@ class OpenAIProvider(Provider):
         compat = self._compat(model)
         kwargs = apply_thinking_level(kwargs, compat)
         kwargs = apply_request_headers(kwargs)
+        normalized_messages = normalize_messages(
+            messages,
+            compat,
+            supports_developer_role=compat is OPENAI_COMPAT,
+        )
         response = self.client.chat.completions.create(
             model=model,
-            messages=self._convert_messages(messages),
+            messages=self._convert_messages(normalized_messages),
             temperature=temperature,
             **self._token_limit_param(max_tokens, compat),
             **kwargs,
@@ -167,9 +173,14 @@ class OpenAIProvider(Provider):
         compat = self._compat(model)
         kwargs = apply_thinking_level(kwargs, compat)
         kwargs = apply_request_headers(kwargs)
+        normalized_messages = normalize_messages(
+            messages,
+            compat,
+            supports_developer_role=compat is OPENAI_COMPAT,
+        )
         stream = self.client.chat.completions.create(
             model=model,
-            messages=self._convert_messages(messages),
+            messages=self._convert_messages(normalized_messages),
             temperature=temperature,
             stream=True,
             **self._token_limit_param(max_tokens, compat),
@@ -197,9 +208,14 @@ class OpenAIProvider(Provider):
         compat = self._compat(model)
         kwargs = apply_thinking_level(kwargs, compat)
         kwargs = apply_request_headers(kwargs)
+        normalized_messages = normalize_messages(
+            messages,
+            compat,
+            supports_developer_role=compat is OPENAI_COMPAT,
+        )
         response = await self.async_client.chat.completions.create(
             model=model,
-            messages=self._convert_messages(messages),
+            messages=self._convert_messages(normalized_messages),
             temperature=temperature,
             **self._token_limit_param(max_tokens, compat),
             **kwargs,
@@ -229,9 +245,14 @@ class OpenAIProvider(Provider):
         compat = self._compat(model)
         kwargs = apply_thinking_level(kwargs, compat)
         kwargs = apply_request_headers(kwargs)
+        normalized_messages = normalize_messages(
+            messages,
+            compat,
+            supports_developer_role=compat is OPENAI_COMPAT,
+        )
         stream = await self.async_client.chat.completions.create(
             model=model,
-            messages=self._convert_messages(messages),
+            messages=self._convert_messages(normalized_messages),
             temperature=temperature,
             stream=True,
             **self._token_limit_param(max_tokens, compat),

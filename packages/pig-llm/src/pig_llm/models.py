@@ -8,7 +8,7 @@ from pydantic import BaseModel
 class Message(BaseModel):
     """A message in a conversation."""
 
-    role: Literal["system", "user", "assistant", "tool"]
+    role: Literal["system", "developer", "user", "assistant", "tool"]
     content: str
     metadata: dict[str, Any] | None = None
 
