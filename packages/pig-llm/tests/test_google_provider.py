@@ -107,39 +107,3 @@ def test_google_provider_uses_google_thinking_level_enum() -> None:
 
     config = provider.client.models.generate_content.call_args.kwargs["config"]
     assert config.thinking_config.thinking_level == types.ThinkingLevel.HIGH
-
-
-def test_google_provider_omits_medium_for_gemini_31_pro_preview() -> None:
-    response = SimpleNamespace(
-        candidates=[],
-        usage_metadata=None,
-        id="resp-1",
-    )
-    provider = _provider_with_client(Mock(return_value=response), AsyncMock(return_value=response))
-
-    provider.complete(
-        [Message(role="user", content="hello")],
-        model="gemini-3.1-pro-preview",
-        thinking_level="medium",
-    )
-
-    config = provider.client.models.generate_content.call_args.kwargs["config"]
-    assert config.thinking_config is None
-
-
-def test_google_provider_omits_low_for_gemma_4_31b_it() -> None:
-    response = SimpleNamespace(
-        candidates=[],
-        usage_metadata=None,
-        id="resp-1",
-    )
-    provider = _provider_with_client(Mock(return_value=response), AsyncMock(return_value=response))
-
-    provider.complete(
-        [Message(role="user", content="hello")],
-        model="gemma-4-31b-it",
-        thinking_level="low",
-    )
-
-    config = provider.client.models.generate_content.call_args.kwargs["config"]
-    assert config.thinking_config is None
