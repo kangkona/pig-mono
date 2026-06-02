@@ -165,6 +165,22 @@ def test_native_openai_sets_prompt_cache_retention_for_long_cache() -> None:
     assert sync_create.call_args.kwargs["prompt_cache_retention"] == "24h"
 
 
+def test_native_openai_uses_environment_default_for_long_cache_retention(monkeypatch) -> None:
+    sync_create = Mock(return_value=_completion_response())
+    provider = _provider_with_clients(sync_create, AsyncMock())
+
+    monkeypatch.setenv("PI_CACHE_RETENTION", "long")
+
+    provider.complete(
+        _messages(),
+        model="gpt-5.2",
+        session_id="session-123",
+    )
+
+    assert sync_create.call_args.kwargs["prompt_cache_key"] == "session-123"
+    assert sync_create.call_args.kwargs["prompt_cache_retention"] == "24h"
+
+
 def test_complete_falls_back_to_choice_usage_when_response_usage_missing() -> None:
     response = SimpleNamespace(
         id="chatcmpl-test",

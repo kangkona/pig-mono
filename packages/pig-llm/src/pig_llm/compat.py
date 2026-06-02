@@ -6,6 +6,7 @@ across every provider implementation.
 
 from __future__ import annotations
 
+import os
 import re
 from dataclasses import dataclass, field
 from enum import Enum
@@ -311,7 +312,10 @@ def apply_prompt_cache(
 ) -> dict[str, Any]:
     """Apply OpenAI-style prompt cache fields when supported."""
     next_kwargs = dict(kwargs)
-    cache_retention = str(next_kwargs.pop("cache_retention", "short") or "short").lower()
+    raw_cache_retention = next_kwargs.pop("cache_retention", None)
+    if raw_cache_retention is None:
+        raw_cache_retention = os.environ.get("PI_CACHE_RETENTION", "short")
+    cache_retention = str(raw_cache_retention or "short").lower()
     session_id = next_kwargs.get("session_id")
     next_kwargs["_resolved_cache_retention"] = cache_retention
 
