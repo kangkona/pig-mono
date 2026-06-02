@@ -402,7 +402,7 @@ def apply_request_headers(kwargs: dict[str, Any]) -> dict[str, Any]:
 
     merged_headers = {**extra_headers, **headers}
     if session_id:
-        merged_headers["session-id"] = session_id
+        merged_headers.setdefault("session-id", session_id)
 
     if merged_headers:
         next_kwargs["extra_headers"] = merged_headers

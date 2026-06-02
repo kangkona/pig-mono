@@ -122,6 +122,20 @@ def test_complete_merges_session_id_and_custom_headers() -> None:
     assert "session_id" not in sync_create.call_args.kwargs
 
 
+def test_explicit_session_header_overrides_generated_session_id_header() -> None:
+    sync_create = Mock(return_value=_completion_response())
+    provider = _provider_with_clients(sync_create, AsyncMock())
+
+    provider.complete(
+        _messages(),
+        model="gpt-5.2",
+        session_id="session-123",
+        headers={"session-id": "override-session"},
+    )
+
+    assert sync_create.call_args.kwargs["extra_headers"]["session-id"] == "override-session"
+
+
 def test_native_openai_uses_session_id_as_prompt_cache_key() -> None:
     sync_create = Mock(return_value=_completion_response())
     provider = _provider_with_clients(sync_create, AsyncMock())
