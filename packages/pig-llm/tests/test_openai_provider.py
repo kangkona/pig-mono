@@ -535,6 +535,39 @@ def test_explicit_moonshot_compat_uses_max_tokens_field() -> None:
     assert "max_completion_tokens" not in sync_create.call_args.kwargs
 
 
+def test_moonshot_base_url_auto_detects_moonshot_compat() -> None:
+    sync_create = Mock(return_value=_completion_response())
+    provider = _provider_with_clients(
+        sync_create,
+        AsyncMock(),
+        Config(
+            provider="openai",
+            api_key="test-key",
+            base_url="https://api.moonshot.ai/v1",
+        ),
+    )
+
+    provider.complete(
+        [
+            Message(role="system", content="rules", metadata={"role": "developer"}),
+            Message(role="user", content="hi"),
+        ],
+        model="kimi-k2.6",
+        session_id="session-123",
+        cache_retention="long",
+        max_tokens=444,
+        thinking_level="high",
+    )
+
+    messages = sync_create.call_args.kwargs["messages"]
+    assert messages[0] == {"role": "system", "content": "rules"}
+    assert sync_create.call_args.kwargs["max_tokens"] == 444
+    assert "max_completion_tokens" not in sync_create.call_args.kwargs
+    assert "prompt_cache_key" not in sync_create.call_args.kwargs
+    assert "prompt_cache_retention" not in sync_create.call_args.kwargs
+    assert "reasoning_effort" not in sync_create.call_args.kwargs
+
+
 def test_explicit_moonshot_compat_omits_prompt_cache_retention() -> None:
     sync_create = Mock(return_value=_completion_response())
     provider = _provider_with_clients(
