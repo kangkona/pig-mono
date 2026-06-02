@@ -59,6 +59,21 @@ def test_console_markdown_falls_back_to_plain_text_on_render_error(
 
 
 @patch("pig_tui.console.RichConsole")
+@patch("pig_tui.console.Markdown", return_value=object())
+def test_console_markdown_falls_back_to_plain_text_when_printing_rendered_markdown_fails(
+    mock_markdown, mock_rich_console
+):
+    console = Console()
+    console.console.print.side_effect = [RuntimeError("render exploded"), None]
+
+    console.markdown("# Hello")
+
+    calls = console.console.print.call_args_list
+    assert calls[0].args == (mock_markdown.return_value,)
+    assert calls[1].args == ("# Hello",)
+
+
+@patch("pig_tui.console.RichConsole")
 def test_console_code(mock_rich_console):
     """Test code highlighting."""
     console = Console()

@@ -174,6 +174,21 @@ def normalize_markdown_for_terminal(markdown: str) -> str:
     return "\n".join(lines)
 
 
+def print_markdown_safely(
+    markdown: str,
+    *,
+    renderer: Callable[[str], object],
+    printer: Callable[[object], None],
+) -> None:
+    """Render markdown with a plain-text fallback for construction or print failures."""
+    normalized = normalize_markdown_for_terminal(markdown)
+    fallback_text = normalize_terminal_output(normalized)
+    try:
+        printer(renderer(normalized))
+    except Exception:
+        printer(fallback_text)
+
+
 def _probe_tmux_client_termfeatures() -> str | None:
     """Return tmux client_termfeatures, or None when probing is unavailable."""
     try:

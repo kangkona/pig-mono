@@ -9,7 +9,7 @@ from rich.console import Console
 from rich.markdown import Markdown
 from rich.panel import Panel
 
-from .rendering import normalize_markdown_for_terminal, normalize_terminal_output
+from .rendering import normalize_terminal_output, print_markdown_safely
 from .theme import Theme
 
 
@@ -82,13 +82,11 @@ class ChatUI:
 
         if self.markdown_mode:
             self.console.print(prefix, end="")
-            normalized = normalize_markdown_for_terminal(message)
-            try:
-                rendered = Markdown(normalized)
-            except Exception:
-                self.console.print(normalize_terminal_output(normalized))
-            else:
-                self.console.print(rendered)
+            print_markdown_safely(
+                message,
+                renderer=Markdown,
+                printer=self.console.print,
+            )
         else:
             self.console.print(f"{prefix}{normalize_terminal_output(message)}")
 
@@ -103,13 +101,11 @@ class ChatUI:
 
         if self.markdown_mode:
             self.console.print(prefix, end="")
-            normalized = normalize_markdown_for_terminal(message)
-            try:
-                rendered = Markdown(normalized)
-            except Exception:
-                self.console.print(normalize_terminal_output(normalized))
-            else:
-                self.console.print(rendered)
+            print_markdown_safely(
+                message,
+                renderer=Markdown,
+                printer=self.console.print,
+            )
         else:
             self.console.print(f"{prefix}{normalize_terminal_output(message)}")
 

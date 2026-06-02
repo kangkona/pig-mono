@@ -7,7 +7,7 @@ from rich.json import JSON
 from rich.markdown import Markdown
 from rich.syntax import Syntax
 
-from .rendering import normalize_markdown_for_terminal, normalize_terminal_output
+from .rendering import normalize_terminal_output, print_markdown_safely
 
 
 class Console:
@@ -41,13 +41,11 @@ class Console:
         Args:
             text: Markdown text to render
         """
-        normalized = normalize_markdown_for_terminal(text)
-        try:
-            md = Markdown(normalized)
-        except Exception:
-            self.console.print(normalized)
-            return
-        self.console.print(md)
+        print_markdown_safely(
+            text,
+            renderer=Markdown,
+            printer=self.console.print,
+        )
 
     def code(self, code: str, language: str = "python", line_numbers: bool = False) -> None:
         """Display syntax highlighted code.
