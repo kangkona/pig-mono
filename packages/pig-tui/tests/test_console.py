@@ -37,6 +37,18 @@ def test_console_markdown(mock_rich_console):
 
 
 @patch("pig_tui.console.RichConsole")
+@patch("pig_tui.console.Markdown", side_effect=ValueError("markdown exploded"))
+def test_console_markdown_falls_back_to_plain_text_on_render_error(
+    mock_markdown, mock_rich_console
+):
+    console = Console()
+
+    console.markdown("# Hello")
+
+    console.console.print.assert_called_once_with("# Hello")
+
+
+@patch("pig_tui.console.RichConsole")
 def test_console_code(mock_rich_console):
     """Test code highlighting."""
     console = Console()

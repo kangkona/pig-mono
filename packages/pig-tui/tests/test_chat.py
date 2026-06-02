@@ -56,6 +56,19 @@ def test_chat_ui_normalizes_markdown_before_render(mock_markdown, mock_console):
 
 
 @patch("pig_tui.chat.Console")
+@patch("pig_tui.chat.Markdown", side_effect=ValueError("markdown exploded"))
+def test_chat_ui_falls_back_to_plain_text_when_markdown_render_fails(mock_markdown, mock_console):
+    chat = ChatUI()
+
+    chat.assistant("# Hello")
+
+    calls = chat.console.print.call_args_list
+    assert calls[0].args[0].endswith("Assistant:[/] ")
+    assert calls[0].kwargs["end"] == ""
+    assert calls[1].args == ("# Hello",)
+
+
+@patch("pig_tui.chat.Console")
 def test_chat_ui_system_message(mock_console):
     """Test displaying system message."""
     chat = ChatUI()

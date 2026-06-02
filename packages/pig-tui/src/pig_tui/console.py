@@ -22,7 +22,7 @@ class Console:
         self.console = RichConsole()
         self.theme = theme
 
-    def print(self, *args, style: str = "", **kwargs) -> None:
+    def print(self, *args: Any, style: str = "", **kwargs: Any) -> None:
         """Print with optional styling.
 
         Args:
@@ -38,7 +38,12 @@ class Console:
         Args:
             text: Markdown text to render
         """
-        md = Markdown(normalize_markdown_for_terminal(text))
+        normalized = normalize_markdown_for_terminal(text)
+        try:
+            md = Markdown(normalized)
+        except Exception:
+            self.console.print(normalized)
+            return
         self.console.print(md)
 
     def code(self, code: str, language: str = "python", line_numbers: bool = False) -> None:
@@ -66,7 +71,7 @@ class Console:
         json_obj = JSON.from_data(data)
         self.console.print(json_obj)
 
-    def rule(self, title: str = "", style: str = ""):
+    def rule(self, title: str = "", style: str = "") -> None:
         """Print a horizontal rule.
 
         Args:

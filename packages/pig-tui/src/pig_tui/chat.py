@@ -3,6 +3,7 @@
 import sys
 from contextlib import contextmanager
 from datetime import datetime
+from typing import Any
 
 from rich.console import Console
 from rich.markdown import Markdown
@@ -20,7 +21,7 @@ class StreamWriter:
         self.console = console
         self.prefix = prefix
         self.style = style
-        self.buffer = []
+        self.buffer: list[str] = []
 
     def write(self, text: str) -> None:
         """Write text to stream."""
@@ -29,12 +30,12 @@ class StreamWriter:
         self.console.print(text, style=self.style, end="")
         sys.stdout.flush()
 
-    def __enter__(self):
+    def __enter__(self) -> "StreamWriter":
         """Enter context."""
         self.console.print(self.prefix, style=self.style, end="")
         return self
 
-    def __exit__(self, *args):
+    def __exit__(self, *args: Any) -> None:
         """Exit context."""
         self.console.print()  # New line
 
@@ -80,7 +81,13 @@ class ChatUI:
 
         if self.markdown_mode:
             self.console.print(prefix, end="")
-            self.console.print(Markdown(normalize_markdown_for_terminal(message)))
+            normalized = normalize_markdown_for_terminal(message)
+            try:
+                rendered = Markdown(normalized)
+            except Exception:
+                self.console.print(normalized)
+            else:
+                self.console.print(rendered)
         else:
             self.console.print(f"{prefix}{message}")
 
@@ -95,12 +102,18 @@ class ChatUI:
 
         if self.markdown_mode:
             self.console.print(prefix, end="")
-            self.console.print(Markdown(normalize_markdown_for_terminal(message)))
+            normalized = normalize_markdown_for_terminal(message)
+            try:
+                rendered = Markdown(normalized)
+            except Exception:
+                self.console.print(normalized)
+            else:
+                self.console.print(rendered)
         else:
             self.console.print(f"{prefix}{message}")
 
     @contextmanager
-    def assistant_stream(self):
+    def assistant_stream(self) -> Any:
         """Stream assistant response.
 
         Yields:
