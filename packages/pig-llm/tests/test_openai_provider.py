@@ -896,6 +896,28 @@ def test_custom_opencode_go_deepseek_v4_flash_omits_unsupported_medium_thinking(
     assert "reasoning_effort" not in sync_create.call_args.kwargs
 
 
+def test_custom_opencode_go_qwen3_6_plus_uses_enable_thinking_toggle() -> None:
+    sync_create = Mock(return_value=_completion_response())
+    provider = _provider_with_clients(
+        sync_create,
+        AsyncMock(),
+        Config(
+            provider="openai",
+            api_key="test-key",
+            base_url="https://opencode.ai/zen/go/v1",
+        ),
+    )
+
+    provider.complete(
+        _messages(),
+        model="qwen3.6-plus",
+        thinking_level="high",
+    )
+
+    assert sync_create.call_args.kwargs["enable_thinking"] is True
+    assert "reasoning_effort" not in sync_create.call_args.kwargs
+
+
 def test_custom_opencode_zen_grok_build_omits_reasoning_effort() -> None:
     sync_create = Mock(return_value=_completion_response())
     provider = _provider_with_clients(

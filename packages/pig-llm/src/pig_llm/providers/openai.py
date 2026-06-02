@@ -58,6 +58,8 @@ class OpenAIProvider(Provider):
             "deepseek-v4-pro",
         }:
             return OPENCODE_GO_KIMI_COMPAT if model_name == "kimi-k2.6" else DEEPSEEK_COMPAT
+        if "opencode.ai/zen/go" in base_url and model_name == "qwen3.6-plus":
+            return QWEN_COMPAT
         if "opencode.ai/zen" in base_url and model_name in {"deepseek-v4-flash", "deepseek-v4-pro"}:
             return DEEPSEEK_COMPAT
         if "opencode.ai/zen" in base_url and model_name == "grok-build-0.1":
