@@ -6,6 +6,7 @@ import openai
 
 from ..compat import (
     DEEPSEEK_COMPAT,
+    MOONSHOT_COMPAT,
     OPENAI_COMPAT,
     OPENCODE_GO_KIMI_COMPAT,
     OPENROUTER_COMPAT,
@@ -32,6 +33,7 @@ class OpenAIProvider(Provider):
         "openai": OPENAI_COMPAT,
         "openrouter": OPENROUTER_COMPAT,
         "deepseek": DEEPSEEK_COMPAT,
+        "moonshot": MOONSHOT_COMPAT,
         "together": TOGETHER_COMPAT,
         "qwen": QWEN_COMPAT,
         "qwen-chat-template": QWEN_CHAT_TEMPLATE_COMPAT,
@@ -113,14 +115,9 @@ class OpenAIProvider(Provider):
     @staticmethod
     def _token_limit_param(max_tokens: int | None, compat=OPENAI_COMPAT) -> dict[str, int]:
         """Build token limit parameters for current OpenAI-compatible chat models."""
-        param_name = (
-            "max_tokens"
-            if compat is OPENROUTER_COMPAT or compat is DEEPSEEK_COMPAT or compat is TOGETHER_COMPAT
-            else "max_completion_tokens"
-        )
         return build_token_limit_param(
             max_tokens,
-            param_name=param_name,
+            param_name=compat.token_limit_field,
             compat=compat,
         )
 

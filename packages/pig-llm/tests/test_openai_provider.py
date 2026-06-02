@@ -403,6 +403,56 @@ def test_explicit_together_compat_uses_max_tokens_field() -> None:
     assert "max_completion_tokens" not in sync_create.call_args.kwargs
 
 
+def test_explicit_moonshot_compat_uses_max_tokens_field() -> None:
+    sync_create = Mock(return_value=_completion_response())
+    provider = _provider_with_clients(
+        sync_create,
+        AsyncMock(),
+        Config(
+            provider="openai",
+            api_key="test-key",
+            base_url="https://api.moonshot.ai/v1",
+            compat_mode="moonshot",
+        ),
+    )
+
+    provider.complete(
+        _messages(),
+        model="kimi-k2.6",
+        max_tokens=444,
+    )
+
+    assert sync_create.call_args.kwargs["max_tokens"] == 444
+    assert "max_completion_tokens" not in sync_create.call_args.kwargs
+
+
+def test_explicit_moonshot_compat_keeps_developer_metadata_as_system() -> None:
+    sync_create = Mock(return_value=_completion_response())
+    provider = _provider_with_clients(
+        sync_create,
+        AsyncMock(),
+        Config(
+            provider="openai",
+            api_key="test-key",
+            base_url="https://api.moonshot.ai/v1",
+            compat_mode="moonshot",
+        ),
+    )
+
+    provider.complete(
+        [
+            Message(role="system", content="rules", metadata={"role": "developer"}),
+            Message(role="user", content="hi"),
+        ],
+        model="kimi-k2.6",
+        thinking_level="high",
+    )
+
+    messages = sync_create.call_args.kwargs["messages"]
+    assert messages[0] == {"role": "system", "content": "rules"}
+    assert "reasoning_effort" not in sync_create.call_args.kwargs
+
+
 def test_custom_opencode_go_kimi_uses_thinking_object_when_disabled() -> None:
     sync_create = Mock(return_value=_completion_response())
     provider = _provider_with_clients(

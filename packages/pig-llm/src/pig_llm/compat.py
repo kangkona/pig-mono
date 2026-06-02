@@ -16,6 +16,7 @@ from .models import Message
 SystemRolePolicy = Literal["system", "developer"]
 MaxOutputTokenPolicy = Literal["omit_default", "send_when_explicit", "required"]
 RetryClassification = Literal["retryable", "quota_or_billing", "auth", "context_overflow", "fatal"]
+TokenLimitField = Literal["max_completion_tokens", "max_tokens"]
 
 
 class ThinkingLevel(str, Enum):
@@ -35,6 +36,7 @@ class ProviderCompat:
 
     system_role_policy: SystemRolePolicy = "system"
     max_output_token_policy: MaxOutputTokenPolicy = "send_when_explicit"
+    token_limit_field: TokenLimitField = "max_completion_tokens"
     thinking_level_map: dict[str, Any | None] = field(default_factory=dict)
     unsupported_params: frozenset[str] = frozenset()
     context_overflow_patterns: tuple[re.Pattern[str], ...] = ()
@@ -102,6 +104,7 @@ OPENAI_COMPAT = ProviderCompat(
 OPENROUTER_COMPAT = ProviderCompat(
     system_role_policy="system",
     max_output_token_policy="send_when_explicit",
+    token_limit_field="max_tokens",
     thinking_level_map={
         "off": {"effort": "none"},
         "minimal": {"effort": "low"},
@@ -140,6 +143,7 @@ BEDROCK_COMPAT = ProviderCompat(
 
 DEEPSEEK_COMPAT = ProviderCompat(
     max_output_token_policy="send_when_explicit",
+    token_limit_field="max_tokens",
     thinking_level_map={
         "off": {"type": "disabled"},
         "minimal": {"type": "enabled"},
@@ -155,6 +159,7 @@ DEEPSEEK_COMPAT = ProviderCompat(
 
 TOGETHER_COMPAT = ProviderCompat(
     max_output_token_policy="send_when_explicit",
+    token_limit_field="max_tokens",
     thinking_level_map={
         "off": {"enabled": False},
         "minimal": {"enabled": True},
@@ -186,6 +191,16 @@ QWEN_COMPAT = ProviderCompat(
 ZAI_COMPAT = ProviderCompat(
     max_output_token_policy="send_when_explicit",
     thinking_level_map=QWEN_COMPAT.thinking_level_map,
+    context_overflow_patterns=COMMON_CONTEXT_OVERFLOW_PATTERNS,
+    quota_or_billing_patterns=COMMON_QUOTA_OR_BILLING_PATTERNS,
+    retryable_patterns=COMMON_RETRYABLE_PATTERNS,
+)
+
+MOONSHOT_COMPAT = ProviderCompat(
+    system_role_policy="system",
+    max_output_token_policy="send_when_explicit",
+    token_limit_field="max_tokens",
+    thinking_level_map={},
     context_overflow_patterns=COMMON_CONTEXT_OVERFLOW_PATTERNS,
     quota_or_billing_patterns=COMMON_QUOTA_OR_BILLING_PATTERNS,
     retryable_patterns=COMMON_RETRYABLE_PATTERNS,
