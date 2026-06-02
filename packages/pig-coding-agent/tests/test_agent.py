@@ -193,6 +193,25 @@ def test_coding_agent_creates_new_session_when_session_id_missing(mock_llm, temp
     assert agent.session.id == "manual-session-id"
 
 
+def test_coding_agent_fork_keeps_explicit_session_id(mock_llm, temp_workspace):
+    source = Session(name="existing", workspace=str(temp_workspace), auto_save=False)
+    source.add_message("user", "hello")
+    source.add_message("assistant", "world")
+    session_path = source.save()
+
+    agent = CodingAgent(
+        llm=mock_llm,
+        workspace=str(temp_workspace),
+        verbose=False,
+        session_id="fork-target-id",
+        fork_source_path=session_path,
+    )
+
+    assert agent.session.id == "fork-target-id"
+    assert agent.session.name == "existing-fork"
+    assert len(agent.session.tree.entries) == 2
+
+
 def test_coding_agent_rejects_invalid_manual_session_id(mock_llm, temp_workspace):
     with pytest.raises(ValueError, match="Session id must be non-empty"):
         CodingAgent(

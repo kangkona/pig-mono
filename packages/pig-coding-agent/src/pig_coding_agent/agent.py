@@ -98,6 +98,8 @@ class CodingAgent:
                     workspace=str(self.workspace),
                     auto_save=True,
                 )
+            if session_id:
+                self.session.id = session_id
             self._session_start_reason = "fork"
             self._previous_session_file = str(fork_source_path)
         elif session_path and session_path.exists():
