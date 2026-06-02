@@ -6,6 +6,7 @@ import openai
 
 from ..compat import (
     OPENAI_COMPAT,
+    apply_prompt_cache,
     apply_request_headers,
     apply_thinking_level,
     build_token_limit_param,
@@ -91,6 +92,7 @@ class CerebrasProvider(Provider):
     ) -> Response:
         """Generate a completion."""
         kwargs = apply_thinking_level(kwargs, OPENAI_COMPAT)
+        kwargs = apply_prompt_cache(kwargs, OPENAI_COMPAT)
         kwargs = apply_request_headers(kwargs)
         response = self.client.chat.completions.create(
             model=model,
@@ -126,6 +128,7 @@ class CerebrasProvider(Provider):
     ) -> Iterator[StreamChunk]:
         """Stream a completion."""
         kwargs = apply_thinking_level(kwargs, OPENAI_COMPAT)
+        kwargs = apply_prompt_cache(kwargs, OPENAI_COMPAT)
         kwargs = apply_request_headers(kwargs)
         stream = self.client.chat.completions.create(
             model=model,
@@ -159,6 +162,7 @@ class CerebrasProvider(Provider):
     ) -> Response:
         """Async generate a completion."""
         kwargs = apply_thinking_level(kwargs, OPENAI_COMPAT)
+        kwargs = apply_prompt_cache(kwargs, OPENAI_COMPAT)
         kwargs = apply_request_headers(kwargs)
         response = await self.async_client.chat.completions.create(
             model=model,
@@ -194,6 +198,7 @@ class CerebrasProvider(Provider):
     ) -> AsyncIterator[StreamChunk]:
         """Async stream a completion."""
         kwargs = apply_thinking_level(kwargs, OPENAI_COMPAT)
+        kwargs = apply_prompt_cache(kwargs, OPENAI_COMPAT)
         kwargs = apply_request_headers(kwargs)
         stream = await self.async_client.chat.completions.create(
             model=model,
