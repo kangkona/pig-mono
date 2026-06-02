@@ -761,6 +761,50 @@ def test_custom_opencode_go_kimi_uses_thinking_object_when_enabled() -> None:
     assert "reasoning_effort" not in sync_create.call_args.kwargs
 
 
+def test_custom_opencode_go_kimi_omits_unsupported_minimal_thinking() -> None:
+    sync_create = Mock(return_value=_completion_response())
+    provider = _provider_with_clients(
+        sync_create,
+        AsyncMock(),
+        Config(
+            provider="openai",
+            api_key="test-key",
+            base_url="https://opencode.ai/zen/go/v1",
+        ),
+    )
+
+    provider.complete(
+        _messages(),
+        model="kimi-k2.6",
+        thinking_level="minimal",
+    )
+
+    assert "thinking" not in sync_create.call_args.kwargs
+    assert "reasoning_effort" not in sync_create.call_args.kwargs
+
+
+def test_custom_opencode_go_kimi_omits_unsupported_medium_thinking() -> None:
+    sync_create = Mock(return_value=_completion_response())
+    provider = _provider_with_clients(
+        sync_create,
+        AsyncMock(),
+        Config(
+            provider="openai",
+            api_key="test-key",
+            base_url="https://opencode.ai/zen/go/v1",
+        ),
+    )
+
+    provider.complete(
+        _messages(),
+        model="kimi-k2.6",
+        thinking_level="medium",
+    )
+
+    assert "thinking" not in sync_create.call_args.kwargs
+    assert "reasoning_effort" not in sync_create.call_args.kwargs
+
+
 @pytest.mark.asyncio
 async def test_acomplete_sends_max_completion_tokens_to_openai() -> None:
     async_create = AsyncMock(return_value=_completion_response())
