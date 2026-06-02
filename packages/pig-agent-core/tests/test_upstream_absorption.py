@@ -228,6 +228,121 @@ def test_agent_after_tool_call_exception_becomes_error_tool_result() -> None:
     assert "after failed" in tool_messages[0].content
 
 
+@pytest.mark.asyncio
+async def test_arun_before_tool_call_abort_skips_sibling_tools() -> None:
+    executed: list[str] = []
+
+    class FakeChunk:
+        def __init__(self, *, content: str = "", tool_calls=None):
+            self.content = content
+            self.tool_calls = tool_calls
+            self.usage = {}
+
+    class FakeLLM:
+        config = SimpleNamespace(model="fake")
+
+        def __init__(self):
+            self.calls = 0
+
+        async def astream(self, messages, **kwargs):
+            self.calls += 1
+            if self.calls == 1:
+                yield FakeChunk(
+                    tool_calls=[
+                        {
+                            "id": "call-1",
+                            "function": {"name": "first", "arguments": "{}"},
+                        },
+                        {
+                            "id": "call-2",
+                            "function": {"name": "second", "arguments": "{}"},
+                        },
+                    ]
+                )
+            else:
+                yield FakeChunk(content="done")
+
+    def first():
+        executed.append("first")
+        return "first"
+
+    def second():
+        executed.append("second")
+        return "second"
+
+    def before_tool_call(name, args):
+        if name == "first":
+            return ToolResult(ok=False, error="blocked", meta={"abort_batch": True})
+        return None
+
+    agent = Agent(
+        llm=FakeLLM(),
+        tools=[],
+        before_tool_call=before_tool_call,
+        verbose=False,
+    )
+    agent.registry.register("first", first, {"type": "function", "function": {"name": "first"}})
+    agent.registry.register("second", second, {"type": "function", "function": {"name": "second"}})
+
+    response = await agent.arun("go")
+
+    assert response.content == "done"
+    assert executed == []
+    tool_messages = [message for message in agent.history if message.role == "tool"]
+    assert len(tool_messages) == 1
+    assert "blocked" in tool_messages[0].content
+
+
+@pytest.mark.asyncio
+async def test_arun_after_tool_call_exception_becomes_error_tool_result() -> None:
+    class FakeChunk:
+        def __init__(self, *, content: str = "", tool_calls=None):
+            self.content = content
+            self.tool_calls = tool_calls
+            self.usage = {}
+
+    class FakeLLM:
+        config = SimpleNamespace(model="fake")
+
+        def __init__(self):
+            self.calls = 0
+
+        async def astream(self, messages, **kwargs):
+            self.calls += 1
+            if self.calls == 1:
+                yield FakeChunk(
+                    tool_calls=[
+                        {
+                            "id": "call-1",
+                            "function": {"name": "ok_tool", "arguments": "{}"},
+                        }
+                    ]
+                )
+            else:
+                yield FakeChunk(content="done")
+
+    def ok_tool():
+        return "ok"
+
+    def after_tool_call(name, args, result):
+        raise RuntimeError("after failed")
+
+    agent = Agent(
+        llm=FakeLLM(),
+        tools=[],
+        after_tool_call=after_tool_call,
+        verbose=False,
+    )
+    agent.registry.register(
+        "ok_tool", ok_tool, {"type": "function", "function": {"name": "ok_tool"}}
+    )
+
+    await agent.arun("go")
+
+    tool_messages = [message for message in agent.history if message.role == "tool"]
+    assert "after failed" in tool_messages[0].content
+
+
 def test_agent_terminate_tool_result_skips_follow_up_llm_call() -> None:
     class FakeLLM:
         config = SimpleNamespace(model="fake")

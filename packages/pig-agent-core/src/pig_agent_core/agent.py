@@ -424,6 +424,23 @@ class Agent:
                         self._plan_used = True
                         self._rounds_since_plan = 0
 
+                    if self.before_tool_call:
+                        preflight = self.before_tool_call(tool_name, tool_args)
+                        if preflight is not None:
+                            result = self._as_tool_result(preflight)
+                            tool_results.append(
+                                {
+                                    "tool_call_id": tool_call.get("id"),
+                                    "role": "tool",
+                                    "name": tool_name,
+                                    "content": str(result.data if result.ok else result.error),
+                                    "result": result,
+                                }
+                            )
+                            if result.meta.get("abort_batch"):
+                                break
+                            continue
+
                     if self.on_tool_start:
                         self.on_tool_start(tool_name, tool_args)
 
@@ -443,11 +460,14 @@ class Agent:
                         )
 
                         # Use enhanced registry execute
-                        result = await self.registry.execute(
-                            tool_call=tool_call_obj,
-                            user_id="default",  # TODO: Make configurable
-                            meta={},
-                        )
+                        if hasattr(self.registry, "execute_sync"):
+                            result = self.registry.execute_sync(tool_name, tool_args)
+                        else:
+                            result = await self.registry.execute(
+                                tool_call=tool_call_obj,
+                                user_id="default",  # TODO: Make configurable
+                                meta={},
+                            )
 
                         tool_results.append(
                             {
@@ -459,6 +479,20 @@ class Agent:
                             }
                         )
                         self._log(f"✓ Result: {result.data if result.ok else result.error}")
+
+                        if self.after_tool_call:
+                            try:
+                                override = self.after_tool_call(tool_name, tool_args, result)
+                                if override is not None:
+                                    result = self._as_tool_result(override)
+                                    tool_results[-1]["content"] = str(
+                                        result.data if result.ok else result.error
+                                    )
+                                    tool_results[-1]["result"] = result
+                            except Exception as exc:
+                                result = ToolResult(ok=False, error=f"Error: {exc}")
+                                tool_results[-1]["content"] = result.error
+                                tool_results[-1]["result"] = result
 
                         if self.on_tool_end:
                             self.on_tool_end(tool_name, result)
