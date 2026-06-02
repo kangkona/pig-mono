@@ -752,7 +752,16 @@ class Agent:
             )
 
             # Execute tool calls
-            await self._execute_tool_calls_from_dict(assistant_tool_calls, cancel)
+            terminate_all = await self._execute_tool_calls_from_dict(assistant_tool_calls, cancel)
+            if terminate_all:
+                final_content = "\n".join(
+                    message.content
+                    for message in self.history
+                    if message.role == "tool" and message.metadata.get("tool_call_id")
+                )
+                self.history.append(Message(role="assistant", content=final_content))
+                self._emit_agent_end(success=True)
+                return
 
             # Continue loop for next iteration
 
@@ -767,16 +776,20 @@ class Agent:
         self,
         tool_calls: list[dict[str, Any]],
         cancel: asyncio.Event | None = None,
-    ) -> None:
+    ) -> bool:
         """Execute tool calls from dictionary format.
 
         Args:
             tool_calls: List of tool call dictionaries
             cancel: Optional cancellation event
+
+        Returns:
+            True when every tool result requested early termination.
         """
+        terminate_all = True
         for tool_call in tool_calls:
             if cancel and cancel.is_set():
-                return
+                return False
 
             tool_name = tool_call.get("function", {}).get("name")
             tool_args_str = tool_call.get("function", {}).get("arguments", "{}")
@@ -793,21 +806,25 @@ class Agent:
                 self.on_tool_start(tool_name, tool_args)
 
             try:
-                result = self.registry.execute(tool_name, **tool_args)
+                if hasattr(self.registry, "execute_sync"):
+                    result = self.registry.execute_sync(tool_name, tool_args)
+                else:
+                    result = self._as_tool_result(self.registry.execute(tool_name, **tool_args))
                 self.history.append(
                     Message(
                         role="tool",
-                        content=str(result),
+                        content=str(result.data if result.ok else result.error),
                         metadata={
                             "tool_call_id": tool_call_id,
                             "name": tool_name,
                         },
                     )
                 )
-                self._log(f"[green]✓ Result: {result}[/green]")
+                self._log(f"[green]✓ Result: {result.data if result.ok else result.error}[/green]")
 
                 if self.on_tool_end:
                     self.on_tool_end(tool_name, result)
+                terminate_all = terminate_all and bool(result.ok and result.meta.get("terminate"))
             except Exception as e:
                 error_msg = f"Error: {e}"
                 self.history.append(
@@ -821,6 +838,9 @@ class Agent:
                     )
                 )
                 self._log(f"[red]✗ {error_msg}[/red]")
+                terminate_all = False
+
+        return terminate_all
 
     async def _execute_tool_calls(self, tool_calls: list[dict[str, Any]]) -> None:
         """Execute tool calls (backward compatibility wrapper).

@@ -519,3 +519,61 @@ async def test_respond_stream_llm_failure_emits_agent_end_failure_event() -> Non
     assert len(events) == 1
     assert events[0].data["success"] is False
     assert events[0].data["error"] == "stream boom"
+
+
+@pytest.mark.asyncio
+async def test_respond_stream_terminate_tool_result_skips_followup_llm_call() -> None:
+    class ToolCallChunk:
+        def __init__(self, *, content: str = "", tool_calls=None):
+            self.choices = [
+                SimpleNamespace(
+                    delta=SimpleNamespace(content=content or None, tool_calls=tool_calls),
+                    finish_reason=None,
+                )
+            ]
+
+    class ToolCallDelta:
+        def __init__(self, index: int, *, call_id=None, name=None, arguments=None):
+            self.index = index
+            self.id = call_id
+            self.function = SimpleNamespace(name=name, arguments=arguments)
+
+    class FakeLLM:
+        config = SimpleNamespace(model="fake")
+
+        def __init__(self):
+            self.calls = 0
+
+        def achat_stream(self, messages, tools=None):
+            self.calls += 1
+
+            async def stream():
+                if self.calls == 1:
+                    yield ToolCallChunk(
+                        tool_calls=[
+                            ToolCallDelta(0, call_id="call-1", name="terminate", arguments="{}")
+                        ]
+                    )
+                else:
+                    yield ToolCallChunk(content="should not happen")
+
+            return stream()
+
+    def terminate():
+        return ToolResult(ok=True, data="finished", meta={"terminate": True})
+
+    llm = FakeLLM()
+    agent = Agent(llm=llm, tools=[], verbose=False)
+    agent.registry.register(
+        "terminate",
+        terminate,
+        {"type": "function", "function": {"name": "terminate"}},
+    )
+
+    chunks = []
+    async for chunk in agent.respond_stream("start"):
+        chunks.append(chunk)
+
+    assert chunks == []
+    assert llm.calls == 1
+    assert agent.history[-1].content == "finished"
