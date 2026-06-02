@@ -261,6 +261,60 @@ def test_agent_terminate_tool_result_skips_follow_up_llm_call() -> None:
     assert agent.llm.calls == 1
 
 
+def test_terminate_tool_result_still_emits_agent_end_and_drains_followup() -> None:
+    class FakeLLM:
+        config = SimpleNamespace(model="fake")
+
+        def __init__(self):
+            self.calls = 0
+            self.messages: list[str] = []
+
+        def chat(self, messages, tools=None):
+            self.calls += 1
+            latest = messages[-1].content
+            self.messages.append(latest)
+            if self.calls == 1:
+                return SimpleNamespace(
+                    content="",
+                    tool_calls=[
+                        {
+                            "id": "call-1",
+                            "function": {"name": "terminate", "arguments": "{}"},
+                        }
+                    ],
+                )
+            return SimpleNamespace(content=f"reply:{latest}", tool_calls=None)
+
+    agent_ref: dict[str, Agent] = {}
+    queued = {"done": False}
+
+    def on_event(event):
+        if (
+            event.type.value == "agent_end"
+            and event.data.get("success") is True
+            and not queued["done"]
+        ):
+            queued["done"] = True
+            agent_ref["agent"].message_queue.add_followup("follow-after-terminate")
+
+    def terminate():
+        return ToolResult(ok=True, data="finished", meta={"terminate": True})
+
+    agent = Agent(llm=FakeLLM(), tools=[], verbose=False, event_callback=on_event)
+    agent_ref["agent"] = agent
+    agent.registry.register(
+        "terminate",
+        terminate,
+        {"type": "function", "function": {"name": "terminate"}},
+    )
+
+    response = agent.run("go")
+
+    assert response.content == "reply:follow-after-terminate"
+    assert agent.llm.calls == 2
+    assert agent.llm.messages == ["go", "follow-after-terminate"]
+
+
 def test_agent_followup_queue_processes_all_messages_in_fifo_order() -> None:
     class FakeLLM:
         config = SimpleNamespace(model="fake")

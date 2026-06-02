@@ -285,6 +285,12 @@ class Agent:
                     final_content = "\n".join(str(tr["content"]) for tr in tool_results)
                     final_response = Response(content=final_content, model=self.llm.config.model)
                     self.history.append(Message(role="assistant", content=final_response.content))
+                    self._emit_agent_end(success=True)
+                    if check_queue and self.message_queue.has_followup():
+                        followup = self.message_queue.get_followup_messages()
+                        response = self._drain_followup_messages(followup, check_queue=check_queue)
+                        if response is not None:
+                            return response
                     return final_response
 
                 # Check for steering messages after tool execution
