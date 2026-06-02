@@ -982,6 +982,50 @@ def test_custom_opencode_zen_grok_build_omits_reasoning_effort() -> None:
     assert "reasoning_effort" not in sync_create.call_args.kwargs
 
 
+def test_custom_opencode_zen_kimi_uses_thinking_object_when_disabled() -> None:
+    sync_create = Mock(return_value=_completion_response())
+    provider = _provider_with_clients(
+        sync_create,
+        AsyncMock(),
+        Config(
+            provider="openai",
+            api_key="test-key",
+            base_url="https://opencode.ai/zen/v1",
+        ),
+    )
+
+    provider.complete(
+        _messages(),
+        model="kimi-k2.6",
+        thinking_level="off",
+    )
+
+    assert sync_create.call_args.kwargs["thinking"] == {"type": "disabled"}
+    assert "reasoning_effort" not in sync_create.call_args.kwargs
+
+
+def test_custom_opencode_zen_kimi_uses_thinking_object_when_enabled() -> None:
+    sync_create = Mock(return_value=_completion_response())
+    provider = _provider_with_clients(
+        sync_create,
+        AsyncMock(),
+        Config(
+            provider="openai",
+            api_key="test-key",
+            base_url="https://opencode.ai/zen/v1",
+        ),
+    )
+
+    provider.complete(
+        _messages(),
+        model="kimi-k2.6",
+        thinking_level="high",
+    )
+
+    assert sync_create.call_args.kwargs["thinking"] == {"type": "enabled"}
+    assert "reasoning_effort" not in sync_create.call_args.kwargs
+
+
 def test_custom_opencode_zen_grok_build_omits_unsupported_off_thinking() -> None:
     sync_create = Mock(return_value=_completion_response())
     provider = _provider_with_clients(
