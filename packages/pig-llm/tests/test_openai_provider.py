@@ -150,6 +150,22 @@ def test_native_openai_uses_session_id_as_prompt_cache_key() -> None:
     assert "prompt_cache_retention" not in sync_create.call_args.kwargs
 
 
+def test_native_openai_clamps_prompt_cache_key_to_provider_safe_length() -> None:
+    sync_create = Mock(return_value=_completion_response())
+    provider = _provider_with_clients(sync_create, AsyncMock())
+    session_id = "session-" + ("x" * 100)
+
+    provider.complete(
+        _messages(),
+        model="gpt-5.2",
+        session_id=session_id,
+        cache_retention="long",
+    )
+
+    assert sync_create.call_args.kwargs["prompt_cache_key"] == session_id[:64]
+    assert len(sync_create.call_args.kwargs["prompt_cache_key"]) == 64
+
+
 def test_native_openai_sets_prompt_cache_retention_for_long_cache() -> None:
     sync_create = Mock(return_value=_completion_response())
     provider = _provider_with_clients(sync_create, AsyncMock())
