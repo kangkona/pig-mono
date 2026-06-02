@@ -8,7 +8,7 @@ try:
 except ImportError as err:
     raise ImportError("boto3 is required for Bedrock. Install with: pip install boto3") from err
 
-from ..compat import BEDROCK_COMPAT, apply_thinking_level
+from ..compat import BEDROCK_COMPAT, apply_thinking_level, normalize_messages
 from ..config import Config
 from ..models import Message, Response, StreamChunk
 from ._base import Provider
@@ -106,8 +106,9 @@ class BedrockProvider(Provider):
         **kwargs,
     ) -> Response:
         """Generate a completion."""
+        normalized_messages = normalize_messages(messages, BEDROCK_COMPAT)
         kwargs = apply_thinking_level(kwargs, BEDROCK_COMPAT)
-        body = self._build_request_body(messages, model, temperature, max_tokens)
+        body = self._build_request_body(normalized_messages, model, temperature, max_tokens)
         thinking = kwargs.pop("thinking", None)
         if thinking is not None:
             body["additionalModelRequestFields"] = {
@@ -158,8 +159,9 @@ class BedrockProvider(Provider):
         **kwargs,
     ) -> Iterator[StreamChunk]:
         """Stream a completion."""
+        normalized_messages = normalize_messages(messages, BEDROCK_COMPAT)
         kwargs = apply_thinking_level(kwargs, BEDROCK_COMPAT)
-        body = self._build_request_body(messages, model, temperature, max_tokens)
+        body = self._build_request_body(normalized_messages, model, temperature, max_tokens)
         thinking = kwargs.pop("thinking", None)
         if thinking is not None:
             body["additionalModelRequestFields"] = {

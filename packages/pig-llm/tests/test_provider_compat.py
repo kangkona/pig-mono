@@ -369,6 +369,31 @@ def test_anthropic_non_opus_47_models_keep_temperature_param() -> None:
     assert create.call_args.kwargs["temperature"] == 0
 
 
+def test_anthropic_normalizes_explicit_developer_role_to_system_prompt() -> None:
+    create = Mock(return_value=_anthropic_completion_response())
+    client = SimpleNamespace(messages=SimpleNamespace(create=create))
+    async_client = SimpleNamespace(messages=SimpleNamespace(create=AsyncMock()))
+
+    with (
+        patch("pig_llm.providers.anthropic.anthropic.Anthropic", return_value=client),
+        patch("pig_llm.providers.anthropic.anthropic.AsyncAnthropic", return_value=async_client),
+    ):
+        from pig_llm.providers.anthropic import AnthropicProvider
+
+        provider = AnthropicProvider(Config(provider="anthropic", api_key="test"))
+
+    provider.complete(
+        [
+            Message(role="developer", content="rules"),
+            Message(role="user", content="hello"),
+        ],
+        model="claude-sonnet-4-6",
+    )
+
+    assert create.call_args.kwargs["system"] == "rules"
+    assert create.call_args.kwargs["messages"] == [{"role": "user", "content": "hello"}]
+
+
 def test_anthropic_opus_47_stream_omits_temperature_param() -> None:
     stream_ctx = Mock()
     stream_ctx.__enter__ = Mock(return_value=SimpleNamespace(text_stream=[]))

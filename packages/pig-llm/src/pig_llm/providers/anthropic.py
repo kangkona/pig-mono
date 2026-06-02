@@ -5,7 +5,7 @@ from collections.abc import AsyncIterator, Iterator
 
 import anthropic
 
-from ..compat import ANTHROPIC_COMPAT, apply_thinking_level
+from ..compat import ANTHROPIC_COMPAT, apply_thinking_level, normalize_messages
 from ..config import Config
 from ..models import Message, Response, StreamChunk
 from ._base import Provider
@@ -138,7 +138,8 @@ class AnthropicProvider(Provider):
         **kwargs,
     ) -> Response:
         """Generate a completion."""
-        system, anthropic_messages = self._convert_messages(messages)
+        normalized_messages = normalize_messages(messages, ANTHROPIC_COMPAT)
+        system, anthropic_messages = self._convert_messages(normalized_messages)
 
         # Convert tools if present
         kwargs = apply_thinking_level(kwargs, ANTHROPIC_COMPAT)
@@ -192,7 +193,8 @@ class AnthropicProvider(Provider):
         **kwargs,
     ) -> Iterator[StreamChunk]:
         """Stream a completion."""
-        system, anthropic_messages = self._convert_messages(messages)
+        normalized_messages = normalize_messages(messages, ANTHROPIC_COMPAT)
+        system, anthropic_messages = self._convert_messages(normalized_messages)
         kwargs = apply_thinking_level(kwargs, ANTHROPIC_COMPAT)
         request_kwargs = dict(kwargs)
         if self._supports_temperature(model):
@@ -217,7 +219,8 @@ class AnthropicProvider(Provider):
         **kwargs,
     ) -> Response:
         """Async generate a completion."""
-        system, anthropic_messages = self._convert_messages(messages)
+        normalized_messages = normalize_messages(messages, ANTHROPIC_COMPAT)
+        system, anthropic_messages = self._convert_messages(normalized_messages)
 
         # Convert tools if present
         kwargs = apply_thinking_level(kwargs, ANTHROPIC_COMPAT)
@@ -271,7 +274,8 @@ class AnthropicProvider(Provider):
         **kwargs,
     ) -> AsyncIterator[StreamChunk]:
         """Async stream a completion."""
-        system, anthropic_messages = self._convert_messages(messages)
+        normalized_messages = normalize_messages(messages, ANTHROPIC_COMPAT)
+        system, anthropic_messages = self._convert_messages(normalized_messages)
         kwargs = apply_thinking_level(kwargs, ANTHROPIC_COMPAT)
         request_kwargs = dict(kwargs)
         if self._supports_temperature(model):

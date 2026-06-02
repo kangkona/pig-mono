@@ -152,6 +152,41 @@ def test_bedrock_provider_uses_model_output_cap_by_default() -> None:
     assert converse.call_args.kwargs["inferenceConfig"]["maxTokens"] == 16384
 
 
+def test_bedrock_provider_normalizes_explicit_developer_role_to_system() -> None:
+    pytest.importorskip("boto3")
+
+    converse = Mock(
+        return_value={
+            "output": {"message": {"content": [{"text": "ok"}]}},
+            "usage": {"inputTokens": 1, "outputTokens": 1, "totalTokens": 2},
+            "stopReason": "end_turn",
+            "ResponseMetadata": {"RequestId": "req-1"},
+        }
+    )
+    client = SimpleNamespace(converse=converse)
+
+    with (
+        patch("pig_llm.providers.bedrock.boto3.client", return_value=client),
+        patch("pig_llm.providers.bedrock.BotoConfig", return_value=Mock()),
+    ):
+        from pig_llm.providers.bedrock import BedrockProvider
+
+        provider = BedrockProvider(Config(provider="bedrock", api_key="us-east-1"))
+
+    provider.complete(
+        [
+            Message(role="developer", content="rules"),
+            Message(role="user", content="hello"),
+        ],
+        model="anthropic.claude-opus-4-1",
+    )
+
+    assert converse.call_args.kwargs["system"] == [{"text": "rules"}]
+    assert converse.call_args.kwargs["messages"] == [
+        {"role": "user", "content": [{"text": "hello"}]}
+    ]
+
+
 def test_bedrock_provider_uses_adaptive_thinking_for_claude_opus_48() -> None:
     pytest.importorskip("boto3")
 
