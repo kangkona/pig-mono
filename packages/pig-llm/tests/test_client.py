@@ -1,5 +1,6 @@
 """Tests for LLM client."""
 
+from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 import pytest
@@ -37,13 +38,17 @@ def test_llm_requires_explicit_api_key_for_known_provider():
 
 
 def test_llm_allows_bedrock_without_api_key():
-    with patch("pig_llm.providers.bedrock.BedrockProvider") as MockProvider:
-        MockProvider.return_value = Mock()
+    mock_provider = Mock()
+    mock_bedrock_class = Mock(return_value=mock_provider)
+    fake_bedrock_module = SimpleNamespace(BedrockProvider=mock_bedrock_class)
 
+    with patch("importlib.import_module", return_value=fake_bedrock_module) as mock_import:
         llm = LLM(provider="bedrock")
 
-        assert llm.config.provider == "bedrock"
-        assert llm.config.api_key is None
+    assert llm.config.provider == "bedrock"
+    assert llm.config.api_key is None
+    mock_import.assert_called_once_with(".providers.bedrock", package="pig_llm")
+    mock_bedrock_class.assert_called_once()
 
 
 def test_llm_complete_creates_messages():
