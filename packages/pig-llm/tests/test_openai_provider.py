@@ -802,7 +802,7 @@ def test_explicit_together_compat_supports_deepseek_v4_reasoning_effort() -> Non
     assert sync_create.call_args.kwargs["reasoning_effort"] == "high"
 
 
-def test_custom_opencode_go_kimi_uses_thinking_object_when_disabled() -> None:
+def test_custom_opencode_go_kimi_uses_string_thinking_when_disabled() -> None:
     sync_create = Mock(return_value=_completion_response())
     provider = _provider_with_clients(
         sync_create,
@@ -820,11 +820,11 @@ def test_custom_opencode_go_kimi_uses_thinking_object_when_disabled() -> None:
         thinking_level="off",
     )
 
-    assert sync_create.call_args.kwargs["thinking"] == {"type": "disabled"}
+    assert sync_create.call_args.kwargs["thinking"] == "none"
     assert "reasoning_effort" not in sync_create.call_args.kwargs
 
 
-def test_custom_opencode_go_kimi_uses_thinking_object_when_enabled() -> None:
+def test_custom_opencode_go_kimi_uses_string_thinking_when_enabled() -> None:
     sync_create = Mock(return_value=_completion_response())
     provider = _provider_with_clients(
         sync_create,
@@ -842,7 +842,7 @@ def test_custom_opencode_go_kimi_uses_thinking_object_when_enabled() -> None:
         thinking_level="high",
     )
 
-    assert sync_create.call_args.kwargs["thinking"] == {"type": "enabled"}
+    assert sync_create.call_args.kwargs["thinking"] == "high"
     assert "reasoning_effort" not in sync_create.call_args.kwargs
 
 
@@ -864,7 +864,7 @@ def test_custom_opencode_go_kimi_omits_unsupported_minimal_thinking() -> None:
         thinking_level="minimal",
     )
 
-    assert "thinking" not in sync_create.call_args.kwargs
+    assert sync_create.call_args.kwargs["thinking"] == "minimal"
     assert "reasoning_effort" not in sync_create.call_args.kwargs
 
 
@@ -886,7 +886,7 @@ def test_custom_opencode_go_kimi_omits_unsupported_medium_thinking() -> None:
         thinking_level="medium",
     )
 
-    assert "thinking" not in sync_create.call_args.kwargs
+    assert sync_create.call_args.kwargs["thinking"] == "medium"
     assert "reasoning_effort" not in sync_create.call_args.kwargs
 
 

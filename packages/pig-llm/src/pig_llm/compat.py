@@ -433,24 +433,7 @@ STRING_THINKING_COMPAT = ProviderCompat(
 
 OPENCODE_GO_KIMI_COMPAT = ProviderCompat(
     max_output_token_policy="send_when_explicit",
-    reasoning_effort_level_map={
-        "kimi-k2.6": {
-            "off": {"type": "disabled"},
-            "minimal": None,
-            "low": None,
-            "medium": None,
-            "high": {"type": "enabled"},
-            "xhigh": None,
-        }
-    },
-    thinking_level_map={
-        "off": {"type": "disabled"},
-        "minimal": {"type": "enabled"},
-        "low": {"type": "enabled"},
-        "medium": {"type": "enabled"},
-        "high": {"type": "enabled"},
-        "xhigh": {"type": "enabled"},
-    },
+    thinking_level_map=STRING_THINKING_COMPAT.thinking_level_map,
     context_overflow_patterns=COMMON_CONTEXT_OVERFLOW_PATTERNS,
     quota_or_billing_patterns=COMMON_QUOTA_OR_BILLING_PATTERNS,
     retryable_patterns=COMMON_RETRYABLE_PATTERNS,
@@ -706,14 +689,12 @@ def apply_thinking_level(kwargs: dict[str, Any], compat: ProviderCompat) -> dict
         return next_kwargs
 
     if compat is OPENCODE_GO_KIMI_COMPAT:
-        model_map = compat.reasoning_effort_level_map.get(model_key)
-        thinking = model_map.get(str(level)) if model_map is not None else mapped
-        if thinking is None:
+        if mapped is None:
             next_kwargs.pop("thinking", None)
             next_kwargs.pop("reasoning", None)
             next_kwargs.pop("reasoning_effort", None)
             return next_kwargs
-        next_kwargs["thinking"] = thinking
+        next_kwargs["thinking"] = mapped
         next_kwargs.pop("reasoning", None)
         next_kwargs.pop("reasoning_effort", None)
         return next_kwargs
