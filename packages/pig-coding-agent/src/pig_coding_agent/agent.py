@@ -402,7 +402,13 @@ When generating code, provide clean, well-documented, production-ready code.
                 if cleared:
                     self.ui.system(f"\nCleared {len(cleared)} queued messages")
             if shutdown_reason == "normal" and self.session:
-                self.ui.system(f"To resume this session: pig-code --session-id {self.session.id}")
+                session_dir_hint = ""
+                if self.sessions_dir != self.workspace / ".sessions":
+                    session_dir_hint = f" --session-dir {self.sessions_dir}"
+                self.ui.system(
+                    f"To resume this session: pig-code --session-id "
+                    f"{self.session.id}{session_dir_hint}"
+                )
             self.ui.system("\nGoodbye!")
 
     def _handle_command(self, command: str) -> None:

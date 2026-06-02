@@ -754,6 +754,40 @@ def test_run_interactive_prints_resume_hint_on_clean_exit(mock_llm, temp_workspa
     assert any(agent.session.id in message for message in messages)
 
 
+def test_run_interactive_resume_hint_includes_explicit_session_dir(mock_llm, tmp_path):
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    session_dir = tmp_path / "custom-sessions"
+
+    agent = CodingAgent(
+        llm=mock_llm,
+        workspace=str(workspace),
+        verbose=False,
+        enable_extensions=False,
+        session_dir=session_dir,
+    )
+    agent.ui = Mock()
+    agent.extension_manager = Mock()
+
+    prompt = Mock()
+    prompt.ask.side_effect = ["/exit"]
+
+    original_handle_command = agent._handle_command
+
+    def wrapped_handle_command(command: str):
+        original_handle_command(command)
+
+    with (
+        patch("pig_coding_agent.agent.InteractivePrompt", return_value=prompt),
+        patch.object(agent, "_handle_command", side_effect=wrapped_handle_command),
+    ):
+        agent.run_interactive()
+
+    messages = [call.args[0] for call in agent.ui.system.call_args_list]
+    assert any("--session-id" in message for message in messages)
+    assert any(f"--session-dir {session_dir}" in message for message in messages)
+
+
 def test_run_interactive_cleans_up_extensions_on_shutdown(mock_llm, temp_workspace):
     agent = CodingAgent(
         llm=mock_llm,
