@@ -374,6 +374,52 @@ def test_explicit_openrouter_compat_gpt_55_pro_omits_unsupported_low_reasoning()
     assert "reasoning_effort" not in sync_create.call_args.kwargs
 
 
+def test_explicit_openrouter_compat_deepseek_v4_flash_omits_unsupported_medium_reasoning() -> None:
+    sync_create = Mock(return_value=_completion_response())
+    provider = _provider_with_clients(
+        sync_create,
+        AsyncMock(),
+        Config(
+            provider="openai",
+            api_key="test-key",
+            base_url="https://router.example/v1",
+            compat_mode="openrouter",
+        ),
+    )
+
+    provider.complete(
+        _messages(),
+        model="deepseek/deepseek-v4-flash",
+        thinking_level="medium",
+    )
+
+    assert "reasoning" not in sync_create.call_args.kwargs
+    assert "reasoning_effort" not in sync_create.call_args.kwargs
+
+
+def test_explicit_openrouter_compat_deepseek_v4_flash_keeps_xhigh_reasoning() -> None:
+    sync_create = Mock(return_value=_completion_response())
+    provider = _provider_with_clients(
+        sync_create,
+        AsyncMock(),
+        Config(
+            provider="openai",
+            api_key="test-key",
+            base_url="https://router.example/v1",
+            compat_mode="openrouter",
+        ),
+    )
+
+    provider.complete(
+        _messages(),
+        model="deepseek/deepseek-v4-flash",
+        thinking_level="xhigh",
+    )
+
+    assert sync_create.call_args.kwargs["reasoning"] == {"effort": "xhigh"}
+    assert "reasoning_effort" not in sync_create.call_args.kwargs
+
+
 def test_explicit_openrouter_compat_uses_max_tokens_field() -> None:
     sync_create = Mock(return_value=_completion_response())
     provider = _provider_with_clients(

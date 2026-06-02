@@ -146,6 +146,22 @@ OPENROUTER_COMPAT = ProviderCompat(
     token_limit_field="max_tokens",
     send_session_affinity_headers=True,
     reasoning_effort_level_map={
+        "deepseek/deepseek-v4-flash": {
+            "off": None,
+            "minimal": None,
+            "low": None,
+            "medium": None,
+            "high": {"effort": "high"},
+            "xhigh": {"effort": "xhigh"},
+        },
+        "deepseek/deepseek-v4-pro": {
+            "off": None,
+            "minimal": None,
+            "low": None,
+            "medium": None,
+            "high": {"effort": "high"},
+            "xhigh": {"effort": "xhigh"},
+        },
         "openai/gpt-5.5-pro": {
             "off": None,
             "minimal": None,
@@ -153,7 +169,7 @@ OPENROUTER_COMPAT = ProviderCompat(
             "medium": {"effort": "medium"},
             "high": {"effort": "high"},
             "xhigh": {"effort": "xhigh"},
-        }
+        },
     },
     thinking_level_map={
         "off": {"effort": "none"},
