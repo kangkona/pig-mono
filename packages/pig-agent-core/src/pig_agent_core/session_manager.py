@@ -99,6 +99,9 @@ class SessionManager:
         explicit_path = Path(name_or_id).expanduser()
         if explicit_path.exists():
             return explicit_path.resolve()
+        workspace_relative = (self.workspace / explicit_path).resolve()
+        if workspace_relative.exists():
+            return workspace_relative
 
         sessions = self.list_sessions()
 
