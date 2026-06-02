@@ -57,12 +57,28 @@ def _parse_excluded_tools(value: str | None) -> set[str]:
 
 def _validate_session_selector_flags(
     *,
+    fork: str | None,
     session_id: str | None,
     session_name: str | None,
     resume: bool,
     continue_session: bool,
 ) -> None:
     """Reject conflicting exact-session and session-selector flags."""
+    if fork is not None:
+        conflicting_flags = []
+        if session_name:
+            conflicting_flags.append("--session")
+        if continue_session:
+            conflicting_flags.append("--continue")
+        if resume:
+            conflicting_flags.append("--resume")
+
+        if conflicting_flags:
+            console.print(
+                f"[red]Error: --fork cannot be combined with {', '.join(conflicting_flags)}[/red]"
+            )
+            raise typer.Exit(1)
+
     if session_id is None:
         return
 
@@ -151,6 +167,7 @@ def main(
     resolved_compat_mode = _resolve_option_value(compat_mode)
 
     _validate_session_selector_flags(
+        fork=resolved_fork,
         session_id=resolved_session_id,
         session_name=resolved_session_name,
         resume=resolved_resume,

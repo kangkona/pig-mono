@@ -191,3 +191,13 @@ def test_coding_agent_creates_new_session_when_session_id_missing(mock_llm, temp
     )
 
     assert agent.session.id == "manual-session-id"
+
+
+def test_coding_agent_rejects_invalid_manual_session_id(mock_llm, temp_workspace):
+    with pytest.raises(ValueError, match="Session id must be non-empty"):
+        CodingAgent(
+            llm=mock_llm,
+            workspace=str(temp_workspace),
+            verbose=False,
+            session_id="-bad",
+        )

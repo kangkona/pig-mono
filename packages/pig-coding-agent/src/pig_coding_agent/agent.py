@@ -10,6 +10,7 @@ from pig_agent_core import (
     Session,
     SessionManager,
     SkillManager,
+    assert_valid_session_id,
 )
 from pig_agent_core.tools import Tool
 from pig_llm import LLM
@@ -65,6 +66,9 @@ class CodingAgent:
         self.excluded_tools = set(excluded_tools or set())
         self._session_start_reason = "startup"
         self._previous_session_file: str | None = None
+
+        if session_id is not None:
+            assert_valid_session_id(session_id)
 
         # Initialize resilience (ProfileManager)
         self.profile_manager = None

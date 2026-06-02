@@ -131,6 +131,30 @@ def test_main_rejects_invalid_session_id(tmp_path):
 
 
 @patch.dict("os.environ", {"OPENAI_API_KEY": "test-key"})
+def test_main_rejects_fork_with_conflicting_session_selector(tmp_path):
+    ctx = Mock(invoked_subcommand=None)
+
+    with (
+        patch("pig_coding_agent.cli.console") as console,
+        patch("pig_coding_agent.cli.LLM"),
+    ):
+        try:
+            main(
+                ctx=ctx,
+                provider="openai",
+                workspace=tmp_path,
+                fork="source-1234",
+                session_name="resume-me",
+            )
+        except (click.exceptions.Exit, SystemExit) as exc:
+            assert getattr(exc, "exit_code", getattr(exc, "code", None)) == 1
+        else:
+            raise AssertionError("main should reject conflicting fork/session selectors")
+
+    console.print.assert_any_call("[red]Error: --fork cannot be combined with --session[/red]")
+
+
+@patch.dict("os.environ", {"OPENAI_API_KEY": "test-key"})
 @patch("pig_coding_agent.cli.LLM")
 @patch("pig_coding_agent.cli.CodingAgent")
 def test_main_passes_explicit_compat_mode_to_llm(mock_agent_class, mock_llm_class, tmp_path):
