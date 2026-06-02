@@ -9,6 +9,7 @@ from ..compat import (
     apply_prompt_cache,
     apply_request_headers,
     apply_session_affinity_headers,
+    apply_thinking_level,
 )
 from ..config import Config
 from ..models import Message, Response, StreamChunk
@@ -17,6 +18,14 @@ from ._base import Provider
 
 class GroqProvider(Provider):
     """Groq provider implementation (fast LLM inference)."""
+
+    @staticmethod
+    def _apply_reasoning_effort_override(model: str, kwargs: dict) -> dict:
+        """Apply known model-specific reasoning-effort overrides."""
+        next_kwargs = dict(kwargs)
+        if model.lower() == "qwen/qwen3-32b" and next_kwargs.get("reasoning_effort") == "medium":
+            next_kwargs["reasoning_effort"] = "default"
+        return next_kwargs
 
     def __init__(self, config: Config):
         """Initialize Groq provider."""
@@ -82,6 +91,8 @@ class GroqProvider(Provider):
         **kwargs,
     ) -> Response:
         """Generate a completion."""
+        kwargs = apply_thinking_level(kwargs, OPENAI_COMPAT)
+        kwargs = self._apply_reasoning_effort_override(model, kwargs)
         kwargs = apply_prompt_cache(kwargs, OPENAI_COMPAT)
         kwargs = apply_session_affinity_headers(kwargs, OPENAI_COMPAT)
         kwargs = apply_request_headers(kwargs)
@@ -118,6 +129,8 @@ class GroqProvider(Provider):
         **kwargs,
     ) -> Iterator[StreamChunk]:
         """Stream a completion."""
+        kwargs = apply_thinking_level(kwargs, OPENAI_COMPAT)
+        kwargs = self._apply_reasoning_effort_override(model, kwargs)
         kwargs = apply_prompt_cache(kwargs, OPENAI_COMPAT)
         kwargs = apply_session_affinity_headers(kwargs, OPENAI_COMPAT)
         kwargs = apply_request_headers(kwargs)
@@ -148,6 +161,8 @@ class GroqProvider(Provider):
         **kwargs,
     ) -> Response:
         """Async generate a completion."""
+        kwargs = apply_thinking_level(kwargs, OPENAI_COMPAT)
+        kwargs = self._apply_reasoning_effort_override(model, kwargs)
         kwargs = apply_prompt_cache(kwargs, OPENAI_COMPAT)
         kwargs = apply_session_affinity_headers(kwargs, OPENAI_COMPAT)
         kwargs = apply_request_headers(kwargs)
@@ -184,6 +199,8 @@ class GroqProvider(Provider):
         **kwargs,
     ) -> AsyncIterator[StreamChunk]:
         """Async stream a completion."""
+        kwargs = apply_thinking_level(kwargs, OPENAI_COMPAT)
+        kwargs = self._apply_reasoning_effort_override(model, kwargs)
         kwargs = apply_prompt_cache(kwargs, OPENAI_COMPAT)
         kwargs = apply_session_affinity_headers(kwargs, OPENAI_COMPAT)
         kwargs = apply_request_headers(kwargs)

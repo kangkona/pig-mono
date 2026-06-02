@@ -800,6 +800,80 @@ def test_groq_provider_uses_prompt_cache_for_long_retention() -> None:
     assert create.call_args.kwargs["prompt_cache_retention"] == "24h"
 
 
+def test_groq_qwen3_maps_medium_reasoning_to_default() -> None:
+    pytest.importorskip("groq")
+    create = Mock(
+        return_value=SimpleNamespace(
+            id="resp-1",
+            model="qwen/qwen3-32b",
+            choices=[
+                SimpleNamespace(
+                    message=SimpleNamespace(content="ok", tool_calls=None),
+                    finish_reason="stop",
+                )
+            ],
+            usage=SimpleNamespace(prompt_tokens=1, completion_tokens=1, total_tokens=2),
+        )
+    )
+    sync_client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+    async_client = SimpleNamespace(
+        chat=SimpleNamespace(completions=SimpleNamespace(create=AsyncMock()))
+    )
+
+    with (
+        patch("pig_llm.providers.groq.Groq", return_value=sync_client),
+        patch("pig_llm.providers.groq.AsyncGroq", return_value=async_client),
+    ):
+        from pig_llm.providers.groq import GroqProvider
+
+        provider = GroqProvider(Config(provider="groq", api_key="test"))
+
+    provider.complete(
+        [SimpleNamespace(role="user", content="hello", metadata=None)],
+        model="qwen/qwen3-32b",
+        thinking_level="medium",
+    )
+
+    assert create.call_args.kwargs["reasoning_effort"] == "default"
+
+
+def test_groq_non_qwen_model_keeps_reasoning_effort_value() -> None:
+    pytest.importorskip("groq")
+    create = Mock(
+        return_value=SimpleNamespace(
+            id="resp-1",
+            model="openai/gpt-oss-20b",
+            choices=[
+                SimpleNamespace(
+                    message=SimpleNamespace(content="ok", tool_calls=None),
+                    finish_reason="stop",
+                )
+            ],
+            usage=SimpleNamespace(prompt_tokens=1, completion_tokens=1, total_tokens=2),
+        )
+    )
+    sync_client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+    async_client = SimpleNamespace(
+        chat=SimpleNamespace(completions=SimpleNamespace(create=AsyncMock()))
+    )
+
+    with (
+        patch("pig_llm.providers.groq.Groq", return_value=sync_client),
+        patch("pig_llm.providers.groq.AsyncGroq", return_value=async_client),
+    ):
+        from pig_llm.providers.groq import GroqProvider
+
+        provider = GroqProvider(Config(provider="groq", api_key="test"))
+
+    provider.complete(
+        [SimpleNamespace(role="user", content="hello", metadata=None)],
+        model="openai/gpt-oss-20b",
+        thinking_level="medium",
+    )
+
+    assert create.call_args.kwargs["reasoning_effort"] == "medium"
+
+
 def test_groq_provider_preserves_explicit_max_tokens() -> None:
     pytest.importorskip("groq")
     create = Mock(
