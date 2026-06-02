@@ -39,6 +39,7 @@ class ProviderCompat:
     max_output_token_policy: MaxOutputTokenPolicy = "send_when_explicit"
     token_limit_field: TokenLimitField = "max_completion_tokens"
     supports_long_cache_retention: bool = True
+    send_session_affinity_headers: bool = False
     thinking_level_map: dict[str, Any | None] = field(default_factory=dict)
     unsupported_params: frozenset[str] = frozenset()
     context_overflow_patterns: tuple[re.Pattern[str], ...] = ()
@@ -107,6 +108,7 @@ OPENROUTER_COMPAT = ProviderCompat(
     system_role_policy="system",
     max_output_token_policy="send_when_explicit",
     token_limit_field="max_tokens",
+    send_session_affinity_headers=True,
     thinking_level_map={
         "off": {"effort": "none"},
         "minimal": {"effort": "low"},
@@ -146,6 +148,7 @@ BEDROCK_COMPAT = ProviderCompat(
 DEEPSEEK_COMPAT = ProviderCompat(
     max_output_token_policy="send_when_explicit",
     token_limit_field="max_tokens",
+    send_session_affinity_headers=True,
     thinking_level_map={
         "off": {"type": "disabled"},
         "minimal": {"type": "enabled"},
@@ -162,6 +165,7 @@ DEEPSEEK_COMPAT = ProviderCompat(
 TOGETHER_COMPAT = ProviderCompat(
     max_output_token_policy="send_when_explicit",
     token_limit_field="max_tokens",
+    send_session_affinity_headers=True,
     thinking_level_map={
         "off": {"enabled": False},
         "minimal": {"enabled": True},
@@ -203,6 +207,7 @@ MOONSHOT_COMPAT = ProviderCompat(
     max_output_token_policy="send_when_explicit",
     token_limit_field="max_tokens",
     supports_long_cache_retention=False,
+    send_session_affinity_headers=True,
     thinking_level_map={},
     context_overflow_patterns=COMMON_CONTEXT_OVERFLOW_PATTERNS,
     quota_or_billing_patterns=COMMON_QUOTA_OR_BILLING_PATTERNS,
@@ -307,6 +312,7 @@ def apply_prompt_cache(
     next_kwargs = dict(kwargs)
     cache_retention = str(next_kwargs.pop("cache_retention", "short") or "short").lower()
     session_id = next_kwargs.get("session_id")
+    next_kwargs["_resolved_cache_retention"] = cache_retention
 
     if not session_id or cache_retention == "none":
         next_kwargs.pop("prompt_cache_key", None)
@@ -401,6 +407,34 @@ def apply_request_headers(kwargs: dict[str, Any]) -> dict[str, Any]:
     if merged_headers:
         next_kwargs["extra_headers"] = merged_headers
 
+    return next_kwargs
+
+
+def apply_session_affinity_headers(
+    kwargs: dict[str, Any],
+    compat: ProviderCompat,
+) -> dict[str, Any]:
+    """Add provider-specific session-affinity headers when supported."""
+    next_kwargs = dict(kwargs)
+    session_id = next_kwargs.get("session_id")
+    cache_retention = str(
+        next_kwargs.pop("_resolved_cache_retention", next_kwargs.get("cache_retention", "short"))
+        or "short"
+    ).lower()
+
+    if not session_id or cache_retention == "none" or not compat.send_session_affinity_headers:
+        return next_kwargs
+
+    headers = dict(next_kwargs.pop("headers", {}) or {})
+    extra_headers = dict(next_kwargs.pop("extra_headers", {}) or {})
+    merged_headers = {
+        "session_id": str(session_id),
+        "x-client-request-id": str(session_id),
+        "x-session-affinity": str(session_id),
+        **extra_headers,
+        **headers,
+    }
+    next_kwargs["extra_headers"] = merged_headers
     return next_kwargs
 
 

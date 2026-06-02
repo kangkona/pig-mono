@@ -17,6 +17,7 @@ from ..compat import (
     ZAI_COMPAT,
     apply_prompt_cache,
     apply_request_headers,
+    apply_session_affinity_headers,
     apply_thinking_level,
     build_token_limit_param,
     extract_openai_usage,
@@ -134,6 +135,7 @@ class OpenAIProvider(Provider):
         compat = self._compat(model)
         kwargs = apply_thinking_level(kwargs, compat)
         kwargs = apply_prompt_cache(kwargs, compat)
+        kwargs = apply_session_affinity_headers(kwargs, compat)
         kwargs = apply_request_headers(kwargs)
         normalized_messages = normalize_messages(
             messages,
@@ -172,6 +174,7 @@ class OpenAIProvider(Provider):
         compat = self._compat(model)
         kwargs = apply_thinking_level(kwargs, compat)
         kwargs = apply_prompt_cache(kwargs, compat)
+        kwargs = apply_session_affinity_headers(kwargs, compat)
         kwargs = apply_request_headers(kwargs)
         normalized_messages = normalize_messages(
             messages,
@@ -208,6 +211,7 @@ class OpenAIProvider(Provider):
         compat = self._compat(model)
         kwargs = apply_thinking_level(kwargs, compat)
         kwargs = apply_prompt_cache(kwargs, compat)
+        kwargs = apply_session_affinity_headers(kwargs, compat)
         kwargs = apply_request_headers(kwargs)
         normalized_messages = normalize_messages(
             messages,
@@ -246,6 +250,7 @@ class OpenAIProvider(Provider):
         compat = self._compat(model)
         kwargs = apply_thinking_level(kwargs, compat)
         kwargs = apply_prompt_cache(kwargs, compat)
+        kwargs = apply_session_affinity_headers(kwargs, compat)
         kwargs = apply_request_headers(kwargs)
         normalized_messages = normalize_messages(
             messages,

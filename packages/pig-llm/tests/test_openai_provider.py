@@ -318,6 +318,32 @@ def test_explicit_openrouter_compat_uses_max_tokens_field() -> None:
     assert "max_completion_tokens" not in sync_create.call_args.kwargs
 
 
+def test_explicit_openrouter_compat_adds_session_affinity_headers() -> None:
+    sync_create = Mock(return_value=_completion_response())
+    provider = _provider_with_clients(
+        sync_create,
+        AsyncMock(),
+        Config(
+            provider="openai",
+            api_key="test-key",
+            base_url="https://router.example/v1",
+            compat_mode="openrouter",
+        ),
+    )
+
+    provider.complete(
+        _messages(),
+        model="deepseek/deepseek-r1",
+        session_id="session-affinity",
+    )
+
+    assert sync_create.call_args.kwargs["extra_headers"]["session_id"] == "session-affinity"
+    assert (
+        sync_create.call_args.kwargs["extra_headers"]["x-client-request-id"] == "session-affinity"
+    )
+    assert sync_create.call_args.kwargs["extra_headers"]["x-session-affinity"] == "session-affinity"
+
+
 def test_custom_zai_base_url_disables_thinking_when_off() -> None:
     sync_create = Mock(return_value=_completion_response())
     provider = _provider_with_clients(
@@ -504,6 +530,33 @@ def test_explicit_moonshot_compat_keeps_developer_metadata_as_system() -> None:
     messages = sync_create.call_args.kwargs["messages"]
     assert messages[0] == {"role": "system", "content": "rules"}
     assert "reasoning_effort" not in sync_create.call_args.kwargs
+
+
+def test_explicit_moonshot_compat_omits_session_affinity_headers_when_cache_is_none() -> None:
+    sync_create = Mock(return_value=_completion_response())
+    provider = _provider_with_clients(
+        sync_create,
+        AsyncMock(),
+        Config(
+            provider="openai",
+            api_key="test-key",
+            base_url="https://api.moonshot.ai/v1",
+            compat_mode="moonshot",
+        ),
+    )
+
+    provider.complete(
+        _messages(),
+        model="kimi-k2.6",
+        session_id="session-123",
+        cache_retention="none",
+    )
+
+    extra_headers = sync_create.call_args.kwargs["extra_headers"]
+    assert extra_headers["session-id"] == "session-123"
+    assert "session_id" not in extra_headers
+    assert "x-client-request-id" not in extra_headers
+    assert "x-session-affinity" not in extra_headers
 
 
 def test_custom_opencode_go_kimi_uses_thinking_object_when_disabled() -> None:
