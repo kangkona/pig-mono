@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from types import SimpleNamespace
 
+import pytest
 from pig_agent_core.agent import Agent
 from pig_agent_core.session import Session, SessionTree, serialize_compaction_tool_result
 from pig_agent_core.tools import ToolResult
@@ -392,3 +393,26 @@ def test_agent_end_callback_can_queue_followup_before_run_returns() -> None:
 
     assert response.content == "reply:follow-from-end"
     assert agent.llm.messages == ["start", "follow-from-end"]
+
+
+def test_agent_llm_failure_emits_agent_end_failure_event() -> None:
+    class FailingLLM:
+        config = SimpleNamespace(model="fake")
+
+        def chat(self, messages, tools=None):
+            raise RuntimeError("boom")
+
+    events = []
+
+    def on_event(event):
+        if event.type.value == "agent_end":
+            events.append(event)
+
+    agent = Agent(llm=FailingLLM(), tools=[], verbose=False, event_callback=on_event)
+
+    with pytest.raises(RuntimeError, match="boom"):
+        agent.run("start")
+
+    assert len(events) == 1
+    assert events[0].data["success"] is False
+    assert events[0].data["error"] == "boom"

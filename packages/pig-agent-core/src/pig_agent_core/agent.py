@@ -242,10 +242,15 @@ class Agent:
             tools_schema = self.registry.get_schemas() if len(self.registry) > 0 else None
 
             # Call LLM
-            response = self.llm.chat(
-                messages=self.history,
-                tools=tools_schema,
-            )
+            try:
+                response = self.llm.chat(
+                    messages=self.history,
+                    tools=tools_schema,
+                )
+            except Exception as e:
+                self._log(f"[red]LLM call failed: {e}[/red]")
+                self._emit_agent_end(success=False, error=str(e))
+                raise
 
             # Check if tool calls are needed
             if hasattr(response, "tool_calls") and response.tool_calls:
@@ -398,6 +403,7 @@ class Agent:
 
             except Exception as e:
                 self._log(f"LLM call failed: {e}")
+                self._emit_agent_end(success=False, error=str(e))
                 raise
 
             # Check if tool calls are needed
