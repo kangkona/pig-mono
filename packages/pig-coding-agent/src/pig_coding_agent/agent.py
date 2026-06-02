@@ -36,6 +36,7 @@ class CodingAgent:
         session_name: str | None = None,
         session_id: str | None = None,
         session_path: Path | None = None,
+        fork_source_path: Path | None = None,
         enable_extensions: bool = True,
         enable_skills: bool = True,
         enable_resilience: bool = True,
@@ -51,6 +52,7 @@ class CodingAgent:
             session_name: Session name for auto-save
             session_id: Explicit session ID for automation
             session_path: Path to load existing session
+            fork_source_path: Existing session path to fork into a new session
             enable_extensions: Enable extension system
             enable_skills: Enable skills system
             enable_resilience: Enable resilience (API key rotation, fallback)
@@ -79,7 +81,21 @@ class CodingAgent:
                 print("✓ Cost tracking enabled")
 
         # Initialize session
-        if session_path and session_path.exists():
+        if fork_source_path and fork_source_path.exists():
+            source_session = Session.load(fork_source_path)
+            conversation = source_session.get_current_conversation()
+            if conversation:
+                fork_name = session_name or f"{source_session.name}-fork"
+                self.session = source_session.fork(conversation[-1].id, fork_name)
+            else:
+                self.session = Session(
+                    name=session_name or f"{source_session.name}-fork",
+                    workspace=str(self.workspace),
+                    auto_save=True,
+                )
+            self._session_start_reason = "fork"
+            self._previous_session_file = str(fork_source_path)
+        elif session_path and session_path.exists():
             self.session = Session.load(session_path)
             self._session_start_reason = "resume"
             self._previous_session_file = str(session_path)

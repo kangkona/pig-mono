@@ -203,6 +203,52 @@ def extension(api):
     assert log_file.read_text().splitlines() == [f"previous:{session_path}"]
 
 
+def test_coding_agent_emits_fork_session_start_when_loading_fork_target(mock_llm, temp_workspace):
+    source = CodingAgent(
+        llm=mock_llm,
+        workspace=str(temp_workspace),
+        session_name="existing",
+        verbose=False,
+        enable_extensions=False,
+    ).session
+    source.add_message("user", "Message 1")
+    source.add_message("assistant", "Response 1")
+    session_path = source.save()
+
+    ext_dir = temp_workspace / ".agents" / "extensions"
+    ext_dir.mkdir(parents=True)
+    log_file = temp_workspace / "fork_session_start.log"
+
+    ext_file = ext_dir / "fork_start_ext.py"
+    ext_file.write_text(
+        f"""
+from pathlib import Path
+
+LOG = Path({str(log_file)!r})
+
+def extension(api):
+    @api.on("session_start")
+    def on_start(event, ctx):
+        with LOG.open("a", encoding="utf-8") as handle:
+            handle.write(
+                f"start:{{event['reason']}}:{{event.get('previousSessionFile')}}:"
+                f"{{api.agent.session.name}}\\n"
+            )
+"""
+    )
+
+    CodingAgent(
+        llm=mock_llm,
+        workspace=str(temp_workspace),
+        session_path=session_path,
+        enable_extensions=True,
+        verbose=False,
+        fork_source_path=session_path,
+    )
+
+    assert log_file.read_text().splitlines() == [f"start:fork:{session_path}:existing-fork"]
+
+
 def test_coding_agent_session_start_handlers_can_access_ui(mock_llm, temp_workspace):
     ext_dir = temp_workspace / ".agents" / "extensions"
     ext_dir.mkdir(parents=True)

@@ -21,6 +21,13 @@ app = typer.Typer(
 console = Console()
 
 
+def _resolve_option_value[T](value: T) -> T | None:
+    """Unwrap direct-call Typer OptionInfo defaults during tests."""
+    if isinstance(value, typer.models.OptionInfo):
+        return None
+    return value
+
+
 class JsonLineWriter:
     """Strict JSONL protocol writer for non-interactive modes."""
 
@@ -56,6 +63,7 @@ def main(
     verbose: bool = typer.Option(True, "--verbose/--quiet", "-v/-q", help="Verbose output"),
     resume: bool = typer.Option(False, "--resume", "-r", help="Resume last session"),
     continue_session: bool = typer.Option(False, "--continue", "-c", help="Continue last session"),
+    fork: str | None = typer.Option(None, "--fork", help="Fork specific session file or ID"),
     session_name: str | None = typer.Option(None, "--session", "-s", help="Session name"),
     name: str | None = typer.Option(None, "--name", "-n", help="Startup session display name"),
     session_id: str | None = typer.Option(
@@ -90,6 +98,15 @@ def main(
     resolved_verbose = bool(verbose) if isinstance(verbose, bool) else True
     if protocol_mode:
         resolved_verbose = False
+    resolved_resume = bool(resume) if isinstance(resume, bool) else False
+    resolved_continue = bool(continue_session) if isinstance(continue_session, bool) else False
+    resolved_fork = _resolve_option_value(fork)
+    resolved_session_name = _resolve_option_value(session_name)
+    resolved_name = _resolve_option_value(name)
+    resolved_session_id = _resolve_option_value(session_id)
+    resolved_exclude_tools = _resolve_option_value(exclude_tools)
+    resolved_base_url = _resolve_option_value(base_url)
+    resolved_compat_mode = _resolve_option_value(compat_mode)
 
     # Get API key
     api_key = os.getenv(f"{provider.upper()}_API_KEY")
@@ -103,13 +120,22 @@ def main(
         provider=provider,
         api_key=api_key,
         model=model or ("gpt-3.5-turbo" if provider == "openai" else None),
-        base_url=base_url,
-        compat_mode=compat_mode,
+        base_url=resolved_base_url,
+        compat_mode=resolved_compat_mode,
     )
 
     # Handle session loading
     session_path = None
-    if resume or continue_session:
+    if resolved_fork:
+        from pig_agent_core import SessionManager
+
+        session_mgr = SessionManager(workspace)
+        session_path = session_mgr.find_session(resolved_fork)
+        if session_path is None:
+            if not protocol_mode:
+                console.print(f"[red]Session '{resolved_fork}' not found[/red]")
+            raise typer.Exit(1)
+    elif resolved_resume or resolved_continue:
         from pig_agent_core import SessionManager
 
         session_mgr = SessionManager(workspace)
@@ -118,7 +144,7 @@ def main(
         if not sessions:
             if not protocol_mode:
                 console.print("[yellow]No previous sessions found[/yellow]")
-        elif continue_session or len(sessions) == 1:
+        elif resolved_continue or len(sessions) == 1:
             # Auto-continue most recent
             session_path = sessions[0].path
             if not protocol_mode:
@@ -159,14 +185,15 @@ def main(
         llm=llm,
         workspace=str(workspace),
         verbose=resolved_verbose,
-        session_name=name or session_name,
-        session_id=session_id,
+        session_name=resolved_name or resolved_session_name,
+        session_id=resolved_session_id,
         session_path=session_path,
+        fork_source_path=session_path if resolved_fork else None,
         enable_extensions=not no_extensions,
         enable_skills=not no_skills,
         enable_resilience=not no_resilience,
         enable_cost_tracking=not no_cost_tracking,
-        excluded_tools=_parse_excluded_tools(exclude_tools),
+        excluded_tools=_parse_excluded_tools(resolved_exclude_tools),
     )
 
     if not protocol_mode:
