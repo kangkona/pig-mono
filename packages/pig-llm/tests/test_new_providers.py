@@ -396,6 +396,59 @@ def test_openai_compatible_providers_use_prompt_cache_for_long_retention(
     assert create.call_args.kwargs["prompt_cache_retention"] == "24h"
 
 
+@pytest.mark.parametrize(
+    ("module_name", "class_name", "base_url"),
+    [
+        ("xai", "XAIProvider", "https://api.x.ai/v1"),
+        ("perplexity", "PerplexityProvider", "https://api.perplexity.ai"),
+        ("cerebras", "CerebrasProvider", "https://api.cerebras.ai/v1"),
+    ],
+)
+def test_openai_compatible_provider_wrappers_promote_developer_instruction_role(
+    module_name: str,
+    class_name: str,
+    base_url: str,
+):
+    create = Mock(
+        return_value=SimpleNamespace(
+            id="resp-1",
+            model="test-model",
+            choices=[
+                SimpleNamespace(
+                    message=SimpleNamespace(content="ok", tool_calls=None),
+                    finish_reason="stop",
+                )
+            ],
+            usage=SimpleNamespace(prompt_tokens=1, completion_tokens=1, total_tokens=2),
+        )
+    )
+    sync_client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+    async_client = SimpleNamespace(
+        chat=SimpleNamespace(completions=SimpleNamespace(create=AsyncMock()))
+    )
+
+    with (
+        patch(f"pig_llm.providers.{module_name}.openai.OpenAI", return_value=sync_client),
+        patch(
+            f"pig_llm.providers.{module_name}.openai.AsyncOpenAI",
+            return_value=async_client,
+        ),
+    ):
+        module = __import__(f"pig_llm.providers.{module_name}", fromlist=[class_name])
+        provider_cls = getattr(module, class_name)
+        provider = provider_cls(Config(provider=module_name, api_key="test", base_url=base_url))
+
+    provider.complete(
+        [
+            Message(role="system", content="rules", metadata={"role": "developer"}),
+            Message(role="user", content="hello"),
+        ],
+        model="test-model",
+    )
+
+    assert create.call_args.kwargs["messages"][0] == {"role": "developer", "content": "rules"}
+
+
 def test_deepseek_provider_sends_explicit_thinking_disabled_payload() -> None:
     create = Mock(
         return_value=SimpleNamespace(

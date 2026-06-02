@@ -10,6 +10,7 @@ from ..compat import (
     apply_request_headers,
     apply_thinking_level,
     build_token_limit_param,
+    normalize_messages,
 )
 from ..config import Config
 from ..models import Message, Response, StreamChunk
@@ -93,9 +94,14 @@ class PerplexityProvider(Provider):
         kwargs = apply_thinking_level(kwargs, OPENAI_COMPAT)
         kwargs = apply_prompt_cache(kwargs, OPENAI_COMPAT)
         kwargs = apply_request_headers(kwargs)
+        normalized_messages = normalize_messages(
+            messages,
+            OPENAI_COMPAT,
+            supports_developer_role=True,
+        )
         response = self.client.chat.completions.create(
             model=model,
-            messages=self._convert_messages(messages),
+            messages=self._convert_messages(normalized_messages),
             temperature=temperature,
             **build_token_limit_param(
                 max_tokens,
@@ -138,9 +144,14 @@ class PerplexityProvider(Provider):
         kwargs = apply_thinking_level(kwargs, OPENAI_COMPAT)
         kwargs = apply_prompt_cache(kwargs, OPENAI_COMPAT)
         kwargs = apply_request_headers(kwargs)
+        normalized_messages = normalize_messages(
+            messages,
+            OPENAI_COMPAT,
+            supports_developer_role=True,
+        )
         stream = self.client.chat.completions.create(
             model=model,
-            messages=self._convert_messages(messages),
+            messages=self._convert_messages(normalized_messages),
             temperature=temperature,
             stream=True,
             **build_token_limit_param(
@@ -177,9 +188,14 @@ class PerplexityProvider(Provider):
         kwargs = apply_thinking_level(kwargs, OPENAI_COMPAT)
         kwargs = apply_prompt_cache(kwargs, OPENAI_COMPAT)
         kwargs = apply_request_headers(kwargs)
+        normalized_messages = normalize_messages(
+            messages,
+            OPENAI_COMPAT,
+            supports_developer_role=True,
+        )
         response = await self.async_client.chat.completions.create(
             model=model,
-            messages=self._convert_messages(messages),
+            messages=self._convert_messages(normalized_messages),
             temperature=temperature,
             **build_token_limit_param(
                 max_tokens,
@@ -222,9 +238,14 @@ class PerplexityProvider(Provider):
         kwargs = apply_thinking_level(kwargs, OPENAI_COMPAT)
         kwargs = apply_prompt_cache(kwargs, OPENAI_COMPAT)
         kwargs = apply_request_headers(kwargs)
+        normalized_messages = normalize_messages(
+            messages,
+            OPENAI_COMPAT,
+            supports_developer_role=True,
+        )
         stream = await self.async_client.chat.completions.create(
             model=model,
-            messages=self._convert_messages(messages),
+            messages=self._convert_messages(normalized_messages),
             temperature=temperature,
             stream=True,
             **build_token_limit_param(
