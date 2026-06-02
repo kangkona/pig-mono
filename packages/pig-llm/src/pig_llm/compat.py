@@ -368,6 +368,21 @@ OPENCODE_GO_KIMI_COMPAT = ProviderCompat(
     retryable_patterns=COMMON_RETRYABLE_PATTERNS,
 )
 
+OPENCODE_ZEN_GROK_BUILD_COMPAT = ProviderCompat(
+    max_output_token_policy="send_when_explicit",
+    thinking_level_map={
+        "off": {"type": "disabled"},
+        "minimal": None,
+        "low": None,
+        "medium": None,
+        "high": {"type": "enabled"},
+        "xhigh": None,
+    },
+    context_overflow_patterns=COMMON_CONTEXT_OVERFLOW_PATTERNS,
+    quota_or_billing_patterns=COMMON_QUOTA_OR_BILLING_PATTERNS,
+    retryable_patterns=COMMON_RETRYABLE_PATTERNS,
+)
+
 
 def normalize_messages(
     messages: list[Message],
@@ -540,6 +555,12 @@ def apply_thinking_level(kwargs: dict[str, Any], compat: ProviderCompat) -> dict
             next_kwargs.pop("reasoning_effort", None)
             return next_kwargs
         next_kwargs["thinking"] = thinking
+        next_kwargs.pop("reasoning", None)
+        next_kwargs.pop("reasoning_effort", None)
+        return next_kwargs
+
+    if compat is OPENCODE_ZEN_GROK_BUILD_COMPAT:
+        next_kwargs["thinking"] = mapped
         next_kwargs.pop("reasoning", None)
         next_kwargs.pop("reasoning_effort", None)
         return next_kwargs

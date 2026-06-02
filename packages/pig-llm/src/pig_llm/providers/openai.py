@@ -9,6 +9,7 @@ from ..compat import (
     MOONSHOT_COMPAT,
     OPENAI_COMPAT,
     OPENCODE_GO_KIMI_COMPAT,
+    OPENCODE_ZEN_GROK_BUILD_COMPAT,
     OPENROUTER_COMPAT,
     QWEN_CHAT_TEMPLATE_COMPAT,
     QWEN_COMPAT,
@@ -57,6 +58,8 @@ class OpenAIProvider(Provider):
             "deepseek-v4-pro",
         }:
             return OPENCODE_GO_KIMI_COMPAT if model_name == "kimi-k2.6" else DEEPSEEK_COMPAT
+        if "opencode.ai/zen" in base_url and model_name == "grok-build-0.1":
+            return OPENCODE_ZEN_GROK_BUILD_COMPAT
         if "dashscope.aliyuncs.com" in base_url:
             return QWEN_COMPAT
         if "api.z.ai" in base_url:
