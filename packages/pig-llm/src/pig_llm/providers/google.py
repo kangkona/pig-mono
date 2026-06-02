@@ -15,6 +15,34 @@ from ._base import Provider
 class GoogleProvider(Provider):
     """Google Gemini provider implementation using new google-genai SDK."""
 
+    _MODEL_THINKING_LEVEL_MAPS = {
+        "gemini-3-pro-preview": {"minimal": None, "low": "LOW", "medium": None, "high": "HIGH"},
+        "gemini-3.1-pro-preview": {
+            "minimal": None,
+            "low": "LOW",
+            "medium": None,
+            "high": "HIGH",
+        },
+        "gemini-3.1-pro-preview-customtools": {
+            "minimal": None,
+            "low": "LOW",
+            "medium": None,
+            "high": "HIGH",
+        },
+        "gemma-4-26b-a4b-it": {
+            "minimal": "MINIMAL",
+            "low": None,
+            "medium": None,
+            "high": "HIGH",
+        },
+        "gemma-4-31b-it": {
+            "minimal": "MINIMAL",
+            "low": None,
+            "medium": None,
+            "high": "HIGH",
+        },
+    }
+
     def __init__(self, config: Config):
         """Initialize Google provider."""
         self.config = config
@@ -124,13 +152,18 @@ class GoogleProvider(Provider):
 
         return None
 
-    @staticmethod
-    def _thinking_config(level: str | None):
+    def _thinking_config(self, model: str, level: str | None):
         """Map pig thinking levels onto google-genai ThinkingConfig."""
         if level is None:
             return None
         if level == "off":
             return types.ThinkingConfig(thinking_budget=0)
+        model_map = self._MODEL_THINKING_LEVEL_MAPS.get(model.lower())
+        if model_map is not None:
+            mapped = model_map.get(level)
+            if mapped is None:
+                return None
+            return types.ThinkingConfig(thinking_level=mapped)
         return types.ThinkingConfig(thinking_level=level)
 
     def complete(
@@ -154,7 +187,7 @@ class GoogleProvider(Provider):
             max_output_tokens=max_tokens,
             tools=tools,
             system_instruction=system_instruction,
-            thinking_config=self._thinking_config(kwargs.get("thinking_level")),
+            thinking_config=self._thinking_config(model, kwargs.get("thinking_level")),
         )
 
         # Generate content
@@ -216,7 +249,7 @@ class GoogleProvider(Provider):
             max_output_tokens=max_tokens,
             tools=tools,
             system_instruction=system_instruction,
-            thinking_config=self._thinking_config(kwargs.get("thinking_level")),
+            thinking_config=self._thinking_config(model, kwargs.get("thinking_level")),
         )
 
         # Generate content with streaming
@@ -254,7 +287,7 @@ class GoogleProvider(Provider):
             max_output_tokens=max_tokens,
             tools=tools,
             system_instruction=system_instruction,
-            thinking_config=self._thinking_config(kwargs.get("thinking_level")),
+            thinking_config=self._thinking_config(model, kwargs.get("thinking_level")),
         )
 
         # Generate content (async)
@@ -316,7 +349,7 @@ class GoogleProvider(Provider):
             max_output_tokens=max_tokens,
             tools=tools,
             system_instruction=system_instruction,
-            thinking_config=self._thinking_config(kwargs.get("thinking_level")),
+            thinking_config=self._thinking_config(model, kwargs.get("thinking_level")),
         )
 
         # Generate content with streaming (async)
