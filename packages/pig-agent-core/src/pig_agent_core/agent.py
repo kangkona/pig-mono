@@ -455,6 +455,7 @@ class Agent:
                                 "role": "tool",
                                 "name": tool_name,
                                 "content": str(result.data if result.ok else result.error),
+                                "result": result,
                             }
                         )
                         self._log(f"✓ Result: {result.data if result.ok else result.error}")
@@ -469,6 +470,7 @@ class Agent:
                                 "role": "tool",
                                 "name": tool_name,
                                 "content": error_msg,
+                                "result": ToolResult(ok=False, error=error_msg),
                             }
                         )
                         self._log(f"✗ {error_msg}")
@@ -492,6 +494,25 @@ class Agent:
                             },
                         )
                     )
+
+                if tool_results and all(
+                    tr.get("result") and tr["result"].ok and tr["result"].meta.get("terminate")
+                    for tr in tool_results
+                ):
+                    final_content = "\n".join(str(tr["content"]) for tr in tool_results)
+                    final_response = Response(content=final_content, model=self.llm.config.model)
+                    self.history.append(Message(role="assistant", content=final_response.content))
+                    self._emit_agent_end(success=True)
+                    if check_queue and self.message_queue.has_followup():
+                        followup = self.message_queue.get_followup_messages()
+                        if followup:
+                            response: Response | None = None
+                            for queued in followup:
+                                self._log(f"→ Follow-up: {queued.content}")
+                                response = await self.arun(queued.content, check_queue=True)
+                            if response is not None:
+                                return response
+                    return final_response
 
                 # Check for steering messages after tool execution
                 if check_queue and self.message_queue.has_steering():
