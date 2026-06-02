@@ -106,7 +106,8 @@ class CodingAgent:
             self.session = Session.load(session_path)
             self._session_start_reason = "resume"
             self._previous_session_file = str(session_path)
-            print(f"✓ Loaded session: {self.session.name}")
+            if verbose:
+                print(f"✓ Loaded session: {self.session.name}")
         else:
             resolved_session_path = None
             if session_id:
@@ -117,7 +118,8 @@ class CodingAgent:
                 self.session = Session.load(resolved_session_path)
                 self._session_start_reason = "resume"
                 self._previous_session_file = str(resolved_session_path)
-                print(f"✓ Loaded session: {self.session.name}")
+                if verbose:
+                    print(f"✓ Loaded session: {self.session.name}")
             else:
                 self.session = Session(
                     name=session_name or "coding-session",
@@ -148,7 +150,7 @@ class CodingAgent:
         if enable_skills:
             self.skill_manager = SkillManager()
             self.skill_manager.discover_skills([])
-            if len(self.skill_manager) > 0:
+            if verbose and len(self.skill_manager) > 0:
                 print(f"✓ Loaded {len(self.skill_manager)} skills")
 
         # Create agent
@@ -173,7 +175,7 @@ class CodingAgent:
         # Initialize prompt manager
         self.prompt_manager = PromptManager()
         self.prompt_manager.discover_prompts([])
-        if len(self.prompt_manager) > 0:
+        if verbose and len(self.prompt_manager) > 0:
             print(f"✓ Loaded {len(self.prompt_manager)} prompt templates")
 
         # Initialize file reference parser

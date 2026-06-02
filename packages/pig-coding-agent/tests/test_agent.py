@@ -212,6 +212,31 @@ def test_coding_agent_fork_keeps_explicit_session_id(mock_llm, temp_workspace):
     assert len(agent.session.tree.entries) == 2
 
 
+def test_coding_agent_verbose_false_suppresses_startup_prints_on_resume(mock_llm, temp_workspace):
+    session = Session(name="existing", workspace=str(temp_workspace), auto_save=False)
+    session.add_message("user", "hello")
+    session_path = session.save()
+
+    mock_skill_manager = Mock()
+    mock_skill_manager.__len__ = Mock(return_value=2)
+    mock_prompt_manager = Mock()
+    mock_prompt_manager.__len__ = Mock(return_value=3)
+
+    with (
+        patch("pig_coding_agent.agent.SkillManager", return_value=mock_skill_manager),
+        patch("pig_coding_agent.agent.PromptManager", return_value=mock_prompt_manager),
+        patch("builtins.print") as mock_print,
+    ):
+        CodingAgent(
+            llm=mock_llm,
+            workspace=str(temp_workspace),
+            verbose=False,
+            session_path=session_path,
+        )
+
+    mock_print.assert_not_called()
+
+
 def test_coding_agent_rejects_invalid_manual_session_id(mock_llm, temp_workspace):
     with pytest.raises(ValueError, match="Session id must be non-empty"):
         CodingAgent(
