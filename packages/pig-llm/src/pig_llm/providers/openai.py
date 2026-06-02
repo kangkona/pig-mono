@@ -15,6 +15,7 @@ from ..compat import (
     STRING_THINKING_COMPAT,
     TOGETHER_COMPAT,
     ZAI_COMPAT,
+    apply_prompt_cache,
     apply_request_headers,
     apply_thinking_level,
     build_token_limit_param,
@@ -132,6 +133,7 @@ class OpenAIProvider(Provider):
         """Generate a completion."""
         compat = self._compat(model)
         kwargs = apply_thinking_level(kwargs, compat)
+        kwargs = apply_prompt_cache(kwargs, compat)
         kwargs = apply_request_headers(kwargs)
         normalized_messages = normalize_messages(
             messages,
@@ -169,6 +171,7 @@ class OpenAIProvider(Provider):
         """Stream a completion."""
         compat = self._compat(model)
         kwargs = apply_thinking_level(kwargs, compat)
+        kwargs = apply_prompt_cache(kwargs, compat)
         kwargs = apply_request_headers(kwargs)
         normalized_messages = normalize_messages(
             messages,
@@ -204,6 +207,7 @@ class OpenAIProvider(Provider):
         """Async generate a completion."""
         compat = self._compat(model)
         kwargs = apply_thinking_level(kwargs, compat)
+        kwargs = apply_prompt_cache(kwargs, compat)
         kwargs = apply_request_headers(kwargs)
         normalized_messages = normalize_messages(
             messages,
@@ -241,6 +245,7 @@ class OpenAIProvider(Provider):
         """Async stream a completion."""
         compat = self._compat(model)
         kwargs = apply_thinking_level(kwargs, compat)
+        kwargs = apply_prompt_cache(kwargs, compat)
         kwargs = apply_request_headers(kwargs)
         normalized_messages = normalize_messages(
             messages,

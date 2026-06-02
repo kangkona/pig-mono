@@ -122,6 +122,35 @@ def test_complete_merges_session_id_and_custom_headers() -> None:
     assert "session_id" not in sync_create.call_args.kwargs
 
 
+def test_native_openai_uses_session_id_as_prompt_cache_key() -> None:
+    sync_create = Mock(return_value=_completion_response())
+    provider = _provider_with_clients(sync_create, AsyncMock())
+
+    provider.complete(
+        _messages(),
+        model="gpt-5.2",
+        session_id="session-123",
+    )
+
+    assert sync_create.call_args.kwargs["prompt_cache_key"] == "session-123"
+    assert "prompt_cache_retention" not in sync_create.call_args.kwargs
+
+
+def test_native_openai_sets_prompt_cache_retention_for_long_cache() -> None:
+    sync_create = Mock(return_value=_completion_response())
+    provider = _provider_with_clients(sync_create, AsyncMock())
+
+    provider.complete(
+        _messages(),
+        model="gpt-5.2",
+        session_id="session-123",
+        cache_retention="long",
+    )
+
+    assert sync_create.call_args.kwargs["prompt_cache_key"] == "session-123"
+    assert sync_create.call_args.kwargs["prompt_cache_retention"] == "24h"
+
+
 def test_complete_falls_back_to_choice_usage_when_response_usage_missing() -> None:
     response = SimpleNamespace(
         id="chatcmpl-test",
@@ -424,6 +453,30 @@ def test_explicit_moonshot_compat_uses_max_tokens_field() -> None:
 
     assert sync_create.call_args.kwargs["max_tokens"] == 444
     assert "max_completion_tokens" not in sync_create.call_args.kwargs
+
+
+def test_explicit_moonshot_compat_omits_prompt_cache_retention() -> None:
+    sync_create = Mock(return_value=_completion_response())
+    provider = _provider_with_clients(
+        sync_create,
+        AsyncMock(),
+        Config(
+            provider="openai",
+            api_key="test-key",
+            base_url="https://api.moonshot.ai/v1",
+            compat_mode="moonshot",
+        ),
+    )
+
+    provider.complete(
+        _messages(),
+        model="kimi-k2.6",
+        session_id="session-123",
+        cache_retention="long",
+    )
+
+    assert "prompt_cache_key" not in sync_create.call_args.kwargs
+    assert "prompt_cache_retention" not in sync_create.call_args.kwargs
 
 
 def test_explicit_moonshot_compat_keeps_developer_metadata_as_system() -> None:

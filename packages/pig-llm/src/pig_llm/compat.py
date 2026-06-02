@@ -17,6 +17,7 @@ SystemRolePolicy = Literal["system", "developer"]
 MaxOutputTokenPolicy = Literal["omit_default", "send_when_explicit", "required"]
 RetryClassification = Literal["retryable", "quota_or_billing", "auth", "context_overflow", "fatal"]
 TokenLimitField = Literal["max_completion_tokens", "max_tokens"]
+CacheRetention = Literal["none", "short", "long"]
 
 
 class ThinkingLevel(str, Enum):
@@ -37,6 +38,7 @@ class ProviderCompat:
     system_role_policy: SystemRolePolicy = "system"
     max_output_token_policy: MaxOutputTokenPolicy = "send_when_explicit"
     token_limit_field: TokenLimitField = "max_completion_tokens"
+    supports_long_cache_retention: bool = True
     thinking_level_map: dict[str, Any | None] = field(default_factory=dict)
     unsupported_params: frozenset[str] = frozenset()
     context_overflow_patterns: tuple[re.Pattern[str], ...] = ()
@@ -200,6 +202,7 @@ MOONSHOT_COMPAT = ProviderCompat(
     system_role_policy="system",
     max_output_token_policy="send_when_explicit",
     token_limit_field="max_tokens",
+    supports_long_cache_retention=False,
     thinking_level_map={},
     context_overflow_patterns=COMMON_CONTEXT_OVERFLOW_PATTERNS,
     quota_or_billing_patterns=COMMON_QUOTA_OR_BILLING_PATTERNS,
@@ -294,6 +297,33 @@ def build_token_limit_param(
     if param_name in compat.unsupported_params and not explicit:
         return {}
     return {param_name: max_tokens}
+
+
+def apply_prompt_cache(
+    kwargs: dict[str, Any],
+    compat: ProviderCompat,
+) -> dict[str, Any]:
+    """Apply OpenAI-style prompt cache fields when supported."""
+    next_kwargs = dict(kwargs)
+    cache_retention = str(next_kwargs.pop("cache_retention", "short") or "short").lower()
+    session_id = next_kwargs.get("session_id")
+
+    if not session_id or cache_retention == "none":
+        next_kwargs.pop("prompt_cache_key", None)
+        next_kwargs.pop("prompt_cache_retention", None)
+        return next_kwargs
+
+    if compat.supports_long_cache_retention:
+        next_kwargs["prompt_cache_key"] = str(session_id)[:64]
+        if cache_retention == "long":
+            next_kwargs["prompt_cache_retention"] = "24h"
+        else:
+            next_kwargs.pop("prompt_cache_retention", None)
+        return next_kwargs
+
+    next_kwargs.pop("prompt_cache_key", None)
+    next_kwargs.pop("prompt_cache_retention", None)
+    return next_kwargs
 
 
 def apply_thinking_level(kwargs: dict[str, Any], compat: ProviderCompat) -> dict[str, Any]:
