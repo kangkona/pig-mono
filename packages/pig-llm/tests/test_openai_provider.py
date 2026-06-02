@@ -254,6 +254,19 @@ def test_native_openai_maps_thinking_off_to_none_reasoning_effort() -> None:
     assert "thinking" not in sync_create.call_args.kwargs
 
 
+def test_native_openai_gpt_55_pro_omits_unsupported_minimal_reasoning() -> None:
+    sync_create = Mock(return_value=_completion_response())
+    provider = _provider_with_clients(sync_create, AsyncMock())
+
+    provider.complete(
+        _messages(),
+        model="gpt-5.5-pro",
+        thinking_level="minimal",
+    )
+
+    assert "reasoning_effort" not in sync_create.call_args.kwargs
+
+
 def test_custom_qwen_base_url_uses_enable_thinking_toggle() -> None:
     sync_create = Mock(return_value=_completion_response())
     provider = _provider_with_clients(
@@ -322,6 +335,29 @@ def test_explicit_openrouter_compat_uses_nested_reasoning_payload() -> None:
     )
 
     assert sync_create.call_args.kwargs["reasoning"] == {"effort": "high"}
+    assert "reasoning_effort" not in sync_create.call_args.kwargs
+
+
+def test_explicit_openrouter_compat_gpt_55_pro_omits_unsupported_low_reasoning() -> None:
+    sync_create = Mock(return_value=_completion_response())
+    provider = _provider_with_clients(
+        sync_create,
+        AsyncMock(),
+        Config(
+            provider="openai",
+            api_key="test-key",
+            base_url="https://router.example/v1",
+            compat_mode="openrouter",
+        ),
+    )
+
+    provider.complete(
+        _messages(),
+        model="openai/gpt-5.5-pro",
+        thinking_level="low",
+    )
+
+    assert "reasoning" not in sync_create.call_args.kwargs
     assert "reasoning_effort" not in sync_create.call_args.kwargs
 
 

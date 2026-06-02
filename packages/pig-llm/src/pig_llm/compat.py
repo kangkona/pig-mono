@@ -93,6 +93,16 @@ COMMON_RETRYABLE_PATTERNS = _compile_many(
 OPENAI_COMPAT = ProviderCompat(
     system_role_policy="developer",
     max_output_token_policy="send_when_explicit",
+    reasoning_effort_level_map={
+        "gpt-5.5-pro": {
+            "off": None,
+            "minimal": None,
+            "low": None,
+            "medium": "medium",
+            "high": "high",
+            "xhigh": "xhigh",
+        }
+    },
     thinking_level_map={
         "off": "none",
         "minimal": "minimal",
@@ -127,6 +137,16 @@ OPENROUTER_COMPAT = ProviderCompat(
     max_output_token_policy="send_when_explicit",
     token_limit_field="max_tokens",
     send_session_affinity_headers=True,
+    reasoning_effort_level_map={
+        "openai/gpt-5.5-pro": {
+            "off": None,
+            "minimal": None,
+            "low": None,
+            "medium": {"effort": "medium"},
+            "high": {"effort": "high"},
+            "xhigh": {"effort": "xhigh"},
+        }
+    },
     thinking_level_map={
         "off": {"effort": "none"},
         "minimal": {"effort": "low"},
@@ -398,12 +418,26 @@ def apply_thinking_level(kwargs: dict[str, Any], compat: ProviderCompat) -> dict
         return next_kwargs
 
     if compat is OPENROUTER_COMPAT:
-        next_kwargs["reasoning"] = mapped
+        model_map = compat.reasoning_effort_level_map.get(model_key)
+        reasoning = model_map.get(str(level)) if model_map is not None else mapped
+        if reasoning is None:
+            next_kwargs.pop("thinking", None)
+            next_kwargs.pop("reasoning", None)
+            next_kwargs.pop("reasoning_effort", None)
+            return next_kwargs
+        next_kwargs["reasoning"] = reasoning
         next_kwargs.pop("thinking", None)
         return next_kwargs
 
     if compat is OPENAI_COMPAT or compat is AZURE_OPENAI_COMPAT or compat is GROQ_COMPAT:
-        next_kwargs["reasoning_effort"] = mapped
+        model_map = compat.reasoning_effort_level_map.get(model_key)
+        reasoning_effort = model_map.get(str(level)) if model_map is not None else mapped
+        if reasoning_effort is None:
+            next_kwargs.pop("reasoning_effort", None)
+            next_kwargs.pop("thinking", None)
+            next_kwargs.pop("reasoning", None)
+            return next_kwargs
+        next_kwargs["reasoning_effort"] = reasoning_effort
         next_kwargs.pop("thinking", None)
         next_kwargs.pop("reasoning", None)
         return next_kwargs
