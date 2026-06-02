@@ -697,6 +697,44 @@ def test_together_provider_sends_explicit_reasoning_disabled_payload() -> None:
     assert "reasoning_effort" not in create.call_args.kwargs
 
 
+def test_together_provider_normalizes_explicit_developer_role_to_system() -> None:
+    create = Mock(
+        return_value=SimpleNamespace(
+            id="resp-1",
+            model="moonshotai/Kimi-K2.6",
+            choices=[
+                SimpleNamespace(
+                    message=SimpleNamespace(content="ok", tool_calls=None),
+                    finish_reason="stop",
+                )
+            ],
+            usage=SimpleNamespace(prompt_tokens=1, completion_tokens=1, total_tokens=2),
+        )
+    )
+    sync_client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+    async_client = SimpleNamespace(
+        chat=SimpleNamespace(completions=SimpleNamespace(create=AsyncMock()))
+    )
+
+    with (
+        patch("pig_llm.providers.together.openai.OpenAI", return_value=sync_client),
+        patch("pig_llm.providers.together.openai.AsyncOpenAI", return_value=async_client),
+    ):
+        from pig_llm.providers.together import TogetherProvider
+
+        provider = TogetherProvider(Config(provider="together", api_key="test"))
+
+    provider.complete(
+        [
+            Message(role="developer", content="rules"),
+            Message(role="user", content="hello"),
+        ],
+        model="moonshotai/Kimi-K2.6",
+    )
+
+    assert create.call_args.kwargs["messages"][0] == {"role": "system", "content": "rules"}
+
+
 def test_together_provider_sends_explicit_reasoning_enabled_payload() -> None:
     create = Mock(
         return_value=SimpleNamespace(
@@ -1121,6 +1159,50 @@ def test_azure_openai_provider_uses_prompt_cache_for_long_retention() -> None:
 
     assert create.call_args.kwargs["prompt_cache_key"] == "session-99"
     assert create.call_args.kwargs["prompt_cache_retention"] == "24h"
+
+
+def test_azure_openai_provider_promotes_developer_instruction_role() -> None:
+    create = Mock(
+        return_value=SimpleNamespace(
+            id="resp-1",
+            model="test-model",
+            choices=[
+                SimpleNamespace(
+                    message=SimpleNamespace(content="ok", tool_calls=None),
+                    finish_reason="stop",
+                )
+            ],
+            usage=SimpleNamespace(prompt_tokens=1, completion_tokens=1, total_tokens=2),
+        )
+    )
+    sync_client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+    async_client = SimpleNamespace(
+        chat=SimpleNamespace(completions=SimpleNamespace(create=AsyncMock()))
+    )
+
+    with (
+        patch("pig_llm.providers.azure.openai.AzureOpenAI", return_value=sync_client),
+        patch("pig_llm.providers.azure.openai.AsyncAzureOpenAI", return_value=async_client),
+    ):
+        from pig_llm.providers.azure import AzureOpenAIProvider
+
+        provider = AzureOpenAIProvider(
+            Config(
+                provider="azure",
+                api_key="test",
+                base_url="https://example.openai.azure.com",
+            )
+        )
+
+    provider.complete(
+        [
+            Message(role="system", content="rules", metadata={"role": "developer"}),
+            Message(role="user", content="hello"),
+        ],
+        model="test-model",
+    )
+
+    assert create.call_args.kwargs["messages"][0] == {"role": "developer", "content": "rules"}
 
 
 def test_azure_openai_provider_preserves_explicit_max_tokens() -> None:

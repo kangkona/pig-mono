@@ -13,6 +13,7 @@ from ..compat import (
     apply_thinking_level,
     build_token_limit_param,
     extract_openai_usage,
+    normalize_messages,
 )
 from ..config import Config
 from ..models import Message, Response, StreamChunk
@@ -106,9 +107,10 @@ class TogetherProvider(Provider):
         kwargs = apply_prompt_cache(kwargs, compat)
         kwargs = apply_session_affinity_headers(kwargs, compat)
         kwargs = apply_request_headers(kwargs)
+        normalized_messages = normalize_messages(messages, compat)
         response = self.client.chat.completions.create(
             model=model,
-            messages=self._convert_messages(messages),
+            messages=self._convert_messages(normalized_messages),
             temperature=temperature,
             **build_token_limit_param(
                 max_tokens,
@@ -146,9 +148,10 @@ class TogetherProvider(Provider):
         kwargs = apply_prompt_cache(kwargs, compat)
         kwargs = apply_session_affinity_headers(kwargs, compat)
         kwargs = apply_request_headers(kwargs)
+        normalized_messages = normalize_messages(messages, compat)
         stream = self.client.chat.completions.create(
             model=model,
-            messages=self._convert_messages(messages),
+            messages=self._convert_messages(normalized_messages),
             temperature=temperature,
             stream=True,
             **build_token_limit_param(
@@ -184,9 +187,10 @@ class TogetherProvider(Provider):
         kwargs = apply_prompt_cache(kwargs, compat)
         kwargs = apply_session_affinity_headers(kwargs, compat)
         kwargs = apply_request_headers(kwargs)
+        normalized_messages = normalize_messages(messages, compat)
         response = await self.async_client.chat.completions.create(
             model=model,
-            messages=self._convert_messages(messages),
+            messages=self._convert_messages(normalized_messages),
             temperature=temperature,
             **build_token_limit_param(
                 max_tokens,
@@ -224,9 +228,10 @@ class TogetherProvider(Provider):
         kwargs = apply_prompt_cache(kwargs, compat)
         kwargs = apply_session_affinity_headers(kwargs, compat)
         kwargs = apply_request_headers(kwargs)
+        normalized_messages = normalize_messages(messages, compat)
         stream = await self.async_client.chat.completions.create(
             model=model,
-            messages=self._convert_messages(messages),
+            messages=self._convert_messages(normalized_messages),
             temperature=temperature,
             stream=True,
             **build_token_limit_param(
