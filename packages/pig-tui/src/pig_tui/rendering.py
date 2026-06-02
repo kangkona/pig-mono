@@ -9,7 +9,9 @@ from __future__ import annotations
 
 import os
 import re
+import subprocess
 import textwrap
+from collections.abc import Callable, Mapping
 
 ANSI_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 OSC_RE = re.compile(r"\x1b\][^\x1b\x07]*?(?:\x1b\\|\x07)")
@@ -95,30 +97,63 @@ def normalize_markdown_for_terminal(markdown: str) -> str:
     return "\n".join(lines)
 
 
-def supports_osc8_hyperlinks(env: dict[str, str] | None = None) -> bool:
+def _probe_tmux_client_termfeatures() -> str | None:
+    """Return tmux client_termfeatures, or None when probing is unavailable."""
+    try:
+        result = subprocess.run(
+            ["tmux", "display-message", "-p", "#{client_termfeatures}"],
+            capture_output=True,
+            check=True,
+            text=True,
+            timeout=0.25,
+        )
+    except (FileNotFoundError, OSError, subprocess.SubprocessError):
+        return None
+
+    features = result.stdout.strip()
+    return features or None
+
+
+def supports_osc8_hyperlinks(
+    env: Mapping[str, str] | None = None,
+    *,
+    tmux_feature_probe: Callable[[], str | None] | None = None,
+) -> bool:
     """Detect whether OSC 8 hyperlinks are safe to emit."""
-    env = env or os.environ
-    if env.get("NO_COLOR"):
+    resolved_env: Mapping[str, str] = env if env is not None else os.environ
+    if resolved_env.get("NO_COLOR"):
         return False
+    probe = tmux_feature_probe or _probe_tmux_client_termfeatures
+    tmux_feature_value = resolved_env.get("TMUX_CLIENT_TERMFEATURES")
+    if not tmux_feature_value and (
+        resolved_env.get("TMUX") or resolved_env.get("TERM", "").startswith("tmux")
+    ):
+        tmux_feature_value = probe()
     tmux_features = {
         feature.strip().lower()
-        for feature in env.get("TMUX_CLIENT_TERMFEATURES", "").split(",")
+        for feature in (tmux_feature_value or "").split(",")
         if feature.strip()
     }
-    if env.get("TMUX") or env.get("TERM", "").startswith("tmux"):
+    if resolved_env.get("TMUX") or resolved_env.get("TERM", "").startswith("tmux"):
         return "hyperlinks" in tmux_features
-    if env.get("STY") or env.get("TERM", "").startswith("screen"):
+    if resolved_env.get("STY") or resolved_env.get("TERM", "").startswith("screen"):
         return False
-    term_program = env.get("TERM_PROGRAM", "").lower()
+    term_program = resolved_env.get("TERM_PROGRAM", "").lower()
     if term_program in {"wezterm", "vscode", "iterm.app", "ghostty", "alacritty"}:
         return True
-    if env.get("WT_SESSION"):
+    if resolved_env.get("WT_SESSION"):
         return True
-    return env.get("PIG_TUI_HYPERLINKS") == "1"
+    return resolved_env.get("PIG_TUI_HYPERLINKS") == "1"
 
 
-def hyperlink(text: str, url: str, *, env: dict[str, str] | None = None) -> str:
+def hyperlink(
+    text: str,
+    url: str,
+    *,
+    env: Mapping[str, str] | None = None,
+    tmux_feature_probe: Callable[[], str | None] | None = None,
+) -> str:
     """Return an OSC 8 hyperlink when supported, otherwise visible text."""
-    if not supports_osc8_hyperlinks(env):
+    if not supports_osc8_hyperlinks(env, tmux_feature_probe=tmux_feature_probe):
         return text
     return f"\033]8;;{url}\033\\{text}\033]8;;\033\\"

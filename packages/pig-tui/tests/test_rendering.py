@@ -92,12 +92,50 @@ def test_hyperlink_is_enabled_under_tmux_when_client_supports_it() -> None:
     assert linked.endswith("\033]8;;\033\\")
 
 
+def test_hyperlink_uses_tmux_probe_when_client_features_are_not_exported() -> None:
+    linked = hyperlink(
+        "file.py",
+        "file:///tmp/file.py",
+        env={
+            "TERM_PROGRAM": "WezTerm",
+            "TMUX": "/tmp/tmux-1/default,123,0",
+        },
+        tmux_feature_probe=lambda: "clipboard,hyperlinks,RGB",
+    )
+
+    assert linked.startswith("\033]8;;file:///tmp/file.py")
+    assert linked.endswith("\033]8;;\033\\")
+
+
+def test_hyperlink_disables_tmux_links_when_probe_fails_closed() -> None:
+    linked = hyperlink(
+        "file.py",
+        "file:///tmp/file.py",
+        env={
+            "TERM_PROGRAM": "WezTerm",
+            "TMUX": "/tmp/tmux-1/default,123,0",
+        },
+        tmux_feature_probe=lambda: None,
+    )
+
+    assert linked == "file.py"
+
+
 def test_tmux_termname_uses_client_hyperlink_capability() -> None:
     assert supports_osc8_hyperlinks(
         {
             "TERM": "tmux-256color",
             "TMUX_CLIENT_TERMFEATURES": "hyperlinks",
         }
+    )
+
+
+def test_tmux_termname_uses_probe_when_client_features_are_not_exported() -> None:
+    assert supports_osc8_hyperlinks(
+        {
+            "TERM": "tmux-256color",
+        },
+        tmux_feature_probe=lambda: "hyperlinks,clipboard",
     )
 
 
