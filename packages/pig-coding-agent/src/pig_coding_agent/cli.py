@@ -135,50 +135,53 @@ def main(
             if not protocol_mode:
                 console.print(f"[red]Session '{resolved_fork}' not found[/red]")
             raise typer.Exit(1)
-    elif resolved_resume or resolved_continue:
+    elif resolved_resume or resolved_continue or resolved_session_name:
         from pig_agent_core import SessionManager
 
         session_mgr = SessionManager(workspace)
-        sessions = session_mgr.list_sessions(limit=10)
-
-        if not sessions:
-            if not protocol_mode:
-                console.print("[yellow]No previous sessions found[/yellow]")
-        elif resolved_continue or len(sessions) == 1:
-            # Auto-continue most recent
-            session_path = sessions[0].path
-            if not protocol_mode:
-                console.print(f"[cyan]Continuing:[/cyan] {sessions[0].session_name}")
+        if resolved_session_name:
+            session_path = session_mgr.find_session(resolved_session_name)
         else:
-            # Show selection UI
-            if not protocol_mode:
-                console.print("[cyan]Recent sessions:[/cyan]\n")
-                console.print(session_mgr.format_session_list(sessions))
-                console.print()
+            sessions = session_mgr.list_sessions(limit=10)
 
-            from pig_tui import Prompt
-
-            prompt = Prompt()
-
-            try:
-                choice = prompt.ask("Select session (number or name)", default="1")
-
-                # Parse choice
-                if choice.isdigit() and 1 <= int(choice) <= len(sessions):
-                    session_path = sessions[int(choice) - 1].path
-                else:
-                    # Try by name
-                    found = session_mgr.find_session(choice)
-                    if found:
-                        session_path = found
-                    else:
-                        if not protocol_mode:
-                            console.print(
-                                f"[yellow]Session '{choice}' not found, starting new[/yellow]"
-                            )
-            except (KeyboardInterrupt, EOFError):
+            if not sessions:
                 if not protocol_mode:
-                    console.print("[yellow]Starting new session[/yellow]")
+                    console.print("[yellow]No previous sessions found[/yellow]")
+            elif resolved_continue or len(sessions) == 1:
+                # Auto-continue most recent
+                session_path = sessions[0].path
+                if not protocol_mode:
+                    console.print(f"[cyan]Continuing:[/cyan] {sessions[0].session_name}")
+            else:
+                # Show selection UI
+                if not protocol_mode:
+                    console.print("[cyan]Recent sessions:[/cyan]\n")
+                    console.print(session_mgr.format_session_list(sessions))
+                    console.print()
+
+                from pig_tui import Prompt
+
+                prompt = Prompt()
+
+                try:
+                    choice = prompt.ask("Select session (number or name)", default="1")
+
+                    # Parse choice
+                    if choice.isdigit() and 1 <= int(choice) <= len(sessions):
+                        session_path = sessions[int(choice) - 1].path
+                    else:
+                        # Try by name
+                        found = session_mgr.find_session(choice)
+                        if found:
+                            session_path = found
+                        else:
+                            if not protocol_mode:
+                                console.print(
+                                    f"[yellow]Session '{choice}' not found, starting new[/yellow]"
+                                )
+                except (KeyboardInterrupt, EOFError):
+                    if not protocol_mode:
+                        console.print("[yellow]Starting new session[/yellow]")
 
     # Create and run agent
     agent = CodingAgent(

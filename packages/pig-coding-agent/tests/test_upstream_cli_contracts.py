@@ -123,6 +123,83 @@ def test_main_maps_fork_target_to_session_path(mock_agent_class, mock_llm_class,
 @patch.dict("os.environ", {"OPENAI_API_KEY": "test-key"})
 @patch("pig_coding_agent.cli.LLM")
 @patch("pig_coding_agent.cli.CodingAgent")
+def test_main_maps_session_target_to_existing_session_path(
+    mock_agent_class, mock_llm_class, tmp_path
+):
+    ctx = Mock(invoked_subcommand=None)
+    mock_llm = Mock()
+    mock_llm.config = Mock(model="test-model")
+    mock_llm_class.return_value = mock_llm
+    mock_agent = Mock()
+    mock_agent.session = None
+    mock_agent.skill_manager = None
+    mock_agent.extension_manager = None
+    mock_agent.run_interactive = Mock()
+    mock_agent_class.return_value = mock_agent
+
+    source_session = tmp_path / ".sessions" / "source-1234.jsonl"
+    source_session.parent.mkdir(parents=True)
+    source_session.write_text("{}\n")
+
+    with (
+        patch("pig_coding_agent.cli.console"),
+        patch("pig_agent_core.SessionManager") as mock_session_manager_class,
+    ):
+        mock_session_manager = Mock()
+        mock_session_manager.find_session.return_value = source_session
+        mock_session_manager_class.return_value = mock_session_manager
+
+        main(
+            ctx=ctx,
+            provider="openai",
+            workspace=tmp_path,
+            session_name="source-1234",
+        )
+
+    kwargs = mock_agent_class.call_args.kwargs
+    assert kwargs["session_path"] == source_session
+
+
+@patch.dict("os.environ", {"OPENAI_API_KEY": "test-key"})
+@patch("pig_coding_agent.cli.LLM")
+@patch("pig_coding_agent.cli.CodingAgent")
+def test_main_keeps_session_name_when_session_target_not_found(
+    mock_agent_class, mock_llm_class, tmp_path
+):
+    ctx = Mock(invoked_subcommand=None)
+    mock_llm = Mock()
+    mock_llm.config = Mock(model="test-model")
+    mock_llm_class.return_value = mock_llm
+    mock_agent = Mock()
+    mock_agent.session = None
+    mock_agent.skill_manager = None
+    mock_agent.extension_manager = None
+    mock_agent.run_interactive = Mock()
+    mock_agent_class.return_value = mock_agent
+
+    with (
+        patch("pig_coding_agent.cli.console"),
+        patch("pig_agent_core.SessionManager") as mock_session_manager_class,
+    ):
+        mock_session_manager = Mock()
+        mock_session_manager.find_session.return_value = None
+        mock_session_manager_class.return_value = mock_session_manager
+
+        main(
+            ctx=ctx,
+            provider="openai",
+            workspace=tmp_path,
+            session_name="startup-name",
+        )
+
+    kwargs = mock_agent_class.call_args.kwargs
+    assert kwargs["session_path"] is None
+    assert kwargs["session_name"] == "startup-name"
+
+
+@patch.dict("os.environ", {"OPENAI_API_KEY": "test-key"})
+@patch("pig_coding_agent.cli.LLM")
+@patch("pig_coding_agent.cli.CodingAgent")
 def test_main_accepts_explicit_fork_session_path(mock_agent_class, mock_llm_class, tmp_path):
     ctx = Mock(invoked_subcommand=None)
     mock_llm = Mock()
