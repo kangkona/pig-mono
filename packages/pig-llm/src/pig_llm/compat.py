@@ -433,7 +433,14 @@ STRING_THINKING_COMPAT = ProviderCompat(
 
 OPENCODE_GO_KIMI_COMPAT = ProviderCompat(
     max_output_token_policy="send_when_explicit",
-    thinking_level_map=STRING_THINKING_COMPAT.thinking_level_map,
+    thinking_level_map={
+        "off": {"type": "disabled"},
+        "minimal": None,
+        "low": None,
+        "medium": None,
+        "high": {"type": "enabled"},
+        "xhigh": None,
+    },
     context_overflow_patterns=COMMON_CONTEXT_OVERFLOW_PATTERNS,
     quota_or_billing_patterns=COMMON_QUOTA_OR_BILLING_PATTERNS,
     retryable_patterns=COMMON_RETRYABLE_PATTERNS,
