@@ -24,14 +24,14 @@ def terminal_size(default: tuple[int, int] = (80, 24)) -> tuple[int, int]:
     """Return terminal size with conservative environment fallback."""
     columns = os.environ.get("COLUMNS")
     lines = os.environ.get("LINES")
-    if columns and lines and columns.isdigit() and lines.isdigit():
-        return int(columns), int(lines)
+    fallback_columns = int(columns) if columns and columns.isdigit() else None
+    fallback_lines = int(lines) if lines and lines.isdigit() else None
 
     try:
         size = os.get_terminal_size()
         return size.columns, size.lines
     except OSError:
-        return default
+        return fallback_columns or default[0], fallback_lines or default[1]
 
 
 def visible_length(text: str) -> int:

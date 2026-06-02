@@ -116,3 +116,20 @@ def test_terminal_size_ignores_invalid_environment_values() -> None:
         patch("os.get_terminal_size", side_effect=OSError()),
     ):
         assert terminal_size(default=(3, 2)) == (3, 2)
+
+
+def test_terminal_size_uses_partial_environment_fallbacks() -> None:
+    import os
+    from unittest.mock import patch
+
+    with (
+        patch.dict(os.environ, {"COLUMNS": "123"}, clear=True),
+        patch("os.get_terminal_size", side_effect=OSError()),
+    ):
+        assert terminal_size(default=(80, 24)) == (123, 24)
+
+    with (
+        patch.dict(os.environ, {"LINES": "45"}, clear=True),
+        patch("os.get_terminal_size", side_effect=OSError()),
+    ):
+        assert terminal_size(default=(80, 24)) == (80, 45)
