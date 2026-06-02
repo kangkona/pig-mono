@@ -6,7 +6,9 @@ import openai
 
 from ..compat import (
     OPENROUTER_COMPAT,
+    apply_prompt_cache,
     apply_request_headers,
+    apply_session_affinity_headers,
     apply_thinking_level,
     build_token_limit_param,
     extract_openai_usage,
@@ -92,6 +94,8 @@ class OpenRouterProvider(Provider):
     ) -> Response:
         """Generate a completion."""
         kwargs = apply_thinking_level(kwargs, OPENROUTER_COMPAT)
+        kwargs = apply_prompt_cache(kwargs, OPENROUTER_COMPAT)
+        kwargs = apply_session_affinity_headers(kwargs, OPENROUTER_COMPAT)
         kwargs = apply_request_headers(kwargs)
         response = self.client.chat.completions.create(
             model=model,
@@ -127,6 +131,8 @@ class OpenRouterProvider(Provider):
     ) -> Iterator[StreamChunk]:
         """Stream a completion."""
         kwargs = apply_thinking_level(kwargs, OPENROUTER_COMPAT)
+        kwargs = apply_prompt_cache(kwargs, OPENROUTER_COMPAT)
+        kwargs = apply_session_affinity_headers(kwargs, OPENROUTER_COMPAT)
         kwargs = apply_request_headers(kwargs)
         stream = self.client.chat.completions.create(
             model=model,
@@ -160,6 +166,8 @@ class OpenRouterProvider(Provider):
     ) -> Response:
         """Async generate a completion."""
         kwargs = apply_thinking_level(kwargs, OPENROUTER_COMPAT)
+        kwargs = apply_prompt_cache(kwargs, OPENROUTER_COMPAT)
+        kwargs = apply_session_affinity_headers(kwargs, OPENROUTER_COMPAT)
         kwargs = apply_request_headers(kwargs)
         response = await self.async_client.chat.completions.create(
             model=model,
@@ -195,6 +203,8 @@ class OpenRouterProvider(Provider):
     ) -> AsyncIterator[StreamChunk]:
         """Async stream a completion."""
         kwargs = apply_thinking_level(kwargs, OPENROUTER_COMPAT)
+        kwargs = apply_prompt_cache(kwargs, OPENROUTER_COMPAT)
+        kwargs = apply_session_affinity_headers(kwargs, OPENROUTER_COMPAT)
         kwargs = apply_request_headers(kwargs)
         stream = await self.async_client.chat.completions.create(
             model=model,

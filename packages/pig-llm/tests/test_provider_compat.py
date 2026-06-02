@@ -165,7 +165,33 @@ def test_openrouter_sets_session_id_header_for_affinity() -> None:
         session_id="session-abc",
     )
 
-    assert create.call_args.kwargs["extra_headers"] == {"session-id": "session-abc"}
+    assert create.call_args.kwargs["extra_headers"] == {
+        "session_id": "session-abc",
+        "x-client-request-id": "session-abc",
+        "x-session-affinity": "session-abc",
+        "session-id": "session-abc",
+    }
+
+
+def test_openrouter_uses_prompt_cache_for_long_retention() -> None:
+    create = Mock(return_value=_completion_response())
+    client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+
+    with (
+        patch("pig_llm.providers.openrouter.openai.OpenAI", return_value=client),
+        patch("pig_llm.providers.openrouter.openai.AsyncOpenAI", return_value=client),
+    ):
+        provider = OpenRouterProvider(Config(provider="openrouter", api_key="test"))
+
+    provider.complete(
+        [Message(role="user", content="hello")],
+        model="moonshotai/kimi-k2.6",
+        session_id="session-abc",
+        cache_retention="long",
+    )
+
+    assert create.call_args.kwargs["prompt_cache_key"] == "session-abc"
+    assert create.call_args.kwargs["prompt_cache_retention"] == "24h"
 
 
 def test_openrouter_reasoning_models_send_explicit_reasoning_off_payload() -> None:
