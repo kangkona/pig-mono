@@ -371,7 +371,7 @@ OPENCODE_GO_KIMI_COMPAT = ProviderCompat(
 OPENCODE_ZEN_GROK_BUILD_COMPAT = ProviderCompat(
     max_output_token_policy="send_when_explicit",
     thinking_level_map={
-        "off": {"type": "disabled"},
+        "off": None,
         "minimal": None,
         "low": None,
         "medium": None,
