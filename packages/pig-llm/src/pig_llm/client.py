@@ -56,6 +56,8 @@ class LLM:
         """Initialize the provider client."""
         entry = self._PROVIDER_MAP.get(self.config.provider)
         if entry:
+            if not self.config.api_key:
+                raise ValueError(f"No API key for provider: {self.config.provider}")
             module_name, class_name = entry
             import importlib
 

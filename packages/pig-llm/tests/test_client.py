@@ -30,6 +30,12 @@ def test_llm_unknown_provider():
         LLM(provider="unknown", api_key="test")
 
 
+def test_llm_requires_explicit_api_key_for_known_provider():
+    """Known providers should not silently rely on ambient SDK env fallbacks."""
+    with pytest.raises(ValueError, match="No API key for provider: openai"):
+        LLM(provider="openai")
+
+
 def test_llm_complete_creates_messages():
     """Test complete method creates proper messages."""
     with patch("pig_llm.providers.openai.OpenAIProvider") as MockProvider:
