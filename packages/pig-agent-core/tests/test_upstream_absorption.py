@@ -73,6 +73,20 @@ def test_session_load_streams_tree_lines_without_reading_full_tail(monkeypatch, 
     assert len(loaded.tree.entries) == 1
 
 
+def test_session_save_keeps_header_small_and_excludes_duplicate_tree_payload(tmp_path) -> None:
+    session = Session(name="header-only", workspace=str(tmp_path), auto_save=False)
+    for i in range(50):
+        session.add_message("user", f"message {i}")
+        session.add_message("assistant", "x" * 200)
+
+    save_path = session.save()
+    header = json.loads(save_path.read_text().splitlines()[0])
+
+    assert "tree" not in header
+    assert header["metadata"]["entries"] == len(session.tree.entries)
+    assert len(json.dumps(header)) < 4096
+
+
 def test_compaction_tool_result_serialization_is_bounded_and_structured() -> None:
     serialized = serialize_compaction_tool_result(
         ToolResult(ok=True, data={"content": "x" * 5000}),

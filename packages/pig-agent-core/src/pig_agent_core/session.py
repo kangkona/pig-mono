@@ -5,7 +5,7 @@ import uuid
 from collections.abc import Iterable
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from pydantic import BaseModel, Field
 
@@ -15,9 +15,9 @@ from .tools import ToolResult
 def serialize_compaction_tool_result(result: ToolResult | Any, max_chars: int = 4000) -> str:
     """Serialize tool output for compaction without letting huge outputs dominate."""
     if isinstance(result, ToolResult):
-        return result.serialize(max_chars=max_chars)
+        return cast(str, result.serialize(max_chars=max_chars))
 
-    return ToolResult(ok=True, data=result).serialize(max_chars=max_chars)
+    return cast(str, ToolResult(ok=True, data=result).serialize(max_chars=max_chars))
 
 
 class SessionEntry(BaseModel):
@@ -34,14 +34,14 @@ class SessionEntry(BaseModel):
 class SessionTree:
     """Tree-based session storage."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize session tree."""
         self.entries: dict[str, SessionEntry] = {}
         self.current_id: str | None = None
         self.root_id: str | None = None
 
     def add_entry(
-        self, role: str, content: str, parent_id: str | None = None, **metadata
+        self, role: str, content: str, parent_id: str | None = None, **metadata: Any
     ) -> SessionEntry:
         """Add an entry to the tree.
 
@@ -76,7 +76,7 @@ class SessionTree:
         Returns:
             List of entries from root to entry
         """
-        path = []
+        path: list[SessionEntry] = []
         current = self.entries.get(entry_id)
 
         while current:
@@ -197,7 +197,7 @@ class Session:
         name: str | None = None,
         workspace: str | None = None,
         auto_save: bool = True,
-    ):
+    ) -> None:
         """Initialize session.
 
         Args:
@@ -221,7 +221,7 @@ class Session:
         }
 
     def add_message(
-        self, role: str, content: str, parent_id: str | None = None, **metadata
+        self, role: str, content: str, parent_id: str | None = None, **metadata: Any
     ) -> SessionEntry:
         """Add a message to the session.
 
@@ -368,20 +368,24 @@ class Session:
             session_dir.mkdir(exist_ok=True)
             path = session_dir / f"{self.name}-{self.id[:8]}.jsonl"
 
+        metadata = dict(self.metadata)
+        metadata["entries"] = len(self.tree.entries)
+
         # Save metadata and tree
         data = {
             "id": self.id,
             "name": self.name,
             "created_at": self.created_at.isoformat(),
             "updated_at": self.updated_at.isoformat(),
-            "metadata": self.metadata,
-            "tree": self.tree.to_jsonl(),
+            "metadata": metadata,
         }
 
-        # Write header + tree
+        tree_jsonl = self.tree.to_jsonl()
+
+        # Write header + tree tail without duplicating the tree in metadata.
         with open(path, "w") as f:
             f.write(json.dumps(data) + "\n")
-            f.write(data["tree"])
+            f.write(tree_jsonl)
 
         return path
 
