@@ -5,11 +5,14 @@ from collections.abc import AsyncIterator, Iterator
 import openai
 
 from ..compat import (
+    DEEPSEEK_COMPAT,
     OPENAI_COMPAT,
     OPENCODE_GO_KIMI_COMPAT,
+    OPENROUTER_COMPAT,
     QWEN_CHAT_TEMPLATE_COMPAT,
     QWEN_COMPAT,
     STRING_THINKING_COMPAT,
+    TOGETHER_COMPAT,
     ZAI_COMPAT,
     apply_request_headers,
     apply_thinking_level,
@@ -24,14 +27,23 @@ from ._base import Provider
 class OpenAIProvider(Provider):
     """OpenAI provider implementation."""
 
+    _COMPAT_MODE_MAP = {
+        "openai": OPENAI_COMPAT,
+        "openrouter": OPENROUTER_COMPAT,
+        "deepseek": DEEPSEEK_COMPAT,
+        "together": TOGETHER_COMPAT,
+        "qwen": QWEN_COMPAT,
+        "qwen-chat-template": QWEN_CHAT_TEMPLATE_COMPAT,
+        "zai": ZAI_COMPAT,
+        "string-thinking": STRING_THINKING_COMPAT,
+    }
+
     def _compat(self, model: str | None = None):
         base_url = (self.config.base_url or "").lower()
         model_name = (model or self.config.model or "").lower()
         compat_mode = (self.config.compat_mode or "").lower()
-        if compat_mode == "qwen-chat-template":
-            return QWEN_CHAT_TEMPLATE_COMPAT
-        if compat_mode == "string-thinking":
-            return STRING_THINKING_COMPAT
+        if compat_mode in self._COMPAT_MODE_MAP:
+            return self._COMPAT_MODE_MAP[compat_mode]
         if "opencode.ai/zen/go" in base_url and model_name == "kimi-k2.6":
             return OPENCODE_GO_KIMI_COMPAT
         if "dashscope.aliyuncs.com" in base_url:

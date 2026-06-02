@@ -227,6 +227,29 @@ def test_explicit_qwen_chat_template_compat_uses_chat_template_kwargs() -> None:
     assert "reasoning_effort" not in sync_create.call_args.kwargs
 
 
+def test_explicit_openrouter_compat_uses_nested_reasoning_payload() -> None:
+    sync_create = Mock(return_value=_completion_response())
+    provider = _provider_with_clients(
+        sync_create,
+        AsyncMock(),
+        Config(
+            provider="openai",
+            api_key="test-key",
+            base_url="https://router.example/v1",
+            compat_mode="openrouter",
+        ),
+    )
+
+    provider.complete(
+        _messages(),
+        model="deepseek/deepseek-r1",
+        thinking_level="high",
+    )
+
+    assert sync_create.call_args.kwargs["reasoning"] == {"effort": "high"}
+    assert "reasoning_effort" not in sync_create.call_args.kwargs
+
+
 def test_custom_zai_base_url_disables_thinking_when_off() -> None:
     sync_create = Mock(return_value=_completion_response())
     provider = _provider_with_clients(
@@ -246,6 +269,29 @@ def test_custom_zai_base_url_disables_thinking_when_off() -> None:
     )
 
     assert sync_create.call_args.kwargs["enable_thinking"] is False
+    assert "reasoning_effort" not in sync_create.call_args.kwargs
+
+
+def test_explicit_deepseek_compat_uses_thinking_object() -> None:
+    sync_create = Mock(return_value=_completion_response())
+    provider = _provider_with_clients(
+        sync_create,
+        AsyncMock(),
+        Config(
+            provider="openai",
+            api_key="test-key",
+            base_url="https://reasoner.example/v1",
+            compat_mode="deepseek",
+        ),
+    )
+
+    provider.complete(
+        _messages(),
+        model="custom-reasoner",
+        thinking_level="off",
+    )
+
+    assert sync_create.call_args.kwargs["thinking"] == {"type": "disabled"}
     assert "reasoning_effort" not in sync_create.call_args.kwargs
 
 
