@@ -857,6 +857,27 @@ class Agent:
 
             self._log(f"[cyan]→ Calling tool: {tool_name}({tool_args})[/cyan]")
 
+            if self.before_tool_call:
+                preflight = self.before_tool_call(tool_name, tool_args)
+                if preflight is not None:
+                    result = self._as_tool_result(preflight)
+                    self.history.append(
+                        Message(
+                            role="tool",
+                            content=str(result.data if result.ok else result.error),
+                            metadata={
+                                "tool_call_id": tool_call_id,
+                                "name": tool_name,
+                            },
+                        )
+                    )
+                    terminate_all = terminate_all and bool(
+                        result.ok and result.meta.get("terminate")
+                    )
+                    if result.meta.get("abort_batch"):
+                        return False
+                    continue
+
             if self.on_tool_start:
                 self.on_tool_start(tool_name, tool_args)
 
@@ -876,6 +897,18 @@ class Agent:
                     )
                 )
                 self._log(f"[green]✓ Result: {result.data if result.ok else result.error}[/green]")
+
+                if self.after_tool_call:
+                    try:
+                        override = self.after_tool_call(tool_name, tool_args, result)
+                        if override is not None:
+                            result = self._as_tool_result(override)
+                            self.history[-1].content = str(
+                                result.data if result.ok else result.error
+                            )
+                    except Exception as exc:
+                        result = ToolResult(ok=False, error=f"Error: {exc}")
+                        self.history[-1].content = result.error
 
                 if self.on_tool_end:
                     self.on_tool_end(tool_name, result)

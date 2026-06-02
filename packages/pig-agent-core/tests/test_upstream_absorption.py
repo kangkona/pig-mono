@@ -692,3 +692,140 @@ async def test_respond_stream_terminate_tool_result_skips_followup_llm_call() ->
     assert chunks == []
     assert llm.calls == 1
     assert agent.history[-1].content == "finished"
+
+
+@pytest.mark.asyncio
+async def test_respond_stream_before_tool_call_abort_skips_sibling_tools() -> None:
+    executed: list[str] = []
+
+    class ToolCallChunk:
+        def __init__(self, *, content: str = "", tool_calls=None):
+            self.choices = [
+                SimpleNamespace(
+                    delta=SimpleNamespace(content=content or None, tool_calls=tool_calls),
+                    finish_reason=None,
+                )
+            ]
+
+    class ToolCallDelta:
+        def __init__(self, index: int, *, call_id=None, name=None, arguments=None):
+            self.index = index
+            self.id = call_id
+            self.function = SimpleNamespace(name=name, arguments=arguments)
+
+    class FakeLLM:
+        config = SimpleNamespace(model="fake")
+
+        def __init__(self):
+            self.calls = 0
+
+        def achat_stream(self, messages, tools=None):
+            self.calls += 1
+
+            async def stream():
+                if self.calls == 1:
+                    yield ToolCallChunk(
+                        tool_calls=[
+                            ToolCallDelta(0, call_id="call-1", name="first", arguments="{}"),
+                            ToolCallDelta(1, call_id="call-2", name="second", arguments="{}"),
+                        ]
+                    )
+                else:
+                    yield ToolCallChunk(content="done")
+
+            return stream()
+
+    def first():
+        executed.append("first")
+        return "first"
+
+    def second():
+        executed.append("second")
+        return "second"
+
+    def before_tool_call(name, args):
+        if name == "first":
+            return ToolResult(ok=False, error="blocked", meta={"abort_batch": True})
+        return None
+
+    agent = Agent(
+        llm=FakeLLM(),
+        tools=[],
+        before_tool_call=before_tool_call,
+        verbose=False,
+    )
+    agent.registry.register("first", first, {"type": "function", "function": {"name": "first"}})
+    agent.registry.register("second", second, {"type": "function", "function": {"name": "second"}})
+
+    chunks = []
+    async for chunk in agent.respond_stream("start"):
+        chunks.append(chunk)
+
+    assert chunks == ["done"]
+    assert executed == []
+    tool_messages = [message for message in agent.history if message.role == "tool"]
+    assert len(tool_messages) == 1
+    assert "blocked" in tool_messages[0].content
+
+
+@pytest.mark.asyncio
+async def test_respond_stream_after_tool_call_exception_becomes_error_tool_result() -> None:
+    class ToolCallChunk:
+        def __init__(self, *, content: str = "", tool_calls=None):
+            self.choices = [
+                SimpleNamespace(
+                    delta=SimpleNamespace(content=content or None, tool_calls=tool_calls),
+                    finish_reason=None,
+                )
+            ]
+
+    class ToolCallDelta:
+        def __init__(self, index: int, *, call_id=None, name=None, arguments=None):
+            self.index = index
+            self.id = call_id
+            self.function = SimpleNamespace(name=name, arguments=arguments)
+
+    class FakeLLM:
+        config = SimpleNamespace(model="fake")
+
+        def __init__(self):
+            self.calls = 0
+
+        def achat_stream(self, messages, tools=None):
+            self.calls += 1
+
+            async def stream():
+                if self.calls == 1:
+                    yield ToolCallChunk(
+                        tool_calls=[
+                            ToolCallDelta(0, call_id="call-1", name="ok_tool", arguments="{}")
+                        ]
+                    )
+                else:
+                    yield ToolCallChunk(content="done")
+
+            return stream()
+
+    def ok_tool():
+        return "ok"
+
+    def after_tool_call(name, args, result):
+        raise RuntimeError("after failed")
+
+    agent = Agent(
+        llm=FakeLLM(),
+        tools=[],
+        after_tool_call=after_tool_call,
+        verbose=False,
+    )
+    agent.registry.register(
+        "ok_tool", ok_tool, {"type": "function", "function": {"name": "ok_tool"}}
+    )
+
+    chunks = []
+    async for chunk in agent.respond_stream("start"):
+        chunks.append(chunk)
+
+    assert chunks == ["done"]
+    tool_messages = [message for message in agent.history if message.role == "tool"]
+    assert "after failed" in tool_messages[0].content
