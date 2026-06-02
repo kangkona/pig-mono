@@ -110,12 +110,17 @@ class OpenAIProvider(Provider):
         ]
 
     @staticmethod
-    def _token_limit_param(max_tokens: int | None) -> dict[str, int]:
-        """Build token limit parameters for current OpenAI chat models."""
+    def _token_limit_param(max_tokens: int | None, compat=OPENAI_COMPAT) -> dict[str, int]:
+        """Build token limit parameters for current OpenAI-compatible chat models."""
+        param_name = (
+            "max_tokens"
+            if compat is OPENROUTER_COMPAT or compat is DEEPSEEK_COMPAT or compat is TOGETHER_COMPAT
+            else "max_completion_tokens"
+        )
         return build_token_limit_param(
             max_tokens,
-            param_name="max_completion_tokens",
-            compat=OPENAI_COMPAT,
+            param_name=param_name,
+            compat=compat,
         )
 
     def complete(
@@ -134,7 +139,7 @@ class OpenAIProvider(Provider):
             model=model,
             messages=self._convert_messages(messages),
             temperature=temperature,
-            **self._token_limit_param(max_tokens),
+            **self._token_limit_param(max_tokens, compat),
             **kwargs,
         )
 
@@ -159,14 +164,15 @@ class OpenAIProvider(Provider):
         **kwargs,
     ) -> Iterator[StreamChunk]:
         """Stream a completion."""
-        kwargs = apply_thinking_level(kwargs, self._compat(model))
+        compat = self._compat(model)
+        kwargs = apply_thinking_level(kwargs, compat)
         kwargs = apply_request_headers(kwargs)
         stream = self.client.chat.completions.create(
             model=model,
             messages=self._convert_messages(messages),
             temperature=temperature,
             stream=True,
-            **self._token_limit_param(max_tokens),
+            **self._token_limit_param(max_tokens, compat),
             **kwargs,
         )
 
@@ -188,13 +194,14 @@ class OpenAIProvider(Provider):
         **kwargs,
     ) -> Response:
         """Async generate a completion."""
-        kwargs = apply_thinking_level(kwargs, self._compat(model))
+        compat = self._compat(model)
+        kwargs = apply_thinking_level(kwargs, compat)
         kwargs = apply_request_headers(kwargs)
         response = await self.async_client.chat.completions.create(
             model=model,
             messages=self._convert_messages(messages),
             temperature=temperature,
-            **self._token_limit_param(max_tokens),
+            **self._token_limit_param(max_tokens, compat),
             **kwargs,
         )
 
@@ -219,14 +226,15 @@ class OpenAIProvider(Provider):
         **kwargs,
     ) -> AsyncIterator[StreamChunk]:
         """Async stream a completion."""
-        kwargs = apply_thinking_level(kwargs, self._compat(model))
+        compat = self._compat(model)
+        kwargs = apply_thinking_level(kwargs, compat)
         kwargs = apply_request_headers(kwargs)
         stream = await self.async_client.chat.completions.create(
             model=model,
             messages=self._convert_messages(messages),
             temperature=temperature,
             stream=True,
-            **self._token_limit_param(max_tokens),
+            **self._token_limit_param(max_tokens, compat),
             **kwargs,
         )
 

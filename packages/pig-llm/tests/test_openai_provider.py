@@ -250,6 +250,29 @@ def test_explicit_openrouter_compat_uses_nested_reasoning_payload() -> None:
     assert "reasoning_effort" not in sync_create.call_args.kwargs
 
 
+def test_explicit_openrouter_compat_uses_max_tokens_field() -> None:
+    sync_create = Mock(return_value=_completion_response())
+    provider = _provider_with_clients(
+        sync_create,
+        AsyncMock(),
+        Config(
+            provider="openai",
+            api_key="test-key",
+            base_url="https://router.example/v1",
+            compat_mode="openrouter",
+        ),
+    )
+
+    provider.complete(
+        _messages(),
+        model="deepseek/deepseek-r1",
+        max_tokens=321,
+    )
+
+    assert sync_create.call_args.kwargs["max_tokens"] == 321
+    assert "max_completion_tokens" not in sync_create.call_args.kwargs
+
+
 def test_custom_zai_base_url_disables_thinking_when_off() -> None:
     sync_create = Mock(return_value=_completion_response())
     provider = _provider_with_clients(
@@ -295,6 +318,29 @@ def test_explicit_deepseek_compat_uses_thinking_object() -> None:
     assert "reasoning_effort" not in sync_create.call_args.kwargs
 
 
+def test_explicit_deepseek_compat_uses_max_tokens_field() -> None:
+    sync_create = Mock(return_value=_completion_response())
+    provider = _provider_with_clients(
+        sync_create,
+        AsyncMock(),
+        Config(
+            provider="openai",
+            api_key="test-key",
+            base_url="https://reasoner.example/v1",
+            compat_mode="deepseek",
+        ),
+    )
+
+    provider.complete(
+        _messages(),
+        model="custom-reasoner",
+        max_tokens=222,
+    )
+
+    assert sync_create.call_args.kwargs["max_tokens"] == 222
+    assert "max_completion_tokens" not in sync_create.call_args.kwargs
+
+
 def test_explicit_string_thinking_compat_uses_string_payload() -> None:
     sync_create = Mock(return_value=_completion_response())
     provider = _provider_with_clients(
@@ -316,6 +362,29 @@ def test_explicit_string_thinking_compat_uses_string_payload() -> None:
 
     assert sync_create.call_args.kwargs["thinking"] == "none"
     assert "reasoning_effort" not in sync_create.call_args.kwargs
+
+
+def test_explicit_together_compat_uses_max_tokens_field() -> None:
+    sync_create = Mock(return_value=_completion_response())
+    provider = _provider_with_clients(
+        sync_create,
+        AsyncMock(),
+        Config(
+            provider="openai",
+            api_key="test-key",
+            base_url="https://together-gateway.example/v1",
+            compat_mode="together",
+        ),
+    )
+
+    provider.complete(
+        _messages(),
+        model="moonshotai/Kimi-K2.6",
+        max_tokens=111,
+    )
+
+    assert sync_create.call_args.kwargs["max_tokens"] == 111
+    assert "max_completion_tokens" not in sync_create.call_args.kwargs
 
 
 def test_custom_opencode_go_kimi_uses_thinking_object_when_disabled() -> None:
