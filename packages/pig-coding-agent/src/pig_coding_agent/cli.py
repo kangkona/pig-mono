@@ -367,6 +367,10 @@ def run_json_mode(agent):
             except EOFError:
                 emit_shutdown("eof")
                 break
+            except Exception as e:
+                json_out.error(f"Error: {e}")
+                emit_shutdown("error")
+                break
 
 
 def run_rpc_mode(agent):

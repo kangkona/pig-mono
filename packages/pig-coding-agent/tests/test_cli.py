@@ -345,3 +345,25 @@ def test_run_json_mode_emits_extension_shutdown_once_with_real_extension_manager
         run_json_mode(agent)
 
     assert shutdown_events == [{"reason": "eof"}]
+
+
+def test_run_json_mode_interactive_emits_error_shutdown_reason() -> None:
+    """Interactive JSON mode should emit a concrete shutdown reason on agent failure."""
+    from pig_coding_agent.cli import run_json_mode
+
+    agent = Mock()
+    agent.agent.run.side_effect = RuntimeError("boom")
+    agent.extension_manager = Mock()
+    json_mode = Mock()
+
+    with (
+        patch("select.select", return_value=([], [], [])),
+        patch("builtins.input", side_effect=["hello"]),
+        patch("pig_agent_core.JSONOutputMode", return_value=json_mode),
+    ):
+        run_json_mode(agent)
+
+    json_mode.message.assert_any_call("user", "hello")
+    json_mode.error.assert_called_once_with("Error: boom")
+    json_mode.emit_event.assert_any_call("shutdown", {"reason": "error"})
+    agent.extension_manager.cleanup.assert_called_once_with(reason="error")
