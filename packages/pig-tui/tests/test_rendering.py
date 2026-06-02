@@ -20,6 +20,18 @@ def test_safe_wrap_handles_very_long_ansi_line_without_stack_overflow() -> None:
     assert len(wrapped) > 10
 
 
+def test_safe_wrap_respects_display_width_for_wide_unicode() -> None:
+    wrapped = safe_wrap("你好世界", 4)
+
+    assert wrapped == ["你好", "世界"]
+
+
+def test_safe_wrap_keeps_combining_marks_with_base_character() -> None:
+    wrapped = safe_wrap("e\u0301e\u0301e\u0301", 2)
+
+    assert wrapped == ["e\u0301e\u0301", "e\u0301"]
+
+
 def test_visible_truncate_counts_visible_text_not_ansi_sequences() -> None:
     text = "\x1b[31mhello world\x1b[0m"
 

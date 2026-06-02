@@ -10,7 +10,6 @@ from __future__ import annotations
 import os
 import re
 import subprocess
-import textwrap
 import unicodedata
 from collections.abc import Callable, Mapping
 
@@ -31,6 +30,13 @@ def _display_width(text: str) -> int:
             continue
         width += 2 if unicodedata.east_asian_width(char) in {"W", "F"} else 1
     return width
+
+
+def _display_width_char(char: str) -> int:
+    """Return terminal cell width for a single Unicode character."""
+    if unicodedata.combining(char):
+        return 0
+    return 2 if unicodedata.east_asian_width(char) in {"W", "F"} else 1
 
 
 def terminal_size(default: tuple[int, int] = (80, 24)) -> tuple[int, int]:
@@ -62,14 +68,21 @@ def safe_wrap(text: str, width: int, *, max_lines: int | None = None) -> list[st
         if visible_length(raw_line) <= width:
             lines.append(raw_line)
         else:
-            wrapped = textwrap.wrap(
-                raw_line,
-                width=width,
-                replace_whitespace=False,
-                drop_whitespace=False,
-                break_long_words=True,
-                break_on_hyphens=False,
-            )
+            plain = strip_terminal_sequences(raw_line)
+            wrapped: list[str] = []
+            current: list[str] = []
+            current_width = 0
+            for char in plain:
+                char_width = _display_width_char(char)
+                if current and current_width + char_width > width:
+                    wrapped.append("".join(current))
+                    current = []
+                    current_width = 0
+                current.append(char)
+                current_width += char_width
+
+            if current:
+                wrapped.append("".join(current))
             lines.extend(wrapped or [""])
 
         if max_lines is not None and len(lines) >= max_lines:
@@ -91,11 +104,7 @@ def truncate_visible(text: str, width: int, *, suffix: str = "…") -> str:
     out: list[str] = []
     used = 0
     for char in plain:
-        char_width = (
-            0
-            if unicodedata.combining(char)
-            else (2 if unicodedata.east_asian_width(char) in {"W", "F"} else 1)
-        )
+        char_width = _display_width_char(char)
         if used + char_width > budget:
             break
         out.append(char)
