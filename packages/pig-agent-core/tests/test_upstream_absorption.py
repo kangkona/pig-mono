@@ -87,6 +87,26 @@ def test_session_save_keeps_header_small_and_excludes_duplicate_tree_payload(tmp
     assert len(json.dumps(header)) < 4096
 
 
+def test_session_save_streams_tree_lines_without_materializing_full_jsonl(
+    monkeypatch, tmp_path
+) -> None:
+    session = Session(name="stream-save", workspace=str(tmp_path), auto_save=False)
+    for i in range(3):
+        session.add_message("user", f"message {i}")
+
+    def fail_to_jsonl() -> str:
+        raise AssertionError("Session.save should stream tree lines directly")
+
+    monkeypatch.setattr(session.tree, "to_jsonl", fail_to_jsonl)
+
+    save_path = session.save()
+
+    lines = save_path.read_text().splitlines()
+    assert len(lines) == 4
+    header = json.loads(lines[0])
+    assert header["name"] == "stream-save"
+
+
 def test_compaction_tool_result_serialization_is_bounded_and_structured() -> None:
     serialized = serialize_compaction_tool_result(
         ToolResult(ok=True, data={"content": "x" * 5000}),

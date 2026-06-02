@@ -380,12 +380,11 @@ class Session:
             "metadata": metadata,
         }
 
-        tree_jsonl = self.tree.to_jsonl()
-
         # Write header + tree tail without duplicating the tree in metadata.
         with open(path, "w") as f:
             f.write(json.dumps(data) + "\n")
-            f.write(tree_jsonl)
+            for entry in self.tree.entries.values():
+                f.write(entry.model_dump_json() + "\n")
 
         return path
 
