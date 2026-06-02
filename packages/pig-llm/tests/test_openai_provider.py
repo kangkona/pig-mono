@@ -367,6 +367,33 @@ def test_explicit_openrouter_compat_uses_nested_reasoning_payload() -> None:
     assert "reasoning_effort" not in sync_create.call_args.kwargs
 
 
+def test_openrouter_base_url_auto_detects_openrouter_compat() -> None:
+    sync_create = Mock(return_value=_completion_response())
+    provider = _provider_with_clients(
+        sync_create,
+        AsyncMock(),
+        Config(
+            provider="openai",
+            api_key="test-key",
+            base_url="https://openrouter.ai/api/v1",
+        ),
+    )
+
+    provider.complete(
+        [
+            Message(role="system", content="rules", metadata={"role": "developer"}),
+            Message(role="user", content="hi"),
+        ],
+        model="deepseek/deepseek-r1",
+        thinking_level="high",
+    )
+
+    messages = sync_create.call_args.kwargs["messages"]
+    assert messages[0] == {"role": "system", "content": "rules"}
+    assert sync_create.call_args.kwargs["reasoning"] == {"effort": "high"}
+    assert "reasoning_effort" not in sync_create.call_args.kwargs
+
+
 def test_explicit_openrouter_compat_gpt_55_pro_omits_unsupported_low_reasoning() -> None:
     sync_create = Mock(return_value=_completion_response())
     provider = _provider_with_clients(

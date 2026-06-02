@@ -50,6 +50,8 @@ class OpenAIProvider(Provider):
         compat_mode = (self.config.compat_mode or "").lower()
         if compat_mode in self._COMPAT_MODE_MAP:
             return self._COMPAT_MODE_MAP[compat_mode]
+        if "openrouter.ai" in base_url:
+            return OPENROUTER_COMPAT
         if "api.moonshot.ai" in base_url or "api.moonshot.cn" in base_url:
             return MOONSHOT_COMPAT
         if "opencode.ai/zen/go" in base_url and model_name in {
