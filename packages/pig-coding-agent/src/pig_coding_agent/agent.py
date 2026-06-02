@@ -62,6 +62,7 @@ class CodingAgent:
         self.workspace = Path(workspace).resolve()
         self.llm = llm or LLM()
         self.verbose = verbose
+        self.excluded_tools = set(excluded_tools or set())
         self._session_start_reason = "startup"
         self._previous_session_file: str | None = None
 
@@ -126,12 +127,11 @@ class CodingAgent:
         shell_tools = ShellTools()
 
         # Get all tool methods (descriptor protocol auto-binds self)
-        excluded_tools = excluded_tools or set()
         tools = []
         for tool_instance in [file_tools, code_tools, shell_tools]:
             for attr_name in dir(tool_instance):
                 attr = getattr(tool_instance, attr_name)
-                if isinstance(attr, Tool) and attr.name not in excluded_tools:
+                if isinstance(attr, Tool) and attr.name not in self.excluded_tools:
                     tools.append(attr)
 
         # Initialize context manager (needed by _get_system_prompt)
@@ -156,6 +156,7 @@ class CodingAgent:
             billing_hook=self.cost_tracker,
         )
         self.agent.session = self.session
+        self.agent.add_tool = self.add_tool
 
         # Initialize extension manager
         self.extension_manager = None
@@ -197,6 +198,12 @@ class CodingAgent:
         for path in ext_paths:
             if path.exists():
                 self.extension_manager.load_from_directory(path)
+
+    def add_tool(self, tool: Tool) -> None:
+        """Register a tool unless it is excluded for this agent instance."""
+        if tool.name in self.excluded_tools:
+            return
+        Agent.add_tool(self.agent, tool)
 
     def _shutdown_extensions(self, reason: str) -> None:
         """Forward shutdown reason into extension cleanup lifecycle."""

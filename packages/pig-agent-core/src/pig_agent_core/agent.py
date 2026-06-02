@@ -94,6 +94,7 @@ class Agent:
                     name=tool.name,
                     handler=tool.func,
                     schema=schema,
+                    is_core=True,
                 )
 
         self.history: list[Message] = []
@@ -207,6 +208,7 @@ class Agent:
             name=tool.name,
             handler=tool.func,
             schema=schema,
+            is_core=True,
         )
 
     def run(self, message: str, check_queue: bool = True) -> Response:

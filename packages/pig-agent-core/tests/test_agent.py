@@ -48,6 +48,8 @@ def test_agent_add_tool(mock_llm):
 
     assert len(agent.registry) == 1
     assert "my_tool" in agent.registry
+    schemas = agent.registry.get_schemas()
+    assert [schema["function"]["name"] for schema in schemas] == ["my_tool"]
 
 
 def test_agent_with_tools(mock_llm):

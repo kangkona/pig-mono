@@ -280,6 +280,45 @@ def extension(api):
     assert log_file.read_text().splitlines() == ["ui_ready:True"]
 
 
+def test_excluded_tools_filter_extension_tools_registered_on_session_start(
+    mock_llm, temp_workspace
+):
+    ext_dir = temp_workspace / ".agents" / "extensions"
+    ext_dir.mkdir(parents=True)
+
+    ext_file = ext_dir / "excluded_ext.py"
+    ext_file.write_text(
+        """
+def extension(api):
+    @api.on("session_start")
+    def on_start(event, ctx):
+        @api.tool(name="ask_question", description="Ask a question")
+        def ask_question() -> str:
+            return "nope"
+
+        @api.tool(name="dynamic_tool", description="Dynamic test tool")
+        def dynamic_tool() -> str:
+            return "ok"
+"""
+    )
+
+    agent = CodingAgent(
+        llm=mock_llm,
+        workspace=str(temp_workspace),
+        enable_extensions=True,
+        verbose=False,
+        excluded_tools={"ask_question"},
+    )
+
+    schemas = agent.agent.registry.get_schemas()
+    schema_names = sorted(schema["function"]["name"] for schema in schemas)
+
+    assert "ask_question" not in schema_names
+    assert "dynamic_tool" in schema_names
+    assert "ask_question" not in agent.agent.registry
+    assert "dynamic_tool" in agent.agent.registry
+
+
 def test_coding_agent_with_skills(mock_llm, temp_workspace):
     """Test coding agent with skills."""
     # Create skill
