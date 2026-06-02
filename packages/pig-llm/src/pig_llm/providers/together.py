@@ -6,6 +6,7 @@ import openai
 
 from ..compat import (
     TOGETHER_COMPAT,
+    TOGETHER_OPENAI_REASONING_COMPAT,
     apply_prompt_cache,
     apply_request_headers,
     apply_session_affinity_headers,
@@ -23,6 +24,12 @@ class TogetherProvider(Provider):
 
     Together AI uses OpenAI-compatible API for open-source models.
     """
+
+    @staticmethod
+    def _compat(model: str):
+        if model.lower() in {"openai/gpt-oss-20b", "openai/gpt-oss-120b"}:
+            return TOGETHER_OPENAI_REASONING_COMPAT
+        return TOGETHER_COMPAT
 
     def __init__(self, config: Config):
         """Initialize Together AI provider."""
@@ -93,10 +100,11 @@ class TogetherProvider(Provider):
     ) -> Response:
         """Generate a completion."""
         kwargs["model"] = model
-        kwargs = apply_thinking_level(kwargs, TOGETHER_COMPAT)
+        compat = self._compat(model)
+        kwargs = apply_thinking_level(kwargs, compat)
         kwargs.pop("model", None)
-        kwargs = apply_prompt_cache(kwargs, TOGETHER_COMPAT)
-        kwargs = apply_session_affinity_headers(kwargs, TOGETHER_COMPAT)
+        kwargs = apply_prompt_cache(kwargs, compat)
+        kwargs = apply_session_affinity_headers(kwargs, compat)
         kwargs = apply_request_headers(kwargs)
         response = self.client.chat.completions.create(
             model=model,
@@ -105,7 +113,7 @@ class TogetherProvider(Provider):
             **build_token_limit_param(
                 max_tokens,
                 param_name="max_tokens",
-                compat=TOGETHER_COMPAT,
+                compat=compat,
             ),
             **kwargs,
         )
@@ -132,10 +140,11 @@ class TogetherProvider(Provider):
     ) -> Iterator[StreamChunk]:
         """Stream a completion."""
         kwargs["model"] = model
-        kwargs = apply_thinking_level(kwargs, TOGETHER_COMPAT)
+        compat = self._compat(model)
+        kwargs = apply_thinking_level(kwargs, compat)
         kwargs.pop("model", None)
-        kwargs = apply_prompt_cache(kwargs, TOGETHER_COMPAT)
-        kwargs = apply_session_affinity_headers(kwargs, TOGETHER_COMPAT)
+        kwargs = apply_prompt_cache(kwargs, compat)
+        kwargs = apply_session_affinity_headers(kwargs, compat)
         kwargs = apply_request_headers(kwargs)
         stream = self.client.chat.completions.create(
             model=model,
@@ -145,7 +154,7 @@ class TogetherProvider(Provider):
             **build_token_limit_param(
                 max_tokens,
                 param_name="max_tokens",
-                compat=TOGETHER_COMPAT,
+                compat=compat,
             ),
             **kwargs,
         )
@@ -169,10 +178,11 @@ class TogetherProvider(Provider):
     ) -> Response:
         """Async generate a completion."""
         kwargs["model"] = model
-        kwargs = apply_thinking_level(kwargs, TOGETHER_COMPAT)
+        compat = self._compat(model)
+        kwargs = apply_thinking_level(kwargs, compat)
         kwargs.pop("model", None)
-        kwargs = apply_prompt_cache(kwargs, TOGETHER_COMPAT)
-        kwargs = apply_session_affinity_headers(kwargs, TOGETHER_COMPAT)
+        kwargs = apply_prompt_cache(kwargs, compat)
+        kwargs = apply_session_affinity_headers(kwargs, compat)
         kwargs = apply_request_headers(kwargs)
         response = await self.async_client.chat.completions.create(
             model=model,
@@ -181,7 +191,7 @@ class TogetherProvider(Provider):
             **build_token_limit_param(
                 max_tokens,
                 param_name="max_tokens",
-                compat=TOGETHER_COMPAT,
+                compat=compat,
             ),
             **kwargs,
         )
@@ -208,10 +218,11 @@ class TogetherProvider(Provider):
     ) -> AsyncIterator[StreamChunk]:
         """Async stream a completion."""
         kwargs["model"] = model
-        kwargs = apply_thinking_level(kwargs, TOGETHER_COMPAT)
+        compat = self._compat(model)
+        kwargs = apply_thinking_level(kwargs, compat)
         kwargs.pop("model", None)
-        kwargs = apply_prompt_cache(kwargs, TOGETHER_COMPAT)
-        kwargs = apply_session_affinity_headers(kwargs, TOGETHER_COMPAT)
+        kwargs = apply_prompt_cache(kwargs, compat)
+        kwargs = apply_session_affinity_headers(kwargs, compat)
         kwargs = apply_request_headers(kwargs)
         stream = await self.async_client.chat.completions.create(
             model=model,
@@ -221,7 +232,7 @@ class TogetherProvider(Provider):
             **build_token_limit_param(
                 max_tokens,
                 param_name="max_tokens",
-                compat=TOGETHER_COMPAT,
+                compat=compat,
             ),
             **kwargs,
         )

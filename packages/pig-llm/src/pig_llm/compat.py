@@ -383,6 +383,35 @@ OPENCODE_ZEN_GROK_BUILD_COMPAT = ProviderCompat(
     retryable_patterns=COMMON_RETRYABLE_PATTERNS,
 )
 
+TOGETHER_OPENAI_REASONING_COMPAT = ProviderCompat(
+    max_output_token_policy="send_when_explicit",
+    token_limit_field="max_tokens",
+    supports_long_cache_retention=False,
+    send_session_affinity_headers=True,
+    reasoning_effort_level_map={
+        "openai/gpt-oss-20b": {
+            "off": None,
+            "minimal": None,
+            "low": "low",
+            "medium": "medium",
+            "high": "high",
+            "xhigh": "xhigh",
+        },
+        "openai/gpt-oss-120b": {
+            "off": None,
+            "minimal": None,
+            "low": "low",
+            "medium": "medium",
+            "high": "high",
+            "xhigh": "xhigh",
+        },
+    },
+    thinking_level_map=OPENAI_COMPAT.thinking_level_map,
+    context_overflow_patterns=COMMON_CONTEXT_OVERFLOW_PATTERNS,
+    quota_or_billing_patterns=COMMON_QUOTA_OR_BILLING_PATTERNS,
+    retryable_patterns=COMMON_RETRYABLE_PATTERNS,
+)
+
 
 def normalize_messages(
     messages: list[Message],
@@ -521,6 +550,19 @@ def apply_thinking_level(kwargs: dict[str, Any], compat: ProviderCompat) -> dict
                 next_kwargs.pop("reasoning_effort", None)
         else:
             next_kwargs.pop("reasoning_effort", None)
+        return next_kwargs
+
+    if compat is TOGETHER_OPENAI_REASONING_COMPAT:
+        model_map = compat.reasoning_effort_level_map.get(model_key)
+        reasoning_effort = model_map.get(str(level)) if model_map is not None else None
+        if reasoning_effort is None:
+            next_kwargs.pop("thinking", None)
+            next_kwargs.pop("reasoning", None)
+            next_kwargs.pop("reasoning_effort", None)
+            return next_kwargs
+        next_kwargs["reasoning_effort"] = reasoning_effort
+        next_kwargs.pop("thinking", None)
+        next_kwargs.pop("reasoning", None)
         return next_kwargs
 
     if compat is QWEN_CHAT_TEMPLATE_COMPAT:
