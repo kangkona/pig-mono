@@ -195,6 +195,24 @@ DEEPSEEK_COMPAT = ProviderCompat(
     max_output_token_policy="send_when_explicit",
     token_limit_field="max_tokens",
     send_session_affinity_headers=True,
+    reasoning_effort_level_map={
+        "deepseek-v4-flash": {
+            "off": {"type": "disabled"},
+            "minimal": None,
+            "low": None,
+            "medium": None,
+            "high": {"type": "enabled"},
+            "xhigh": {"type": "enabled"},
+        },
+        "deepseek-v4-pro": {
+            "off": {"type": "disabled"},
+            "minimal": None,
+            "low": None,
+            "medium": None,
+            "high": {"type": "enabled"},
+            "xhigh": {"type": "enabled"},
+        },
+    },
     thinking_level_map={
         "off": {"type": "disabled"},
         "minimal": {"type": "enabled"},
@@ -498,6 +516,19 @@ def apply_thinking_level(kwargs: dict[str, Any], compat: ProviderCompat) -> dict
         return next_kwargs
 
     if compat is OPENCODE_GO_KIMI_COMPAT:
+        model_map = compat.reasoning_effort_level_map.get(model_key)
+        thinking = model_map.get(str(level)) if model_map is not None else mapped
+        if thinking is None:
+            next_kwargs.pop("thinking", None)
+            next_kwargs.pop("reasoning", None)
+            next_kwargs.pop("reasoning_effort", None)
+            return next_kwargs
+        next_kwargs["thinking"] = thinking
+        next_kwargs.pop("reasoning", None)
+        next_kwargs.pop("reasoning_effort", None)
+        return next_kwargs
+
+    if compat is DEEPSEEK_COMPAT:
         model_map = compat.reasoning_effort_level_map.get(model_key)
         thinking = model_map.get(str(level)) if model_map is not None else mapped
         if thinking is None:

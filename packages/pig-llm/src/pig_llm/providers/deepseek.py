@@ -92,7 +92,9 @@ class DeepSeekProvider(Provider):
         **kwargs,
     ) -> Response:
         """Generate a completion."""
+        kwargs["model"] = model
         kwargs = apply_thinking_level(kwargs, DEEPSEEK_COMPAT)
+        kwargs.pop("model", None)
         kwargs = apply_prompt_cache(kwargs, DEEPSEEK_COMPAT)
         kwargs = apply_session_affinity_headers(kwargs, DEEPSEEK_COMPAT)
         kwargs = apply_request_headers(kwargs)
@@ -129,7 +131,9 @@ class DeepSeekProvider(Provider):
         **kwargs,
     ) -> Iterator[StreamChunk]:
         """Stream a completion."""
+        kwargs["model"] = model
         kwargs = apply_thinking_level(kwargs, DEEPSEEK_COMPAT)
+        kwargs.pop("model", None)
         kwargs = apply_prompt_cache(kwargs, DEEPSEEK_COMPAT)
         kwargs = apply_session_affinity_headers(kwargs, DEEPSEEK_COMPAT)
         kwargs = apply_request_headers(kwargs)
@@ -164,7 +168,9 @@ class DeepSeekProvider(Provider):
         **kwargs,
     ) -> Response:
         """Async generate a completion."""
+        kwargs["model"] = model
         kwargs = apply_thinking_level(kwargs, DEEPSEEK_COMPAT)
+        kwargs.pop("model", None)
         kwargs = apply_prompt_cache(kwargs, DEEPSEEK_COMPAT)
         kwargs = apply_session_affinity_headers(kwargs, DEEPSEEK_COMPAT)
         kwargs = apply_request_headers(kwargs)
@@ -201,7 +207,9 @@ class DeepSeekProvider(Provider):
         **kwargs,
     ) -> AsyncIterator[StreamChunk]:
         """Async stream a completion."""
+        kwargs["model"] = model
         kwargs = apply_thinking_level(kwargs, DEEPSEEK_COMPAT)
+        kwargs.pop("model", None)
         kwargs = apply_prompt_cache(kwargs, DEEPSEEK_COMPAT)
         kwargs = apply_session_affinity_headers(kwargs, DEEPSEEK_COMPAT)
         kwargs = apply_request_headers(kwargs)
