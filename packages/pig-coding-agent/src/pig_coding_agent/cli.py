@@ -343,6 +343,8 @@ def run_json_mode(agent):
                 json_out.error(f"Invalid JSON: {e}")
             except Exception as e:
                 json_out.error(f"Error: {e}")
+                emit_shutdown("error")
+                return
         emit_shutdown("eof")
     else:
         # Interactive JSON mode

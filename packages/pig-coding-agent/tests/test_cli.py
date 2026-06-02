@@ -300,6 +300,28 @@ def test_run_json_mode_piped_input_emits_shutdown_reason_and_cleanup(monkeypatch
     agent.extension_manager.cleanup.assert_called_once_with(reason="eof")
 
 
+def test_run_json_mode_piped_input_emits_error_shutdown_reason(monkeypatch):
+    """Piped JSON mode should emit a concrete shutdown reason when agent execution fails."""
+    from pig_coding_agent.cli import run_json_mode
+
+    agent = Mock()
+    agent.agent.run.side_effect = RuntimeError("boom")
+    agent.extension_manager = Mock()
+    json_mode = Mock()
+
+    monkeypatch.setattr("sys.stdin", io.StringIO('{"message":"hello"}\n'))
+
+    with (
+        patch("select.select", return_value=([object()], [], [])),
+        patch("pig_agent_core.JSONOutputMode", return_value=json_mode),
+    ):
+        run_json_mode(agent)
+
+    json_mode.error.assert_called_once_with("Error: boom")
+    json_mode.emit_event.assert_any_call("shutdown", {"reason": "error"})
+    agent.extension_manager.cleanup.assert_called_once_with(reason="error")
+
+
 def test_run_json_mode_emits_extension_shutdown_once_with_real_extension_manager() -> None:
     """JSON mode should not duplicate extension shutdown events."""
     from pig_coding_agent.cli import run_json_mode
