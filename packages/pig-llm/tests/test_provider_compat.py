@@ -194,6 +194,26 @@ def test_openrouter_uses_prompt_cache_for_long_retention() -> None:
     assert create.call_args.kwargs["prompt_cache_retention"] == "24h"
 
 
+def test_openrouter_omits_prompt_cache_for_default_short_retention() -> None:
+    create = Mock(return_value=_completion_response())
+    client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+
+    with (
+        patch("pig_llm.providers.openrouter.openai.OpenAI", return_value=client),
+        patch("pig_llm.providers.openrouter.openai.AsyncOpenAI", return_value=client),
+    ):
+        provider = OpenRouterProvider(Config(provider="openrouter", api_key="test"))
+
+    provider.complete(
+        [Message(role="user", content="hello")],
+        model="moonshotai/kimi-k2.6",
+        session_id="session-abc",
+    )
+
+    assert "prompt_cache_key" not in create.call_args.kwargs
+    assert "prompt_cache_retention" not in create.call_args.kwargs
+
+
 def test_openrouter_reasoning_models_send_explicit_reasoning_off_payload() -> None:
     create = Mock(return_value=_completion_response())
     client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))

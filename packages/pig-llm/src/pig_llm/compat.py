@@ -324,12 +324,14 @@ def apply_prompt_cache(
         next_kwargs.pop("prompt_cache_retention", None)
         return next_kwargs
 
-    if compat.supports_long_cache_retention:
+    if cache_retention == "long" and compat.supports_long_cache_retention:
         next_kwargs["prompt_cache_key"] = str(session_id)[:64]
-        if cache_retention == "long":
-            next_kwargs["prompt_cache_retention"] = "24h"
-        else:
-            next_kwargs.pop("prompt_cache_retention", None)
+        next_kwargs["prompt_cache_retention"] = "24h"
+        return next_kwargs
+
+    if compat is OPENAI_COMPAT:
+        next_kwargs["prompt_cache_key"] = str(session_id)[:64]
+        next_kwargs.pop("prompt_cache_retention", None)
         return next_kwargs
 
     next_kwargs.pop("prompt_cache_key", None)
