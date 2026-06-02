@@ -10,6 +10,7 @@ from ..compat import (
     apply_request_headers,
     apply_session_affinity_headers,
     apply_thinking_level,
+    normalize_messages,
 )
 from ..config import Config
 from ..models import Message, Response, StreamChunk
@@ -96,9 +97,14 @@ class GroqProvider(Provider):
         kwargs = apply_prompt_cache(kwargs, GROQ_COMPAT)
         kwargs = apply_session_affinity_headers(kwargs, GROQ_COMPAT)
         kwargs = apply_request_headers(kwargs)
+        normalized_messages = normalize_messages(
+            messages,
+            GROQ_COMPAT,
+            supports_developer_role=True,
+        )
         response = self.client.chat.completions.create(
             model=model,
-            messages=self._convert_messages(messages),
+            messages=self._convert_messages(normalized_messages),
             temperature=temperature,
             max_tokens=max_tokens,
             **kwargs,
@@ -134,9 +140,14 @@ class GroqProvider(Provider):
         kwargs = apply_prompt_cache(kwargs, GROQ_COMPAT)
         kwargs = apply_session_affinity_headers(kwargs, GROQ_COMPAT)
         kwargs = apply_request_headers(kwargs)
+        normalized_messages = normalize_messages(
+            messages,
+            GROQ_COMPAT,
+            supports_developer_role=True,
+        )
         stream = self.client.chat.completions.create(
             model=model,
-            messages=self._convert_messages(messages),
+            messages=self._convert_messages(normalized_messages),
             temperature=temperature,
             max_tokens=max_tokens,
             stream=True,
@@ -166,9 +177,14 @@ class GroqProvider(Provider):
         kwargs = apply_prompt_cache(kwargs, GROQ_COMPAT)
         kwargs = apply_session_affinity_headers(kwargs, GROQ_COMPAT)
         kwargs = apply_request_headers(kwargs)
+        normalized_messages = normalize_messages(
+            messages,
+            GROQ_COMPAT,
+            supports_developer_role=True,
+        )
         response = await self.async_client.chat.completions.create(
             model=model,
-            messages=self._convert_messages(messages),
+            messages=self._convert_messages(normalized_messages),
             temperature=temperature,
             max_tokens=max_tokens,
             **kwargs,
@@ -204,9 +220,14 @@ class GroqProvider(Provider):
         kwargs = apply_prompt_cache(kwargs, GROQ_COMPAT)
         kwargs = apply_session_affinity_headers(kwargs, GROQ_COMPAT)
         kwargs = apply_request_headers(kwargs)
+        normalized_messages = normalize_messages(
+            messages,
+            GROQ_COMPAT,
+            supports_developer_role=True,
+        )
         stream = await self.async_client.chat.completions.create(
             model=model,
-            messages=self._convert_messages(messages),
+            messages=self._convert_messages(normalized_messages),
             temperature=temperature,
             max_tokens=max_tokens,
             stream=True,

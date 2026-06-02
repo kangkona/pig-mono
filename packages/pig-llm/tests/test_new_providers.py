@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 from pig_llm.config import Config
+from pig_llm.models import Message
 
 
 class TestNewProviders:
@@ -621,6 +622,44 @@ def test_deepseek_provider_uses_prompt_cache_and_affinity_headers() -> None:
     assert create.call_args.kwargs["extra_headers"]["x-session-affinity"] == "session-deepseek"
 
 
+def test_deepseek_provider_normalizes_explicit_developer_role_to_system() -> None:
+    create = Mock(
+        return_value=SimpleNamespace(
+            id="resp-1",
+            model="deepseek-reasoner",
+            choices=[
+                SimpleNamespace(
+                    message=SimpleNamespace(content="ok", tool_calls=None),
+                    finish_reason="stop",
+                )
+            ],
+            usage=SimpleNamespace(prompt_tokens=1, completion_tokens=1, total_tokens=2),
+        )
+    )
+    sync_client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+    async_client = SimpleNamespace(
+        chat=SimpleNamespace(completions=SimpleNamespace(create=AsyncMock()))
+    )
+
+    with (
+        patch("pig_llm.providers.deepseek.openai.OpenAI", return_value=sync_client),
+        patch("pig_llm.providers.deepseek.openai.AsyncOpenAI", return_value=async_client),
+    ):
+        from pig_llm.providers.deepseek import DeepSeekProvider
+
+        provider = DeepSeekProvider(Config(provider="deepseek", api_key="test"))
+
+    provider.complete(
+        [
+            Message(role="developer", content="rules"),
+            Message(role="user", content="hello"),
+        ],
+        model="deepseek-reasoner",
+    )
+
+    assert create.call_args.kwargs["messages"][0] == {"role": "system", "content": "rules"}
+
+
 def test_together_provider_sends_explicit_reasoning_disabled_payload() -> None:
     create = Mock(
         return_value=SimpleNamespace(
@@ -1164,6 +1203,45 @@ def test_groq_provider_uses_session_affinity_headers() -> None:
     assert create.call_args.kwargs["extra_headers"]["x-client-request-id"] == "session-groq"
     assert create.call_args.kwargs["extra_headers"]["x-session-affinity"] == "session-groq"
     assert create.call_args.kwargs["extra_headers"]["session-id"] == "session-groq"
+
+
+def test_groq_provider_promotes_developer_instruction_role() -> None:
+    pytest.importorskip("groq")
+    create = Mock(
+        return_value=SimpleNamespace(
+            id="resp-1",
+            model="test-model",
+            choices=[
+                SimpleNamespace(
+                    message=SimpleNamespace(content="ok", tool_calls=None),
+                    finish_reason="stop",
+                )
+            ],
+            usage=SimpleNamespace(prompt_tokens=1, completion_tokens=1, total_tokens=2),
+        )
+    )
+    sync_client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+    async_client = SimpleNamespace(
+        chat=SimpleNamespace(completions=SimpleNamespace(create=AsyncMock()))
+    )
+
+    with (
+        patch("pig_llm.providers.groq.Groq", return_value=sync_client),
+        patch("pig_llm.providers.groq.AsyncGroq", return_value=async_client),
+    ):
+        from pig_llm.providers.groq import GroqProvider
+
+        provider = GroqProvider(Config(provider="groq", api_key="test"))
+
+    provider.complete(
+        [
+            Message(role="system", content="rules", metadata={"role": "developer"}),
+            Message(role="user", content="hello"),
+        ],
+        model="test-model",
+    )
+
+    assert create.call_args.kwargs["messages"][0] == {"role": "developer", "content": "rules"}
 
 
 def test_groq_provider_uses_prompt_cache_for_long_retention() -> None:
