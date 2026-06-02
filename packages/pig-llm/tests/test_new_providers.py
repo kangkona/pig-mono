@@ -471,6 +471,80 @@ def test_deepseek_v4_flash_omits_unsupported_medium_thinking() -> None:
     assert "reasoning_effort" not in create.call_args.kwargs
 
 
+def test_deepseek_v4_flash_sends_high_reasoning_effort() -> None:
+    create = Mock(
+        return_value=SimpleNamespace(
+            id="resp-1",
+            model="deepseek-v4-flash",
+            choices=[
+                SimpleNamespace(
+                    message=SimpleNamespace(content="ok", tool_calls=None),
+                    finish_reason="stop",
+                )
+            ],
+            usage=SimpleNamespace(prompt_tokens=1, completion_tokens=1, total_tokens=2),
+        )
+    )
+    sync_client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+    async_client = SimpleNamespace(
+        chat=SimpleNamespace(completions=SimpleNamespace(create=AsyncMock()))
+    )
+
+    with (
+        patch("pig_llm.providers.deepseek.openai.OpenAI", return_value=sync_client),
+        patch("pig_llm.providers.deepseek.openai.AsyncOpenAI", return_value=async_client),
+    ):
+        from pig_llm.providers.deepseek import DeepSeekProvider
+
+        provider = DeepSeekProvider(Config(provider="deepseek", api_key="test"))
+
+    provider.complete(
+        [SimpleNamespace(role="user", content="hello", metadata=None)],
+        model="deepseek-v4-flash",
+        thinking_level="high",
+    )
+
+    assert create.call_args.kwargs["thinking"] == {"type": "enabled"}
+    assert create.call_args.kwargs["reasoning_effort"] == "high"
+
+
+def test_deepseek_v4_flash_maps_xhigh_reasoning_to_max() -> None:
+    create = Mock(
+        return_value=SimpleNamespace(
+            id="resp-1",
+            model="deepseek-v4-flash",
+            choices=[
+                SimpleNamespace(
+                    message=SimpleNamespace(content="ok", tool_calls=None),
+                    finish_reason="stop",
+                )
+            ],
+            usage=SimpleNamespace(prompt_tokens=1, completion_tokens=1, total_tokens=2),
+        )
+    )
+    sync_client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+    async_client = SimpleNamespace(
+        chat=SimpleNamespace(completions=SimpleNamespace(create=AsyncMock()))
+    )
+
+    with (
+        patch("pig_llm.providers.deepseek.openai.OpenAI", return_value=sync_client),
+        patch("pig_llm.providers.deepseek.openai.AsyncOpenAI", return_value=async_client),
+    ):
+        from pig_llm.providers.deepseek import DeepSeekProvider
+
+        provider = DeepSeekProvider(Config(provider="deepseek", api_key="test"))
+
+    provider.complete(
+        [SimpleNamespace(role="user", content="hello", metadata=None)],
+        model="deepseek-v4-flash",
+        thinking_level="xhigh",
+    )
+
+    assert create.call_args.kwargs["thinking"] == {"type": "enabled"}
+    assert create.call_args.kwargs["reasoning_effort"] == "max"
+
+
 def test_deepseek_provider_uses_prompt_cache_and_affinity_headers() -> None:
     create = Mock(
         return_value=SimpleNamespace(

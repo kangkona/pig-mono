@@ -197,20 +197,20 @@ DEEPSEEK_COMPAT = ProviderCompat(
     send_session_affinity_headers=True,
     reasoning_effort_level_map={
         "deepseek-v4-flash": {
-            "off": {"type": "disabled"},
+            "off": "none",
             "minimal": None,
             "low": None,
             "medium": None,
-            "high": {"type": "enabled"},
-            "xhigh": {"type": "enabled"},
+            "high": "high",
+            "xhigh": "max",
         },
         "deepseek-v4-pro": {
-            "off": {"type": "disabled"},
+            "off": "none",
             "minimal": None,
             "low": None,
             "medium": None,
-            "high": {"type": "enabled"},
-            "xhigh": {"type": "enabled"},
+            "high": "high",
+            "xhigh": "max",
         },
     },
     thinking_level_map={
@@ -530,15 +530,18 @@ def apply_thinking_level(kwargs: dict[str, Any], compat: ProviderCompat) -> dict
 
     if compat is DEEPSEEK_COMPAT:
         model_map = compat.reasoning_effort_level_map.get(model_key)
-        thinking = model_map.get(str(level)) if model_map is not None else mapped
-        if thinking is None:
+        reasoning_effort = model_map.get(str(level)) if model_map is not None else None
+        if model_map is not None and reasoning_effort is None:
             next_kwargs.pop("thinking", None)
             next_kwargs.pop("reasoning", None)
             next_kwargs.pop("reasoning_effort", None)
             return next_kwargs
-        next_kwargs["thinking"] = thinking
+        next_kwargs["thinking"] = {"type": "disabled" if str(level) == "off" else "enabled"}
+        if reasoning_effort is not None and str(level) != "off":
+            next_kwargs["reasoning_effort"] = reasoning_effort
+        else:
+            next_kwargs.pop("reasoning_effort", None)
         next_kwargs.pop("reasoning", None)
-        next_kwargs.pop("reasoning_effort", None)
         return next_kwargs
 
     next_kwargs["thinking"] = mapped
