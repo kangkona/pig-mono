@@ -304,3 +304,37 @@ def test_agent_followup_all_mode_processes_entire_batch() -> None:
 
     assert response.content == "reply:follow-2"
     assert agent.llm.messages == ["start", "follow-1", "follow-2"]
+
+
+def test_agent_end_callback_can_queue_followup_before_run_returns() -> None:
+    class FakeLLM:
+        config = SimpleNamespace(model="fake")
+
+        def __init__(self):
+            self.messages: list[str] = []
+
+        def chat(self, messages, tools=None):
+            latest = messages[-1].content
+            self.messages.append(latest)
+            return SimpleNamespace(content=f"reply:{latest}", tool_calls=None)
+
+    agent_ref: dict[str, Agent] = {}
+
+    queued = {"done": False}
+
+    def on_event(event):
+        if (
+            event.type.value == "agent_end"
+            and event.data.get("success") is True
+            and not queued["done"]
+        ):
+            queued["done"] = True
+            agent_ref["agent"].message_queue.add_followup("follow-from-end")
+
+    agent = Agent(llm=FakeLLM(), tools=[], verbose=False, event_callback=on_event)
+    agent_ref["agent"] = agent
+
+    response = agent.run("start")
+
+    assert response.content == "reply:follow-from-end"
+    assert agent.llm.messages == ["start", "follow-from-end"]

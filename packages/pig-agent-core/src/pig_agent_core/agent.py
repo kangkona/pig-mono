@@ -12,7 +12,7 @@ from .context import SystemPromptBuilder
 from .memory import InMemoryProvider, MemoryProvider
 from .message_queue import MessageQueue
 from .models import AgentState
-from .observability.events import AgentEventCallback, BillingHook
+from .observability.events import AgentEventCallback, BillingHook, emit_agent_end
 from .resilience.profile import ProfileManager
 from .resilience.retry import resilient_streaming_call
 from .tools import Tool, ToolResult
@@ -197,6 +197,15 @@ class Agent:
             response = self.run(message.content, check_queue=True)
         return response
 
+    def _emit_agent_end(self, *, success: bool, error: str | None = None) -> None:
+        """Emit a terminal agent_end event for the current run."""
+        emit_agent_end(
+            self.event_callback,
+            agent_id=self.name,
+            success=success,
+            error=error,
+        )
+
     def add_tool(self, tool: Tool) -> None:
         """Add a tool to the agent.
 
@@ -299,6 +308,13 @@ class Agent:
                     if response is not None:
                         return response
 
+                self._emit_agent_end(success=True)
+                if check_queue and self.message_queue.has_followup():
+                    followup = self.message_queue.get_followup_messages()
+                    response = self._drain_followup_messages(followup, check_queue=check_queue)
+                    if response is not None:
+                        return response
+
                 return response
 
         # Max iterations reached
@@ -307,6 +323,7 @@ class Agent:
             model=self.llm.config.model,
         )
         self.history.append(Message(role="assistant", content=final_response.content))
+        self._emit_agent_end(success=False, error=final_response.content)
         return final_response
 
     async def arun(self, message: str, check_queue: bool = True) -> Response:
@@ -489,6 +506,17 @@ class Agent:
                         if response is not None:
                             return response
 
+                self._emit_agent_end(success=True)
+                if check_queue and self.message_queue.has_followup():
+                    followup = self.message_queue.get_followup_messages()
+                    if followup:
+                        response: Response | None = None
+                        for queued in followup:
+                            self._log(f"→ Follow-up: {queued.content}")
+                            response = await self.arun(queued.content, check_queue=True)
+                        if response is not None:
+                            return response
+
                 return Response(
                     content=response_content,
                     model=self.llm.config.model,
@@ -500,6 +528,7 @@ class Agent:
             model=self.llm.config.model,
         )
         self.history.append(Message(role="assistant", content=final_response.content))
+        self._emit_agent_end(success=False, error=final_response.content)
         return final_response
 
     def get_state(self) -> AgentState:
