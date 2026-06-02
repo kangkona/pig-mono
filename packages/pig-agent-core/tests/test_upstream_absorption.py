@@ -729,6 +729,80 @@ async def test_respond_stream_terminate_tool_result_skips_followup_llm_call() ->
 
 
 @pytest.mark.asyncio
+async def test_respond_stream_terminate_tool_result_drains_followup_queued_from_agent_end() -> None:
+    class ToolCallChunk:
+        def __init__(self, *, content: str = "", tool_calls=None):
+            self.choices = [
+                SimpleNamespace(
+                    delta=SimpleNamespace(content=content or None, tool_calls=tool_calls),
+                    finish_reason=None,
+                )
+            ]
+
+    class ToolCallDelta:
+        def __init__(self, index: int, *, call_id=None, name=None, arguments=None):
+            self.index = index
+            self.id = call_id
+            self.function = SimpleNamespace(name=name, arguments=arguments)
+
+    class FakeLLM:
+        config = SimpleNamespace(model="fake")
+
+        def __init__(self):
+            self.calls = 0
+            self.messages: list[str] = []
+
+        def achat_stream(self, messages, tools=None):
+            self.calls += 1
+            latest = messages[-1].content
+            self.messages.append(latest)
+
+            async def stream():
+                if self.calls == 1:
+                    yield ToolCallChunk(
+                        tool_calls=[
+                            ToolCallDelta(0, call_id="call-1", name="terminate", arguments="{}")
+                        ]
+                    )
+                else:
+                    yield ToolCallChunk(content=f"reply:{latest}")
+
+            return stream()
+
+    agent_ref: dict[str, Agent] = {}
+    queued = {"done": False}
+
+    def on_event(event):
+        if (
+            event.type.value == "agent_end"
+            and event.data.get("success") is True
+            and not queued["done"]
+        ):
+            queued["done"] = True
+            agent_ref["agent"].message_queue.add_followup("follow-from-stream-end")
+
+    def terminate():
+        return ToolResult(ok=True, data="finished", meta={"terminate": True})
+
+    llm = FakeLLM()
+    agent = Agent(llm=llm, tools=[], verbose=False, event_callback=on_event)
+    agent_ref["agent"] = agent
+    agent.registry.register(
+        "terminate",
+        terminate,
+        {"type": "function", "function": {"name": "terminate"}},
+    )
+
+    chunks = []
+    async for chunk in agent.respond_stream("start"):
+        chunks.append(chunk)
+
+    assert chunks == ["reply:follow-from-stream-end"]
+    assert llm.calls == 2
+    assert llm.messages == ["start", "follow-from-stream-end"]
+
+
+@pytest.mark.asyncio
 async def test_respond_stream_before_tool_call_abort_skips_sibling_tools() -> None:
     executed: list[str] = []
 

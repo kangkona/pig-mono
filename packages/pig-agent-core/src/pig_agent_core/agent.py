@@ -816,6 +816,11 @@ class Agent:
                 )
                 self.history.append(Message(role="assistant", content=final_content))
                 self._emit_agent_end(success=True)
+                if self.message_queue.has_followup():
+                    followup = self.message_queue.get_followup_messages()
+                    for queued in followup:
+                        async for chunk in self.respond_stream(queued.content, cancel):
+                            yield chunk
                 return
 
             # Continue loop for next iteration
