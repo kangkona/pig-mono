@@ -424,6 +424,72 @@ async def test_arun_awaits_async_tool_handlers_from_registry() -> None:
     assert tool_messages[0].content == "async-ok"
 
 
+@pytest.mark.asyncio
+async def test_arun_executes_parallel_safe_async_tools_concurrently() -> None:
+    started: list[str] = []
+
+    class FakeChunk:
+        def __init__(self, *, content: str = "", tool_calls=None):
+            self.content = content
+            self.tool_calls = tool_calls
+            self.usage = {}
+
+    class FakeLLM:
+        config = SimpleNamespace(model="fake")
+
+        def __init__(self):
+            self.calls = 0
+
+        async def astream(self, messages, **kwargs):
+            self.calls += 1
+            if self.calls == 1:
+                yield FakeChunk(
+                    tool_calls=[
+                        {
+                            "id": "call-1",
+                            "function": {"name": "think", "arguments": "{}"},
+                        },
+                        {
+                            "id": "call-2",
+                            "function": {"name": "get_current_time", "arguments": "{}"},
+                        },
+                    ]
+                )
+            else:
+                yield FakeChunk(content="done")
+
+    async def think(args, user_id, meta, cancel=None):
+        started.append("think")
+        await asyncio.sleep(0.01)
+        return ToolResult(ok=True, data=f"think-parallel:{'get_current_time' in started}")
+
+    async def get_current_time(args, user_id, meta, cancel=None):
+        started.append("get_current_time")
+        await asyncio.sleep(0.01)
+        return ToolResult(ok=True, data=f"time-parallel:{'think' in started}")
+
+    agent = Agent(llm=FakeLLM(), tools=[], verbose=False)
+    agent.registry.register(
+        "think",
+        think,
+        {"type": "function", "function": {"name": "think"}},
+        validate=False,
+    )
+    agent.registry.register(
+        "get_current_time",
+        get_current_time,
+        {"type": "function", "function": {"name": "get_current_time"}},
+        validate=False,
+    )
+
+    response = await agent.arun("go")
+
+    assert response.content == "done"
+    tool_messages = [message for message in agent.history if message.role == "tool"]
+    assert tool_messages[0].content == "think-parallel:True"
+    assert tool_messages[1].content == "time-parallel:True"
+
+
 def test_agent_terminate_tool_result_skips_follow_up_llm_call() -> None:
     class FakeLLM:
         config = SimpleNamespace(model="fake")
@@ -1093,3 +1159,80 @@ async def test_respond_stream_awaits_async_tool_handlers_from_registry() -> None
     assert chunks == ["done"]
     tool_messages = [message for message in agent.history if message.role == "tool"]
     assert tool_messages[0].content == "async-ok"
+
+
+@pytest.mark.asyncio
+async def test_respond_stream_executes_parallel_safe_async_tools_concurrently() -> None:
+    started: list[str] = []
+
+    class ToolCallChunk:
+        def __init__(self, *, content: str = "", tool_calls=None):
+            self.choices = [
+                SimpleNamespace(
+                    delta=SimpleNamespace(content=content or None, tool_calls=tool_calls),
+                    finish_reason=None,
+                )
+            ]
+
+    class ToolCallDelta:
+        def __init__(self, index: int, *, call_id=None, name=None, arguments=None):
+            self.index = index
+            self.id = call_id
+            self.function = SimpleNamespace(name=name, arguments=arguments)
+
+    class FakeLLM:
+        config = SimpleNamespace(model="fake")
+
+        def __init__(self):
+            self.calls = 0
+
+        def achat_stream(self, messages, tools=None):
+            self.calls += 1
+
+            async def stream():
+                if self.calls == 1:
+                    yield ToolCallChunk(
+                        tool_calls=[
+                            ToolCallDelta(0, call_id="call-1", name="think", arguments="{}"),
+                            ToolCallDelta(
+                                1, call_id="call-2", name="get_current_time", arguments="{}"
+                            ),
+                        ]
+                    )
+                else:
+                    yield ToolCallChunk(content="done")
+
+            return stream()
+
+    async def think(args, user_id, meta, cancel=None):
+        started.append("think")
+        await asyncio.sleep(0.01)
+        return ToolResult(ok=True, data=f"think-parallel:{'get_current_time' in started}")
+
+    async def get_current_time(args, user_id, meta, cancel=None):
+        started.append("get_current_time")
+        await asyncio.sleep(0.01)
+        return ToolResult(ok=True, data=f"time-parallel:{'think' in started}")
+
+    agent = Agent(llm=FakeLLM(), tools=[], verbose=False)
+    agent.registry.register(
+        "think",
+        think,
+        {"type": "function", "function": {"name": "think"}},
+        validate=False,
+    )
+    agent.registry.register(
+        "get_current_time",
+        get_current_time,
+        {"type": "function", "function": {"name": "get_current_time"}},
+        validate=False,
+    )
+
+    chunks = []
+    async for chunk in agent.respond_stream("start"):
+        chunks.append(chunk)
+
+    assert chunks == ["done"]
+    tool_messages = [message for message in agent.history if message.role == "tool"]
+    assert tool_messages[0].content == "think-parallel:True"
+    assert tool_messages[1].content == "time-parallel:True"

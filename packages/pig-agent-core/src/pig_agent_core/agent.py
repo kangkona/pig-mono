@@ -206,6 +206,46 @@ class Agent:
             error=error,
         )
 
+    def _can_use_async_batch_execution(self) -> bool:
+        """Return True when async tool batches can bypass per-tool hook handling."""
+        return not any(
+            [
+                self.before_tool_call,
+                self.after_tool_call,
+                self.on_tool_start,
+                self.on_tool_end,
+                self.billing_hook,
+            ]
+        )
+
+    async def _execute_async_batch_tool_calls(
+        self,
+        tool_calls: list[dict[str, Any]],
+        cancel: asyncio.Event | None = None,
+    ) -> tuple[list[dict[str, Any]], bool]:
+        """Execute tool calls via ToolRegistry.execute_batch preserving call order."""
+        from types import SimpleNamespace
+
+        tool_call_objects = [
+            SimpleNamespace(
+                function=SimpleNamespace(
+                    name=tool_call.get("function", {}).get("name"),
+                    arguments=tool_call.get("function", {}).get("arguments", "{}"),
+                )
+            )
+            for tool_call in tool_calls
+        ]
+        results = await self.registry.execute_batch(tool_call_objects, "default", {}, cancel)
+
+        tool_messages: list[dict[str, Any]] = []
+        terminate_all = True
+        for tool_call, result in zip(tool_calls, results, strict=False):
+            tool_name = tool_call.get("function", {}).get("name")
+            tool_messages.append(self._tool_message(tool_call, tool_name, result))
+            terminate_all = terminate_all and bool(result.ok and result.meta.get("terminate"))
+
+        return tool_messages, terminate_all
+
     def add_tool(self, tool: Tool) -> None:
         """Add a tool to the agent.
 
@@ -410,24 +450,71 @@ class Agent:
             if response_tool_calls:
                 self._log(f"Tool calls requested: {len(response_tool_calls)}")
 
-                # Execute tools
-                tool_results = []
                 for tool_call in response_tool_calls:
                     tool_name = tool_call.get("function", {}).get("name")
-                    tool_args_str = tool_call.get("function", {}).get("arguments", "{}")
-                    tool_args = json.loads(tool_args_str)
-
-                    self._log(f"→ Calling tool: {tool_name}({tool_args})")
-
-                    # Check if this is the plan tool
                     if tool_name == "plan":
                         self._plan_used = True
                         self._rounds_since_plan = 0
 
-                    if self.before_tool_call:
-                        preflight = self.before_tool_call(tool_name, tool_args)
-                        if preflight is not None:
-                            result = self._as_tool_result(preflight)
+                if self._can_use_async_batch_execution():
+                    tool_results, terminate_all = await self._execute_async_batch_tool_calls(
+                        response_tool_calls
+                    )
+                else:
+                    terminate_all = False
+
+                if not self._can_use_async_batch_execution():
+                    # Execute tools
+                    tool_results = []
+                    for tool_call in response_tool_calls:
+                        tool_name = tool_call.get("function", {}).get("name")
+                        tool_args_str = tool_call.get("function", {}).get("arguments", "{}")
+                        tool_args = json.loads(tool_args_str)
+
+                        self._log(f"→ Calling tool: {tool_name}({tool_args})")
+
+                        if self.before_tool_call:
+                            preflight = self.before_tool_call(tool_name, tool_args)
+                            if preflight is not None:
+                                result = self._as_tool_result(preflight)
+                                tool_results.append(
+                                    {
+                                        "tool_call_id": tool_call.get("id"),
+                                        "role": "tool",
+                                        "name": tool_name,
+                                        "content": str(result.data if result.ok else result.error),
+                                        "result": result,
+                                    }
+                                )
+                                if result.meta.get("abort_batch"):
+                                    break
+                                continue
+
+                        if self.on_tool_start:
+                            self.on_tool_start(tool_name, tool_args)
+
+                        if self.billing_hook:
+                            self.billing_hook.on_tool_call(tool_name=tool_name)
+
+                        try:
+                            from types import SimpleNamespace
+
+                            tool_call_obj = SimpleNamespace(
+                                function=SimpleNamespace(
+                                    name=tool_name,
+                                    arguments=tool_args_str,
+                                )
+                            )
+
+                            if hasattr(self.registry, "execute"):
+                                result = await self.registry.execute(
+                                    tool_call=tool_call_obj,
+                                    user_id="default",  # TODO: Make configurable
+                                    meta={},
+                                )
+                            else:
+                                result = self.registry.execute_sync(tool_name, tool_args)
+
                             tool_results.append(
                                 {
                                     "tool_call_id": tool_call.get("id"),
@@ -437,77 +524,36 @@ class Agent:
                                     "result": result,
                                 }
                             )
-                            if result.meta.get("abort_batch"):
-                                break
-                            continue
+                            self._log(f"✓ Result: {result.data if result.ok else result.error}")
 
-                    if self.on_tool_start:
-                        self.on_tool_start(tool_name, tool_args)
-
-                    # Track billing for tool call
-                    if self.billing_hook:
-                        self.billing_hook.on_tool_call(tool_name=tool_name)
-
-                    try:
-                        # Create tool_call object for enhanced registry
-                        from types import SimpleNamespace
-
-                        tool_call_obj = SimpleNamespace(
-                            function=SimpleNamespace(
-                                name=tool_name,
-                                arguments=tool_args_str,
-                            )
-                        )
-
-                        # Prefer async registry execution so async handlers are awaited.
-                        if hasattr(self.registry, "execute"):
-                            result = await self.registry.execute(
-                                tool_call=tool_call_obj,
-                                user_id="default",  # TODO: Make configurable
-                                meta={},
-                            )
-                        else:
-                            result = self.registry.execute_sync(tool_name, tool_args)
-
-                        tool_results.append(
-                            {
-                                "tool_call_id": tool_call.get("id"),
-                                "role": "tool",
-                                "name": tool_name,
-                                "content": str(result.data if result.ok else result.error),
-                                "result": result,
-                            }
-                        )
-                        self._log(f"✓ Result: {result.data if result.ok else result.error}")
-
-                        if self.after_tool_call:
-                            try:
-                                override = self.after_tool_call(tool_name, tool_args, result)
-                                if override is not None:
-                                    result = self._as_tool_result(override)
-                                    tool_results[-1]["content"] = str(
-                                        result.data if result.ok else result.error
-                                    )
+                            if self.after_tool_call:
+                                try:
+                                    override = self.after_tool_call(tool_name, tool_args, result)
+                                    if override is not None:
+                                        result = self._as_tool_result(override)
+                                        tool_results[-1]["content"] = str(
+                                            result.data if result.ok else result.error
+                                        )
+                                        tool_results[-1]["result"] = result
+                                except Exception as exc:
+                                    result = ToolResult(ok=False, error=f"Error: {exc}")
+                                    tool_results[-1]["content"] = result.error
                                     tool_results[-1]["result"] = result
-                            except Exception as exc:
-                                result = ToolResult(ok=False, error=f"Error: {exc}")
-                                tool_results[-1]["content"] = result.error
-                                tool_results[-1]["result"] = result
 
-                        if self.on_tool_end:
-                            self.on_tool_end(tool_name, result)
-                    except Exception as e:
-                        error_msg = f"Error: {e}"
-                        tool_results.append(
-                            {
-                                "tool_call_id": tool_call.get("id"),
-                                "role": "tool",
-                                "name": tool_name,
-                                "content": error_msg,
-                                "result": ToolResult(ok=False, error=error_msg),
-                            }
-                        )
-                        self._log(f"✗ {error_msg}")
+                            if self.on_tool_end:
+                                self.on_tool_end(tool_name, result)
+                        except Exception as e:
+                            error_msg = f"Error: {e}"
+                            tool_results.append(
+                                {
+                                    "tool_call_id": tool_call.get("id"),
+                                    "role": "tool",
+                                    "name": tool_name,
+                                    "content": error_msg,
+                                    "result": ToolResult(ok=False, error=error_msg),
+                                }
+                            )
+                            self._log(f"✗ {error_msg}")
 
                 # Add assistant message and tool results to history
                 self.history.append(
@@ -529,9 +575,13 @@ class Agent:
                         )
                     )
 
-                if tool_results and all(
-                    tr.get("result") and tr["result"].ok and tr["result"].meta.get("terminate")
-                    for tr in tool_results
+                if tool_results and (
+                    terminate_all
+                    if self._can_use_async_batch_execution()
+                    else all(
+                        tr.get("result") and tr["result"].ok and tr["result"].meta.get("terminate")
+                        for tr in tool_results
+                    )
                 ):
                     final_content = "\n".join(str(tr["content"]) for tr in tool_results)
                     final_response = Response(content=final_content, model=self.llm.config.model)
@@ -851,6 +901,23 @@ class Agent:
         Returns:
             True when every tool result requested early termination.
         """
+        if self._can_use_async_batch_execution():
+            tool_messages, terminate_all = await self._execute_async_batch_tool_calls(
+                tool_calls, cancel
+            )
+            for tool_result in tool_messages:
+                self.history.append(
+                    Message(
+                        role="tool",
+                        content=tool_result["content"],
+                        metadata={
+                            "tool_call_id": tool_result["tool_call_id"],
+                            "name": tool_result["name"],
+                        },
+                    )
+                )
+            return terminate_all
+
         terminate_all = True
         for tool_call in tool_calls:
             if cancel and cancel.is_set():
