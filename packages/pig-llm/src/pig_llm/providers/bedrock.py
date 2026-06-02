@@ -18,6 +18,18 @@ class BedrockProvider(Provider):
     """Amazon Bedrock provider implementation."""
 
     @staticmethod
+    def _sanitize_request_headers(headers: dict[str, str] | None) -> dict[str, str] | None:
+        """Drop reserved headers before attaching request metadata."""
+        if not headers:
+            return None
+        sanitized = {
+            key: value
+            for key, value in headers.items()
+            if key.lower() not in {"authorization", "host"} and not key.lower().startswith("x-amz-")
+        }
+        return sanitized or None
+
+    @staticmethod
     def _is_adaptive_claude_model(model: str) -> bool:
         model_name = (model or "").lower()
         return "claude-opus-4-8" in model_name
@@ -109,9 +121,9 @@ class BedrockProvider(Provider):
                 "thinking": {"type": "adaptive", "display": "summarized"},
                 "output_config": {"effort": effort},
             }
-        headers = kwargs.pop("headers", None)
+        headers = self._sanitize_request_headers(kwargs.pop("headers", None))
         if headers:
-            body["requestMetadata"] = dict(headers)
+            body["requestMetadata"] = headers
 
         response = self.client.converse(
             modelId=model,
@@ -161,9 +173,9 @@ class BedrockProvider(Provider):
                 "thinking": {"type": "adaptive", "display": "summarized"},
                 "output_config": {"effort": effort},
             }
-        headers = kwargs.pop("headers", None)
+        headers = self._sanitize_request_headers(kwargs.pop("headers", None))
         if headers:
-            body["requestMetadata"] = dict(headers)
+            body["requestMetadata"] = headers
 
         response = self.client.converse_stream(
             modelId=model,
