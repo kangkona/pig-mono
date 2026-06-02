@@ -116,6 +116,17 @@ def test_get_preview(temp_workspace):
     assert "bytes" in preview
 
 
+def test_get_preview_hyperlinks_file_paths_when_supported(temp_workspace, monkeypatch):
+    parser = FileReferenceParser(temp_workspace)
+    monkeypatch.setenv("TERM_PROGRAM", "WezTerm")
+    monkeypatch.delenv("NO_COLOR", raising=False)
+
+    preview = parser.get_reference_preview("Review @main.py")
+
+    assert "\033]8;;file://" in preview
+    assert "main.py" in preview
+
+
 def test_security_outside_workspace(temp_workspace):
     """Test security - prevent accessing outside workspace."""
     parser = FileReferenceParser(temp_workspace)

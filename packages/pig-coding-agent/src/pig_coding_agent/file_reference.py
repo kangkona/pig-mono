@@ -3,6 +3,8 @@
 import re
 from pathlib import Path
 
+from pig_tui import hyperlink
+
 
 class FileReferenceParser:
     """Parse and resolve @file references in messages."""
@@ -125,7 +127,8 @@ class FileReferenceParser:
                 size = len(content_or_error)
                 lines = content_or_error.count("\n") + 1
                 rel_path = path.relative_to(self.workspace)
-                preview_parts.append(f"  ✓ {rel_path} ({lines} lines, {size} bytes)")
+                preview_path = hyperlink(str(rel_path), path.resolve().as_uri())
+                preview_parts.append(f"  ✓ {preview_path} ({lines} lines, {size} bytes)")
             else:
                 preview_parts.append(f"  ✗ {ref} - {content_or_error}")
 
