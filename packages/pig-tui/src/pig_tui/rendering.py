@@ -11,6 +11,7 @@ import os
 import re
 import subprocess
 import textwrap
+import unicodedata
 from collections.abc import Callable, Mapping
 
 ANSI_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
@@ -20,6 +21,16 @@ OSC_RE = re.compile(r"\x1b\][^\x1b\x07]*?(?:\x1b\\|\x07)")
 def strip_terminal_sequences(text: str) -> str:
     """Strip non-printing ANSI and OSC 8 hyperlink sequences."""
     return ANSI_RE.sub("", OSC_RE.sub("", text))
+
+
+def _display_width(text: str) -> int:
+    """Estimate terminal cell width for plain Unicode text."""
+    width = 0
+    for char in text:
+        if unicodedata.combining(char):
+            continue
+        width += 2 if unicodedata.east_asian_width(char) in {"W", "F"} else 1
+    return width
 
 
 def terminal_size(default: tuple[int, int] = (80, 24)) -> tuple[int, int]:
@@ -38,7 +49,7 @@ def terminal_size(default: tuple[int, int] = (80, 24)) -> tuple[int, int]:
 
 def visible_length(text: str) -> int:
     """Return display length ignoring ANSI escape sequences."""
-    return len(strip_terminal_sequences(text))
+    return _display_width(strip_terminal_sequences(text))
 
 
 def safe_wrap(text: str, width: int, *, max_lines: int | None = None) -> list[str]:
@@ -71,9 +82,25 @@ def truncate_visible(text: str, width: int, *, suffix: str = "…") -> str:
     """Truncate plain text by visible width."""
     if visible_length(text) <= width:
         return text
-    if width <= len(suffix):
-        return suffix[:width]
-    return strip_terminal_sequences(text)[: width - len(suffix)] + suffix
+    suffix_width = _display_width(suffix)
+    if width <= suffix_width:
+        return suffix if width == suffix_width else ""
+
+    plain = strip_terminal_sequences(text)
+    budget = width - suffix_width
+    out: list[str] = []
+    used = 0
+    for char in plain:
+        char_width = (
+            0
+            if unicodedata.combining(char)
+            else (2 if unicodedata.east_asian_width(char) in {"W", "F"} else 1)
+        )
+        if used + char_width > budget:
+            break
+        out.append(char)
+        used += char_width
+    return "".join(out) + suffix
 
 
 def normalize_markdown_for_terminal(markdown: str) -> str:

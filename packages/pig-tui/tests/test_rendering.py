@@ -34,6 +34,18 @@ def test_visible_truncate_ignores_osc8_hyperlink_sequences() -> None:
     assert truncate_visible(text, 4) == "fil…"
 
 
+def test_visible_length_counts_wide_unicode_cells() -> None:
+    assert visible_length("你好") == 4
+
+
+def test_visible_length_ignores_zero_width_combining_marks() -> None:
+    assert visible_length("e\u0301") == 1
+
+
+def test_truncate_visible_preserves_full_wide_character_boundaries() -> None:
+    assert truncate_visible("你好世界", 3) == "你…"
+
+
 def test_visible_length_ignores_generic_osc_sequences() -> None:
     text = "\033]133;A\033\\hello\033]133;B\033\\"
 
