@@ -36,6 +36,16 @@ def test_llm_requires_explicit_api_key_for_known_provider():
         LLM(provider="openai")
 
 
+def test_llm_allows_bedrock_without_api_key():
+    with patch("pig_llm.providers.bedrock.BedrockProvider") as MockProvider:
+        MockProvider.return_value = Mock()
+
+        llm = LLM(provider="bedrock")
+
+        assert llm.config.provider == "bedrock"
+        assert llm.config.api_key is None
+
+
 def test_llm_complete_creates_messages():
     """Test complete method creates proper messages."""
     with patch("pig_llm.providers.openai.OpenAIProvider") as MockProvider:
