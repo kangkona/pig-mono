@@ -6,7 +6,9 @@ import openai
 
 from ..compat import (
     DEEPSEEK_COMPAT,
+    apply_prompt_cache,
     apply_request_headers,
+    apply_session_affinity_headers,
     apply_thinking_level,
     build_token_limit_param,
     extract_openai_usage,
@@ -91,6 +93,8 @@ class DeepSeekProvider(Provider):
     ) -> Response:
         """Generate a completion."""
         kwargs = apply_thinking_level(kwargs, DEEPSEEK_COMPAT)
+        kwargs = apply_prompt_cache(kwargs, DEEPSEEK_COMPAT)
+        kwargs = apply_session_affinity_headers(kwargs, DEEPSEEK_COMPAT)
         kwargs = apply_request_headers(kwargs)
         response = self.client.chat.completions.create(
             model=model,
@@ -126,6 +130,8 @@ class DeepSeekProvider(Provider):
     ) -> Iterator[StreamChunk]:
         """Stream a completion."""
         kwargs = apply_thinking_level(kwargs, DEEPSEEK_COMPAT)
+        kwargs = apply_prompt_cache(kwargs, DEEPSEEK_COMPAT)
+        kwargs = apply_session_affinity_headers(kwargs, DEEPSEEK_COMPAT)
         kwargs = apply_request_headers(kwargs)
         stream = self.client.chat.completions.create(
             model=model,
@@ -159,6 +165,8 @@ class DeepSeekProvider(Provider):
     ) -> Response:
         """Async generate a completion."""
         kwargs = apply_thinking_level(kwargs, DEEPSEEK_COMPAT)
+        kwargs = apply_prompt_cache(kwargs, DEEPSEEK_COMPAT)
+        kwargs = apply_session_affinity_headers(kwargs, DEEPSEEK_COMPAT)
         kwargs = apply_request_headers(kwargs)
         response = await self.async_client.chat.completions.create(
             model=model,
@@ -194,6 +202,8 @@ class DeepSeekProvider(Provider):
     ) -> AsyncIterator[StreamChunk]:
         """Async stream a completion."""
         kwargs = apply_thinking_level(kwargs, DEEPSEEK_COMPAT)
+        kwargs = apply_prompt_cache(kwargs, DEEPSEEK_COMPAT)
+        kwargs = apply_session_affinity_headers(kwargs, DEEPSEEK_COMPAT)
         kwargs = apply_request_headers(kwargs)
         stream = await self.async_client.chat.completions.create(
             model=model,
