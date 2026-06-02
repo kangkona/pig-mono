@@ -6,6 +6,7 @@ import io
 import json
 from unittest.mock import Mock, patch
 
+import click
 from pig_agent_core import ExtensionManager
 from pig_coding_agent.cli import JsonLineWriter, main, run_rpc_mode
 
@@ -52,6 +53,55 @@ def test_main_maps_name_session_id_and_excluded_tools(mock_agent_class, mock_llm
     assert kwargs["session_name"] == "startup-name"
     assert kwargs["session_id"] == "fixed-session"
     assert kwargs["excluded_tools"] == {"read_file", "run_command"}
+
+
+@patch.dict("os.environ", {"OPENAI_API_KEY": "test-key"})
+def test_main_rejects_empty_startup_name(tmp_path):
+    ctx = Mock(invoked_subcommand=None)
+
+    with (
+        patch("pig_coding_agent.cli.console") as console,
+        patch("pig_coding_agent.cli.LLM"),
+    ):
+        try:
+            main(
+                ctx=ctx,
+                provider="openai",
+                workspace=tmp_path,
+                name="   ",
+            )
+        except (click.exceptions.Exit, SystemExit) as exc:
+            assert getattr(exc, "exit_code", getattr(exc, "code", None)) == 1
+        else:
+            raise AssertionError("main should reject empty --name values")
+
+    console.print.assert_any_call("[red]Error: --name requires a non-empty value[/red]")
+
+
+@patch.dict("os.environ", {"OPENAI_API_KEY": "test-key"})
+def test_main_rejects_session_id_with_conflicting_session_selector(tmp_path):
+    ctx = Mock(invoked_subcommand=None)
+
+    with (
+        patch("pig_coding_agent.cli.console") as console,
+        patch("pig_coding_agent.cli.LLM"),
+    ):
+        try:
+            main(
+                ctx=ctx,
+                provider="openai",
+                workspace=tmp_path,
+                session_id="fixed-session",
+                session_name="resume-me",
+            )
+        except (click.exceptions.Exit, SystemExit) as exc:
+            assert getattr(exc, "exit_code", getattr(exc, "code", None)) == 1
+        else:
+            raise AssertionError("main should reject conflicting session selection flags")
+
+    console.print.assert_any_call(
+        "[red]Error: --session-id cannot be combined with --session[/red]"
+    )
 
 
 @patch.dict("os.environ", {"OPENAI_API_KEY": "test-key"})

@@ -54,6 +54,41 @@ def _parse_excluded_tools(value: str | None) -> set[str]:
     return {part.strip() for part in value.split(",") if part.strip()}
 
 
+def _validate_session_selector_flags(
+    *,
+    session_id: str | None,
+    session_name: str | None,
+    resume: bool,
+    continue_session: bool,
+) -> None:
+    """Reject conflicting exact-session and session-selector flags."""
+    if session_id is None:
+        return
+
+    conflicting_flags = []
+    if session_name:
+        conflicting_flags.append("--session")
+    if continue_session:
+        conflicting_flags.append("--continue")
+    if resume:
+        conflicting_flags.append("--resume")
+
+    if conflicting_flags:
+        console.print(
+            f"[red]Error: --session-id cannot be combined with {', '.join(conflicting_flags)}[/red]"
+        )
+        raise typer.Exit(1)
+
+
+def _validate_startup_name(name: str | None) -> None:
+    """Reject empty startup session display names."""
+    if name is None:
+        return
+    if not name.strip():
+        console.print("[red]Error: --name requires a non-empty value[/red]")
+        raise typer.Exit(1)
+
+
 @app.callback(invoke_without_command=True)
 def main(
     ctx: typer.Context,
@@ -107,6 +142,14 @@ def main(
     resolved_exclude_tools = _resolve_option_value(exclude_tools)
     resolved_base_url = _resolve_option_value(base_url)
     resolved_compat_mode = _resolve_option_value(compat_mode)
+
+    _validate_session_selector_flags(
+        session_id=resolved_session_id,
+        session_name=resolved_session_name,
+        resume=resolved_resume,
+        continue_session=resolved_continue,
+    )
+    _validate_startup_name(resolved_name)
 
     # Get API key
     api_key = os.getenv(f"{provider.upper()}_API_KEY")
