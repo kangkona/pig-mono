@@ -195,6 +195,18 @@ def test_session_manager_scopes_custom_session_dir_to_current_workspace(tmp_path
     assert mgr1.find_session("two") is None
 
 
+def test_session_manager_explicit_session_dir_overrides_env(tmp_path, monkeypatch):
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    env_session_dir = tmp_path / "env-sessions"
+    explicit_session_dir = tmp_path / "explicit-sessions"
+    monkeypatch.setenv("PIG_CODING_AGENT_SESSION_DIR", str(env_session_dir))
+
+    mgr = SessionManager(workspace, session_dir=explicit_session_dir)
+
+    assert mgr.sessions_dir == explicit_session_dir
+
+
 def test_session_manager_delete(temp_workspace):
     """Test deleting a session."""
     session = Session(name="delete-me", workspace=str(temp_workspace), auto_save=False)

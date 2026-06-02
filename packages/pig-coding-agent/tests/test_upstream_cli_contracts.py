@@ -256,7 +256,52 @@ def test_main_uses_env_session_dir_for_session_lookup(mock_agent_class, mock_llm
             session_name="source-1234",
         )
 
-    mock_session_manager_class.assert_called_once_with(tmp_path)
+    mock_session_manager_class.assert_called_once_with(tmp_path, session_dir=None)
+    kwargs = mock_agent_class.call_args.kwargs
+    assert kwargs["session_path"] == source_session
+
+
+@patch.dict("os.environ", {"OPENAI_API_KEY": "test-key"})
+@patch("pig_coding_agent.cli.LLM")
+@patch("pig_coding_agent.cli.CodingAgent")
+def test_main_explicit_session_dir_overrides_env_for_lookup(
+    mock_agent_class, mock_llm_class, tmp_path
+):
+    ctx = Mock(invoked_subcommand=None)
+    mock_llm = Mock()
+    mock_llm.config = Mock(model="test-model")
+    mock_llm_class.return_value = mock_llm
+    mock_agent = Mock()
+    mock_agent.session = None
+    mock_agent.skill_manager = None
+    mock_agent.extension_manager = None
+    mock_agent.run_interactive = Mock()
+    mock_agent_class.return_value = mock_agent
+
+    env_session_dir = tmp_path / "env-sessions"
+    explicit_session_dir = tmp_path / "explicit-sessions"
+    source_session = explicit_session_dir / "source-1234.jsonl"
+    explicit_session_dir.mkdir(parents=True)
+    source_session.write_text("{}\n")
+
+    with (
+        patch.dict("os.environ", {"PIG_CODING_AGENT_SESSION_DIR": str(env_session_dir)}),
+        patch("pig_coding_agent.cli.console"),
+        patch("pig_agent_core.SessionManager") as mock_session_manager_class,
+    ):
+        mock_session_manager = Mock()
+        mock_session_manager.find_session.return_value = source_session
+        mock_session_manager_class.return_value = mock_session_manager
+
+        main(
+            ctx=ctx,
+            provider="openai",
+            workspace=tmp_path,
+            session_name="source-1234",
+            session_dir=explicit_session_dir,
+        )
+
+    mock_session_manager_class.assert_called_once_with(tmp_path, session_dir=explicit_session_dir)
     kwargs = mock_agent_class.call_args.kwargs
     assert kwargs["session_path"] == source_session
 

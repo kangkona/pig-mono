@@ -219,3 +219,21 @@ def test_session_load_preserves_workspace_from_header_with_env_session_dir(tmp_p
     loaded = Session.load(path)
 
     assert loaded.workspace == workspace
+
+
+def test_session_save_uses_explicit_session_dir_over_env(tmp_path, monkeypatch):
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    env_session_dir = tmp_path / "env-sessions"
+    explicit_session_dir = tmp_path / "explicit-sessions"
+    monkeypatch.setenv("PIG_CODING_AGENT_SESSION_DIR", str(env_session_dir))
+
+    session = Session(
+        name="test",
+        workspace=str(workspace),
+        auto_save=False,
+        session_dir=str(explicit_session_dir),
+    )
+    path = session.save()
+
+    assert path.parent == explicit_session_dir

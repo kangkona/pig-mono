@@ -228,6 +228,24 @@ def test_list_sessions_reports_resolved_env_session_dir(mock_llm, tmp_path, monk
     assert f"Sessions are saved to: {session_dir}" in messages
 
 
+def test_coding_agent_explicit_session_dir_overrides_env(mock_llm, tmp_path, monkeypatch):
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    env_session_dir = tmp_path / "env-sessions"
+    explicit_session_dir = tmp_path / "explicit-sessions"
+    monkeypatch.setenv("PIG_CODING_AGENT_SESSION_DIR", str(env_session_dir))
+
+    agent = CodingAgent(
+        llm=mock_llm,
+        workspace=str(workspace),
+        verbose=False,
+        session_dir=explicit_session_dir,
+    )
+
+    saved = agent.session.save()
+    assert saved.parent == explicit_session_dir
+
+
 def test_coding_agent_fork_keeps_explicit_session_id(mock_llm, temp_workspace):
     source = Session(name="existing", workspace=str(temp_workspace), auto_save=False)
     source.add_message("user", "hello")

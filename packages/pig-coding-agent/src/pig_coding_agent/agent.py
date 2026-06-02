@@ -36,6 +36,7 @@ class CodingAgent:
         verbose: bool = True,
         session_name: str | None = None,
         session_id: str | None = None,
+        session_dir: str | Path | None = None,
         session_path: Path | None = None,
         fork_source_path: Path | None = None,
         enable_extensions: bool = True,
@@ -52,6 +53,7 @@ class CodingAgent:
             verbose: Enable verbose output
             session_name: Session name for auto-save
             session_id: Explicit session ID for automation
+            session_dir: Explicit session directory override
             session_path: Path to load existing session
             fork_source_path: Existing session path to fork into a new session
             enable_extensions: Enable extension system
@@ -64,7 +66,7 @@ class CodingAgent:
         self.llm = llm or LLM()
         self.verbose = verbose
         self.excluded_tools = set(excluded_tools or set())
-        self.sessions_dir = SessionManager(self.workspace).sessions_dir
+        self.sessions_dir = SessionManager(self.workspace, session_dir=session_dir).sessions_dir
         self._session_start_reason = "startup"
         self._previous_session_file: str | None = None
 
@@ -98,6 +100,7 @@ class CodingAgent:
                     name=session_name or f"{source_session.name}-fork",
                     workspace=str(self.workspace),
                     auto_save=True,
+                    session_dir=self.sessions_dir,
                 )
             if session_id:
                 self.session.id = session_id
@@ -112,7 +115,7 @@ class CodingAgent:
         else:
             resolved_session_path = None
             if session_id:
-                session_manager = SessionManager(self.workspace)
+                session_manager = SessionManager(self.workspace, session_dir=session_dir)
                 resolved_session_path = session_manager.find_session(session_id)
 
             if resolved_session_path and resolved_session_path.exists():
@@ -126,6 +129,7 @@ class CodingAgent:
                     name=session_name or "coding-session",
                     workspace=str(self.workspace),
                     auto_save=True,
+                    session_dir=self.sessions_dir,
                 )
                 if session_id:
                     self.session.id = session_id
@@ -608,7 +612,7 @@ Tools: {len(self.agent.registry)}
 
     def _list_sessions(self):
         """List available sessions."""
-        session_mgr = SessionManager(self.workspace)
+        session_mgr = SessionManager(self.workspace, session_dir=self.sessions_dir)
         sessions = session_mgr.list_sessions(limit=20)
 
         if not sessions:

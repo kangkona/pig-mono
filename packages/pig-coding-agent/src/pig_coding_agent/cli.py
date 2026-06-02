@@ -144,6 +144,9 @@ def main(
     fork: str | None = typer.Option(None, "--fork", help="Fork specific session file or ID"),
     session_name: str | None = typer.Option(None, "--session", "-s", help="Session name"),
     name: str | None = typer.Option(None, "--name", "-n", help="Startup session display name"),
+    session_dir: Path | None = typer.Option(
+        None, "--session-dir", help="Explicit session storage directory"
+    ),
     session_id: str | None = typer.Option(
         None, "--session-id", help="Explicit session ID for automation"
     ),
@@ -181,6 +184,7 @@ def main(
     resolved_fork = _resolve_option_value(fork)
     resolved_session_name = _resolve_option_value(session_name)
     resolved_name = _resolve_option_value(name)
+    resolved_session_dir = _resolve_option_value(session_dir)
     resolved_session_id = _resolve_option_value(session_id)
     resolved_exclude_tools = _resolve_option_value(exclude_tools)
     resolved_base_url = _resolve_option_value(base_url)
@@ -216,7 +220,7 @@ def main(
     if resolved_fork:
         from pig_agent_core import SessionManager
 
-        session_mgr = SessionManager(workspace)
+        session_mgr = SessionManager(workspace, session_dir=resolved_session_dir)
         session_path = session_mgr.find_session(resolved_fork)
         if session_path is None:
             if not protocol_mode:
@@ -225,7 +229,7 @@ def main(
     elif resolved_resume or resolved_continue or resolved_session_name:
         from pig_agent_core import SessionManager
 
-        session_mgr = SessionManager(workspace)
+        session_mgr = SessionManager(workspace, session_dir=resolved_session_dir)
         if resolved_session_name:
             session_path = session_mgr.find_session(resolved_session_name)
         else:
@@ -277,6 +281,7 @@ def main(
         verbose=resolved_verbose,
         session_name=resolved_name or resolved_session_name,
         session_id=resolved_session_id,
+        session_dir=resolved_session_dir,
         session_path=session_path,
         fork_source_path=session_path if resolved_fork else None,
         enable_extensions=not no_extensions,

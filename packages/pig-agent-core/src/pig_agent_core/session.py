@@ -198,6 +198,7 @@ class Session:
         name: str | None = None,
         workspace: str | None = None,
         auto_save: bool = True,
+        session_dir: str | Path | None = None,
     ) -> None:
         """Initialize session.
 
@@ -205,11 +206,13 @@ class Session:
             name: Session name
             workspace: Workspace directory
             auto_save: Auto-save after changes
+            session_dir: Explicit session directory override
         """
         self.id = str(uuid.uuid4())
         self.name = name or f"session-{self.id[:8]}"
         self.workspace = Path(workspace) if workspace else Path.cwd()
         self.auto_save = auto_save
+        self.session_dir = Path(session_dir).expanduser().resolve() if session_dir else None
 
         self.tree = SessionTree()
         self.created_at = datetime.utcnow()
@@ -345,6 +348,7 @@ class Session:
             name=new_name or f"{self.name}-fork",
             workspace=str(self.workspace),
             auto_save=self.auto_save,
+            session_dir=self.session_dir,
         )
 
         # Copy path to entry
@@ -365,7 +369,7 @@ class Session:
         """
         if path is None:
             # Auto-generate path
-            session_dir = resolve_session_dir(self.workspace)
+            session_dir = resolve_session_dir(self.workspace, self.session_dir)
             session_dir.mkdir(parents=True, exist_ok=True)
             path = session_dir / f"{self.name}-{self.id[:8]}.jsonl"
 
@@ -414,6 +418,7 @@ class Session:
             else str(path.parent.parent)
         )
         session = cls(name=header["name"], workspace=resolved_workspace, auto_save=False)
+        session.session_dir = path.parent.resolve()
 
         session.id = header["id"]
         session.created_at = datetime.fromisoformat(header["created_at"])
