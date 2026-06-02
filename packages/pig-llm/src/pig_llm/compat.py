@@ -504,7 +504,7 @@ def normalize_messages(
     for message in messages:
         role = message.role
         metadata_role = (message.metadata or {}).get("role")
-        if metadata_role == "developer" or role == "system":
+        if metadata_role == "developer" or role in {"system", "developer"}:
             normalized.append(
                 Message(role=target_role, content=message.content, metadata=message.metadata)
             )

@@ -68,6 +68,29 @@ def test_openrouter_kimi_keeps_system_role_instead_of_developer() -> None:
     assert "max_tokens" not in create.call_args.kwargs
 
 
+def test_openrouter_normalizes_explicit_developer_role_messages_to_system() -> None:
+    create = Mock(return_value=_completion_response())
+    client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+
+    with (
+        patch("pig_llm.providers.openrouter.openai.OpenAI", return_value=client),
+        patch("pig_llm.providers.openrouter.openai.AsyncOpenAI", return_value=client),
+    ):
+        provider = OpenRouterProvider(Config(provider="openrouter", api_key="test"))
+
+    provider.complete(
+        [
+            Message(role="developer", content="rules"),
+            Message(role="user", content="hi"),
+        ],
+        model="moonshotai/kimi-k2.6",
+    )
+
+    messages = create.call_args.kwargs["messages"]
+    assert messages[0] == {"role": "system", "content": "rules"}
+    assert all(message["role"] != "developer" for message in messages)
+
+
 def test_openai_compatible_omits_model_derived_default_output_caps() -> None:
     params = build_token_limit_param(
         128000,

@@ -12,6 +12,7 @@ from ..compat import (
     apply_thinking_level,
     build_token_limit_param,
     extract_openai_usage,
+    normalize_messages,
 )
 from ..config import Config
 from ..models import Message, Response, StreamChunk
@@ -97,9 +98,10 @@ class OpenRouterProvider(Provider):
         kwargs = apply_prompt_cache(kwargs, OPENROUTER_COMPAT)
         kwargs = apply_session_affinity_headers(kwargs, OPENROUTER_COMPAT)
         kwargs = apply_request_headers(kwargs)
+        normalized_messages = normalize_messages(messages, OPENROUTER_COMPAT)
         response = self.client.chat.completions.create(
             model=model,
-            messages=self._convert_messages(messages),
+            messages=self._convert_messages(normalized_messages),
             temperature=temperature,
             **build_token_limit_param(
                 max_tokens,
@@ -134,9 +136,10 @@ class OpenRouterProvider(Provider):
         kwargs = apply_prompt_cache(kwargs, OPENROUTER_COMPAT)
         kwargs = apply_session_affinity_headers(kwargs, OPENROUTER_COMPAT)
         kwargs = apply_request_headers(kwargs)
+        normalized_messages = normalize_messages(messages, OPENROUTER_COMPAT)
         stream = self.client.chat.completions.create(
             model=model,
-            messages=self._convert_messages(messages),
+            messages=self._convert_messages(normalized_messages),
             temperature=temperature,
             stream=True,
             **build_token_limit_param(
@@ -169,9 +172,10 @@ class OpenRouterProvider(Provider):
         kwargs = apply_prompt_cache(kwargs, OPENROUTER_COMPAT)
         kwargs = apply_session_affinity_headers(kwargs, OPENROUTER_COMPAT)
         kwargs = apply_request_headers(kwargs)
+        normalized_messages = normalize_messages(messages, OPENROUTER_COMPAT)
         response = await self.async_client.chat.completions.create(
             model=model,
-            messages=self._convert_messages(messages),
+            messages=self._convert_messages(normalized_messages),
             temperature=temperature,
             **build_token_limit_param(
                 max_tokens,
@@ -206,9 +210,10 @@ class OpenRouterProvider(Provider):
         kwargs = apply_prompt_cache(kwargs, OPENROUTER_COMPAT)
         kwargs = apply_session_affinity_headers(kwargs, OPENROUTER_COMPAT)
         kwargs = apply_request_headers(kwargs)
+        normalized_messages = normalize_messages(messages, OPENROUTER_COMPAT)
         stream = await self.async_client.chat.completions.create(
             model=model,
-            messages=self._convert_messages(messages),
+            messages=self._convert_messages(normalized_messages),
             temperature=temperature,
             stream=True,
             **build_token_limit_param(
