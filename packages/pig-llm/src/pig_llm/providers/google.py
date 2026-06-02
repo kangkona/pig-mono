@@ -7,6 +7,7 @@ from collections.abc import AsyncIterator, Iterator
 from google import genai
 from google.genai import types
 
+from ..compat import OPENAI_COMPAT, normalize_messages
 from ..config import Config
 from ..models import Message, Response, StreamChunk
 from ._base import Provider
@@ -176,7 +177,12 @@ class GoogleProvider(Provider):
     ) -> Response:
         """Generate a completion."""
         # Convert messages
-        contents, system_instruction = self._convert_messages(messages)
+        normalized_messages = normalize_messages(
+            messages,
+            OPENAI_COMPAT,
+            supports_developer_role=False,
+        )
+        contents, system_instruction = self._convert_messages(normalized_messages)
 
         # Convert tools if present
         tools = self._convert_tools(kwargs.get("tools"))
@@ -238,7 +244,12 @@ class GoogleProvider(Provider):
     ) -> Iterator[StreamChunk]:
         """Stream a completion."""
         # Convert messages
-        contents, system_instruction = self._convert_messages(messages)
+        normalized_messages = normalize_messages(
+            messages,
+            OPENAI_COMPAT,
+            supports_developer_role=False,
+        )
+        contents, system_instruction = self._convert_messages(normalized_messages)
 
         # Convert tools if present
         tools = self._convert_tools(kwargs.get("tools"))
@@ -276,7 +287,12 @@ class GoogleProvider(Provider):
     ) -> Response:
         """Async generate a completion."""
         # Convert messages
-        contents, system_instruction = self._convert_messages(messages)
+        normalized_messages = normalize_messages(
+            messages,
+            OPENAI_COMPAT,
+            supports_developer_role=False,
+        )
+        contents, system_instruction = self._convert_messages(normalized_messages)
 
         # Convert tools if present
         tools = self._convert_tools(kwargs.get("tools"))
@@ -338,7 +354,12 @@ class GoogleProvider(Provider):
     ) -> AsyncIterator[StreamChunk]:
         """Async stream a completion."""
         # Convert messages
-        contents, system_instruction = self._convert_messages(messages)
+        normalized_messages = normalize_messages(
+            messages,
+            OPENAI_COMPAT,
+            supports_developer_role=False,
+        )
+        contents, system_instruction = self._convert_messages(normalized_messages)
 
         # Convert tools if present
         tools = self._convert_tools(kwargs.get("tools"))

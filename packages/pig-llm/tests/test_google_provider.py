@@ -107,3 +107,26 @@ def test_google_provider_uses_google_thinking_level_enum() -> None:
 
     config = provider.client.models.generate_content.call_args.kwargs["config"]
     assert config.thinking_config.thinking_level == types.ThinkingLevel.HIGH
+
+
+def test_google_provider_normalizes_explicit_developer_role_to_system_instruction() -> None:
+    response = SimpleNamespace(
+        candidates=[],
+        usage_metadata=None,
+        id="resp-1",
+    )
+    provider = _provider_with_client(Mock(return_value=response), AsyncMock(return_value=response))
+
+    provider.complete(
+        [
+            Message(role="developer", content="rules"),
+            Message(role="user", content="hello"),
+        ],
+        model="gemini-2.5-flash",
+    )
+
+    call_kwargs = provider.client.models.generate_content.call_args.kwargs
+    config = call_kwargs["config"]
+    assert config.system_instruction == "rules"
+    assert len(call_kwargs["contents"]) == 1
+    assert call_kwargs["contents"][0].role == "user"
