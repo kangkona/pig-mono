@@ -511,6 +511,32 @@ def test_rpc_mode_cleans_up_extensions_on_interrupt(monkeypatch) -> None:
     agent.extension_manager.cleanup.assert_called_once_with(reason="interrupt")
 
 
+def test_rpc_mode_emits_error_shutdown_reason_on_handler_failure(monkeypatch) -> None:
+    requests = iter(
+        [json.dumps({"id": 1, "method": "complete", "params": {"message": "hi"}}) + "\n", ""]
+    )
+    out = io.StringIO()
+    agent = Mock()
+    agent.agent.run.side_effect = RuntimeError("boom")
+    agent.extension_manager = Mock()
+
+    monkeypatch.setattr("sys.stdin.readline", lambda: next(requests))
+    monkeypatch.setattr("sys.stdout", out)
+
+    run_rpc_mode(agent)
+
+    lines = out.getvalue().splitlines()
+    assert len(lines) == 2
+    error_response = json.loads(lines[0])
+    shutdown_event = json.loads(lines[1])
+
+    assert error_response["id"] == 1
+    assert error_response["error"] == "boom"
+    assert shutdown_event["event"] == "shutdown"
+    assert shutdown_event["data"] == {"reason": "error"}
+    agent.extension_manager.cleanup.assert_called_once_with(reason="error")
+
+
 def test_rpc_mode_emits_extension_shutdown_once_with_real_extension_manager(
     monkeypatch,
 ) -> None:

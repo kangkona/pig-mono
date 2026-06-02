@@ -182,6 +182,7 @@ class RPCMode:
                 result = handler(method, params)
                 self.send_response(request_id, result)
             except Exception as e:
+                self.last_shutdown_reason = "error"
                 self.send_error(str(e), request_id)
 
 
