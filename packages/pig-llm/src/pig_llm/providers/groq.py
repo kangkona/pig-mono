@@ -5,7 +5,7 @@ from collections.abc import AsyncIterator, Iterator
 from groq import AsyncGroq, Groq
 
 from ..compat import (
-    OPENAI_COMPAT,
+    GROQ_COMPAT,
     apply_prompt_cache,
     apply_request_headers,
     apply_session_affinity_headers,
@@ -91,10 +91,10 @@ class GroqProvider(Provider):
         **kwargs,
     ) -> Response:
         """Generate a completion."""
-        kwargs = apply_thinking_level(kwargs, OPENAI_COMPAT)
+        kwargs = apply_thinking_level(kwargs, GROQ_COMPAT)
         kwargs = self._apply_reasoning_effort_override(model, kwargs)
-        kwargs = apply_prompt_cache(kwargs, OPENAI_COMPAT)
-        kwargs = apply_session_affinity_headers(kwargs, OPENAI_COMPAT)
+        kwargs = apply_prompt_cache(kwargs, GROQ_COMPAT)
+        kwargs = apply_session_affinity_headers(kwargs, GROQ_COMPAT)
         kwargs = apply_request_headers(kwargs)
         response = self.client.chat.completions.create(
             model=model,
@@ -129,10 +129,10 @@ class GroqProvider(Provider):
         **kwargs,
     ) -> Iterator[StreamChunk]:
         """Stream a completion."""
-        kwargs = apply_thinking_level(kwargs, OPENAI_COMPAT)
+        kwargs = apply_thinking_level(kwargs, GROQ_COMPAT)
         kwargs = self._apply_reasoning_effort_override(model, kwargs)
-        kwargs = apply_prompt_cache(kwargs, OPENAI_COMPAT)
-        kwargs = apply_session_affinity_headers(kwargs, OPENAI_COMPAT)
+        kwargs = apply_prompt_cache(kwargs, GROQ_COMPAT)
+        kwargs = apply_session_affinity_headers(kwargs, GROQ_COMPAT)
         kwargs = apply_request_headers(kwargs)
         stream = self.client.chat.completions.create(
             model=model,
@@ -161,10 +161,10 @@ class GroqProvider(Provider):
         **kwargs,
     ) -> Response:
         """Async generate a completion."""
-        kwargs = apply_thinking_level(kwargs, OPENAI_COMPAT)
+        kwargs = apply_thinking_level(kwargs, GROQ_COMPAT)
         kwargs = self._apply_reasoning_effort_override(model, kwargs)
-        kwargs = apply_prompt_cache(kwargs, OPENAI_COMPAT)
-        kwargs = apply_session_affinity_headers(kwargs, OPENAI_COMPAT)
+        kwargs = apply_prompt_cache(kwargs, GROQ_COMPAT)
+        kwargs = apply_session_affinity_headers(kwargs, GROQ_COMPAT)
         kwargs = apply_request_headers(kwargs)
         response = await self.async_client.chat.completions.create(
             model=model,
@@ -199,10 +199,10 @@ class GroqProvider(Provider):
         **kwargs,
     ) -> AsyncIterator[StreamChunk]:
         """Async stream a completion."""
-        kwargs = apply_thinking_level(kwargs, OPENAI_COMPAT)
+        kwargs = apply_thinking_level(kwargs, GROQ_COMPAT)
         kwargs = self._apply_reasoning_effort_override(model, kwargs)
-        kwargs = apply_prompt_cache(kwargs, OPENAI_COMPAT)
-        kwargs = apply_session_affinity_headers(kwargs, OPENAI_COMPAT)
+        kwargs = apply_prompt_cache(kwargs, GROQ_COMPAT)
+        kwargs = apply_session_affinity_headers(kwargs, GROQ_COMPAT)
         kwargs = apply_request_headers(kwargs)
         stream = await self.async_client.chat.completions.create(
             model=model,

@@ -646,6 +646,28 @@ def test_explicit_moonshot_compat_omits_session_affinity_headers_when_cache_is_n
     assert "x-session-affinity" not in extra_headers
 
 
+def test_explicit_together_compat_supports_deepseek_v4_reasoning_effort() -> None:
+    sync_create = Mock(return_value=_completion_response())
+    provider = _provider_with_clients(
+        sync_create,
+        AsyncMock(),
+        Config(
+            provider="openai",
+            api_key="test-key",
+            compat_mode="together",
+        ),
+    )
+
+    provider.complete(
+        _messages(),
+        model="deepseek-ai/DeepSeek-V4-Pro",
+        thinking_level="high",
+    )
+
+    assert sync_create.call_args.kwargs["reasoning"] == {"enabled": True}
+    assert sync_create.call_args.kwargs["reasoning_effort"] == "high"
+
+
 def test_custom_opencode_go_kimi_uses_thinking_object_when_disabled() -> None:
     sync_create = Mock(return_value=_completion_response())
     provider = _provider_with_clients(

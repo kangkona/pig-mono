@@ -5,7 +5,7 @@ from collections.abc import AsyncIterator, Iterator
 import openai
 
 from ..compat import (
-    OPENAI_COMPAT,
+    AZURE_OPENAI_COMPAT,
     apply_prompt_cache,
     apply_request_headers,
     apply_session_affinity_headers,
@@ -100,9 +100,9 @@ class AzureOpenAIProvider(Provider):
         **kwargs,
     ) -> Response:
         """Generate a completion."""
-        kwargs = apply_thinking_level(kwargs, OPENAI_COMPAT)
-        kwargs = apply_prompt_cache(kwargs, OPENAI_COMPAT)
-        kwargs = apply_session_affinity_headers(kwargs, OPENAI_COMPAT)
+        kwargs = apply_thinking_level(kwargs, AZURE_OPENAI_COMPAT)
+        kwargs = apply_prompt_cache(kwargs, AZURE_OPENAI_COMPAT)
+        kwargs = apply_session_affinity_headers(kwargs, AZURE_OPENAI_COMPAT)
         kwargs = apply_request_headers(kwargs)
         response = self.client.chat.completions.create(
             model=model,  # This is the deployment name in Azure
@@ -111,7 +111,7 @@ class AzureOpenAIProvider(Provider):
             **build_token_limit_param(
                 max_tokens,
                 param_name="max_tokens",
-                compat=OPENAI_COMPAT,
+                compat=AZURE_OPENAI_COMPAT,
             ),
             **kwargs,
         )
@@ -141,9 +141,9 @@ class AzureOpenAIProvider(Provider):
         **kwargs,
     ) -> Iterator[StreamChunk]:
         """Stream a completion."""
-        kwargs = apply_thinking_level(kwargs, OPENAI_COMPAT)
-        kwargs = apply_prompt_cache(kwargs, OPENAI_COMPAT)
-        kwargs = apply_session_affinity_headers(kwargs, OPENAI_COMPAT)
+        kwargs = apply_thinking_level(kwargs, AZURE_OPENAI_COMPAT)
+        kwargs = apply_prompt_cache(kwargs, AZURE_OPENAI_COMPAT)
+        kwargs = apply_session_affinity_headers(kwargs, AZURE_OPENAI_COMPAT)
         kwargs = apply_request_headers(kwargs)
         stream = self.client.chat.completions.create(
             model=model,
@@ -153,7 +153,7 @@ class AzureOpenAIProvider(Provider):
             **build_token_limit_param(
                 max_tokens,
                 param_name="max_tokens",
-                compat=OPENAI_COMPAT,
+                compat=AZURE_OPENAI_COMPAT,
             ),
             **kwargs,
         )
@@ -176,9 +176,9 @@ class AzureOpenAIProvider(Provider):
         **kwargs,
     ) -> Response:
         """Async generate a completion."""
-        kwargs = apply_thinking_level(kwargs, OPENAI_COMPAT)
-        kwargs = apply_prompt_cache(kwargs, OPENAI_COMPAT)
-        kwargs = apply_session_affinity_headers(kwargs, OPENAI_COMPAT)
+        kwargs = apply_thinking_level(kwargs, AZURE_OPENAI_COMPAT)
+        kwargs = apply_prompt_cache(kwargs, AZURE_OPENAI_COMPAT)
+        kwargs = apply_session_affinity_headers(kwargs, AZURE_OPENAI_COMPAT)
         kwargs = apply_request_headers(kwargs)
         response = await self.async_client.chat.completions.create(
             model=model,
@@ -187,7 +187,7 @@ class AzureOpenAIProvider(Provider):
             **build_token_limit_param(
                 max_tokens,
                 param_name="max_tokens",
-                compat=OPENAI_COMPAT,
+                compat=AZURE_OPENAI_COMPAT,
             ),
             **kwargs,
         )
@@ -217,9 +217,9 @@ class AzureOpenAIProvider(Provider):
         **kwargs,
     ) -> AsyncIterator[StreamChunk]:
         """Async stream a completion."""
-        kwargs = apply_thinking_level(kwargs, OPENAI_COMPAT)
-        kwargs = apply_prompt_cache(kwargs, OPENAI_COMPAT)
-        kwargs = apply_session_affinity_headers(kwargs, OPENAI_COMPAT)
+        kwargs = apply_thinking_level(kwargs, AZURE_OPENAI_COMPAT)
+        kwargs = apply_prompt_cache(kwargs, AZURE_OPENAI_COMPAT)
+        kwargs = apply_session_affinity_headers(kwargs, AZURE_OPENAI_COMPAT)
         kwargs = apply_request_headers(kwargs)
         stream = await self.async_client.chat.completions.create(
             model=model,
@@ -229,7 +229,7 @@ class AzureOpenAIProvider(Provider):
             **build_token_limit_param(
                 max_tokens,
                 param_name="max_tokens",
-                compat=OPENAI_COMPAT,
+                compat=AZURE_OPENAI_COMPAT,
             ),
             **kwargs,
         )

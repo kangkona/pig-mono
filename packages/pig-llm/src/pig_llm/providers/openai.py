@@ -135,7 +135,9 @@ class OpenAIProvider(Provider):
     ) -> Response:
         """Generate a completion."""
         compat = self._compat(model)
+        kwargs["model"] = model
         kwargs = apply_thinking_level(kwargs, compat)
+        kwargs.pop("model", None)
         kwargs = apply_prompt_cache(kwargs, compat)
         kwargs = apply_session_affinity_headers(kwargs, compat)
         kwargs = apply_request_headers(kwargs)
@@ -174,7 +176,9 @@ class OpenAIProvider(Provider):
     ) -> Iterator[StreamChunk]:
         """Stream a completion."""
         compat = self._compat(model)
+        kwargs["model"] = model
         kwargs = apply_thinking_level(kwargs, compat)
+        kwargs.pop("model", None)
         kwargs = apply_prompt_cache(kwargs, compat)
         kwargs = apply_session_affinity_headers(kwargs, compat)
         kwargs = apply_request_headers(kwargs)
@@ -211,7 +215,9 @@ class OpenAIProvider(Provider):
     ) -> Response:
         """Async generate a completion."""
         compat = self._compat(model)
+        kwargs["model"] = model
         kwargs = apply_thinking_level(kwargs, compat)
+        kwargs.pop("model", None)
         kwargs = apply_prompt_cache(kwargs, compat)
         kwargs = apply_session_affinity_headers(kwargs, compat)
         kwargs = apply_request_headers(kwargs)
@@ -250,7 +256,9 @@ class OpenAIProvider(Provider):
     ) -> AsyncIterator[StreamChunk]:
         """Async stream a completion."""
         compat = self._compat(model)
+        kwargs["model"] = model
         kwargs = apply_thinking_level(kwargs, compat)
+        kwargs.pop("model", None)
         kwargs = apply_prompt_cache(kwargs, compat)
         kwargs = apply_session_affinity_headers(kwargs, compat)
         kwargs = apply_request_headers(kwargs)

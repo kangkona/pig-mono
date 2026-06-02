@@ -42,6 +42,8 @@ class ProviderCompat:
     supports_long_cache_retention: bool = True
     send_session_affinity_headers: bool = False
     thinking_level_map: dict[str, Any | None] = field(default_factory=dict)
+    reasoning_effort_models: frozenset[str] = frozenset()
+    reasoning_effort_level_map: dict[str, dict[str, str | None]] = field(default_factory=dict)
     unsupported_params: frozenset[str] = frozenset()
     context_overflow_patterns: tuple[re.Pattern[str], ...] = ()
     quota_or_billing_patterns: tuple[re.Pattern[str], ...] = ()
@@ -103,6 +105,21 @@ OPENAI_COMPAT = ProviderCompat(
     context_overflow_patterns=COMMON_CONTEXT_OVERFLOW_PATTERNS,
     quota_or_billing_patterns=COMMON_QUOTA_OR_BILLING_PATTERNS,
     retryable_patterns=COMMON_RETRYABLE_PATTERNS,
+)
+
+AZURE_OPENAI_COMPAT = ProviderCompat(
+    system_role_policy=OPENAI_COMPAT.system_role_policy,
+    max_output_token_policy=OPENAI_COMPAT.max_output_token_policy,
+    token_limit_field=OPENAI_COMPAT.token_limit_field,
+    supports_long_cache_retention=OPENAI_COMPAT.supports_long_cache_retention,
+    send_session_affinity_headers=True,
+    thinking_level_map=OPENAI_COMPAT.thinking_level_map,
+    reasoning_effort_models=OPENAI_COMPAT.reasoning_effort_models,
+    reasoning_effort_level_map=OPENAI_COMPAT.reasoning_effort_level_map,
+    unsupported_params=OPENAI_COMPAT.unsupported_params,
+    context_overflow_patterns=OPENAI_COMPAT.context_overflow_patterns,
+    quota_or_billing_patterns=OPENAI_COMPAT.quota_or_billing_patterns,
+    retryable_patterns=OPENAI_COMPAT.retryable_patterns,
 )
 
 OPENROUTER_COMPAT = ProviderCompat(
@@ -168,6 +185,16 @@ TOGETHER_COMPAT = ProviderCompat(
     token_limit_field="max_tokens",
     supports_long_cache_retention=False,
     send_session_affinity_headers=True,
+    reasoning_effort_models=frozenset({"deepseek-ai/deepseek-v4-pro"}),
+    reasoning_effort_level_map={
+        "deepseek-ai/deepseek-v4-pro": {
+            "minimal": None,
+            "low": None,
+            "medium": None,
+            "high": "high",
+            "xhigh": None,
+        }
+    },
     thinking_level_map={
         "off": {"enabled": False},
         "minimal": {"enabled": True},
@@ -179,6 +206,21 @@ TOGETHER_COMPAT = ProviderCompat(
     context_overflow_patterns=COMMON_CONTEXT_OVERFLOW_PATTERNS,
     quota_or_billing_patterns=COMMON_QUOTA_OR_BILLING_PATTERNS,
     retryable_patterns=COMMON_RETRYABLE_PATTERNS,
+)
+
+GROQ_COMPAT = ProviderCompat(
+    system_role_policy=OPENAI_COMPAT.system_role_policy,
+    max_output_token_policy=OPENAI_COMPAT.max_output_token_policy,
+    token_limit_field=OPENAI_COMPAT.token_limit_field,
+    supports_long_cache_retention=OPENAI_COMPAT.supports_long_cache_retention,
+    send_session_affinity_headers=True,
+    thinking_level_map=OPENAI_COMPAT.thinking_level_map,
+    reasoning_effort_models=OPENAI_COMPAT.reasoning_effort_models,
+    reasoning_effort_level_map=OPENAI_COMPAT.reasoning_effort_level_map,
+    unsupported_params=OPENAI_COMPAT.unsupported_params,
+    context_overflow_patterns=OPENAI_COMPAT.context_overflow_patterns,
+    quota_or_billing_patterns=OPENAI_COMPAT.quota_or_billing_patterns,
+    retryable_patterns=OPENAI_COMPAT.retryable_patterns,
 )
 
 QWEN_COMPAT = ProviderCompat(
@@ -343,6 +385,8 @@ def apply_thinking_level(kwargs: dict[str, Any], compat: ProviderCompat) -> dict
     """Apply or strip thinking parameters according to compatibility metadata."""
     next_kwargs = dict(kwargs)
     level = next_kwargs.pop("thinking_level", None)
+    model = str(next_kwargs.get("model") or "")
+    model_key = model.lower()
     if level is None:
         return next_kwargs
 
@@ -358,7 +402,7 @@ def apply_thinking_level(kwargs: dict[str, Any], compat: ProviderCompat) -> dict
         next_kwargs.pop("thinking", None)
         return next_kwargs
 
-    if compat is OPENAI_COMPAT:
+    if compat is OPENAI_COMPAT or compat is AZURE_OPENAI_COMPAT or compat is GROQ_COMPAT:
         next_kwargs["reasoning_effort"] = mapped
         next_kwargs.pop("thinking", None)
         next_kwargs.pop("reasoning", None)
@@ -367,6 +411,15 @@ def apply_thinking_level(kwargs: dict[str, Any], compat: ProviderCompat) -> dict
     if compat is TOGETHER_COMPAT:
         next_kwargs["reasoning"] = mapped
         next_kwargs.pop("thinking", None)
+        level_map = compat.reasoning_effort_level_map.get(model_key, {})
+        if model_key in compat.reasoning_effort_models:
+            reasoning_effort = level_map.get(str(level))
+            if reasoning_effort is not None:
+                next_kwargs["reasoning_effort"] = reasoning_effort
+            else:
+                next_kwargs.pop("reasoning_effort", None)
+        else:
+            next_kwargs.pop("reasoning_effort", None)
         return next_kwargs
 
     if compat is QWEN_CHAT_TEMPLATE_COMPAT:
