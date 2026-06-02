@@ -377,6 +377,53 @@ async def test_arun_after_tool_call_exception_becomes_error_tool_result() -> Non
     assert "after failed" in tool_messages[0].content
 
 
+@pytest.mark.asyncio
+async def test_arun_awaits_async_tool_handlers_from_registry() -> None:
+    class FakeChunk:
+        def __init__(self, *, content: str = "", tool_calls=None):
+            self.content = content
+            self.tool_calls = tool_calls
+            self.usage = {}
+
+    class FakeLLM:
+        config = SimpleNamespace(model="fake")
+
+        def __init__(self):
+            self.calls = 0
+
+        async def astream(self, messages, **kwargs):
+            self.calls += 1
+            if self.calls == 1:
+                yield FakeChunk(
+                    tool_calls=[
+                        {
+                            "id": "call-1",
+                            "function": {"name": "async_tool", "arguments": "{}"},
+                        }
+                    ]
+                )
+            else:
+                yield FakeChunk(content="done")
+
+    async def async_tool(args, user_id, meta, cancel=None):
+        await asyncio.sleep(0)
+        return ToolResult(ok=True, data="async-ok")
+
+    agent = Agent(llm=FakeLLM(), tools=[], verbose=False)
+    agent.registry.register(
+        "async_tool",
+        async_tool,
+        {"type": "function", "function": {"name": "async_tool"}},
+        validate=False,
+    )
+
+    response = await agent.arun("go")
+
+    assert response.content == "done"
+    tool_messages = [message for message in agent.history if message.role == "tool"]
+    assert tool_messages[0].content == "async-ok"
+
+
 def test_agent_terminate_tool_result_skips_follow_up_llm_call() -> None:
     class FakeLLM:
         config = SimpleNamespace(model="fake")
@@ -987,3 +1034,62 @@ async def test_respond_stream_after_tool_call_exception_becomes_error_tool_resul
     assert chunks == ["done"]
     tool_messages = [message for message in agent.history if message.role == "tool"]
     assert "after failed" in tool_messages[0].content
+
+
+@pytest.mark.asyncio
+async def test_respond_stream_awaits_async_tool_handlers_from_registry() -> None:
+    class ToolCallChunk:
+        def __init__(self, *, content: str = "", tool_calls=None):
+            self.choices = [
+                SimpleNamespace(
+                    delta=SimpleNamespace(content=content or None, tool_calls=tool_calls),
+                    finish_reason=None,
+                )
+            ]
+
+    class ToolCallDelta:
+        def __init__(self, index: int, *, call_id=None, name=None, arguments=None):
+            self.index = index
+            self.id = call_id
+            self.function = SimpleNamespace(name=name, arguments=arguments)
+
+    class FakeLLM:
+        config = SimpleNamespace(model="fake")
+
+        def __init__(self):
+            self.calls = 0
+
+        def achat_stream(self, messages, tools=None):
+            self.calls += 1
+
+            async def stream():
+                if self.calls == 1:
+                    yield ToolCallChunk(
+                        tool_calls=[
+                            ToolCallDelta(0, call_id="call-1", name="async_tool", arguments="{}")
+                        ]
+                    )
+                else:
+                    yield ToolCallChunk(content="done")
+
+            return stream()
+
+    async def async_tool(args, user_id, meta, cancel=None):
+        await asyncio.sleep(0)
+        return ToolResult(ok=True, data="async-ok")
+
+    agent = Agent(llm=FakeLLM(), tools=[], verbose=False)
+    agent.registry.register(
+        "async_tool",
+        async_tool,
+        {"type": "function", "function": {"name": "async_tool"}},
+        validate=False,
+    )
+
+    chunks = []
+    async for chunk in agent.respond_stream("start"):
+        chunks.append(chunk)
+
+    assert chunks == ["done"]
+    tool_messages = [message for message in agent.history if message.role == "tool"]
+    assert tool_messages[0].content == "async-ok"

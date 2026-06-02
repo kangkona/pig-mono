@@ -31,7 +31,7 @@ class ToolRegistry:
     - Schema/handler/budget consistency validation
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize tool registry."""
         self._handlers: dict[str, Callable] = {}
         self._schemas: dict[str, dict] = {}
@@ -434,7 +434,9 @@ class ToolRegistry:
                 result = await asyncio.wait_for(
                     self._execute_handler(handler, args, user_id, meta, cancel), timeout=timeout
                 )
-                return result
+                if isinstance(result, ToolResult):
+                    return result
+                return ToolResult(ok=True, data=result)
             except asyncio.TimeoutError:
                 last_error = f"Tool execution timed out after {timeout}s"
                 if attempt < max_retries:
@@ -470,13 +472,20 @@ class ToolRegistry:
         Returns:
             ToolResult from handler execution
         """
+        signature = inspect.signature(handler)
+        params = list(signature.parameters)
+
         # Check if handler is async
         if asyncio.iscoroutinefunction(handler):
-            return await handler(args, user_id, meta, cancel)
+            if params[:4] == ["args", "user_id", "meta", "cancel"]:
+                return await handler(args, user_id, meta, cancel)
+            return await handler(**args)
         else:
             # Run sync handler in executor
             loop = asyncio.get_event_loop()
-            return await loop.run_in_executor(None, handler, args, user_id, meta, cancel)
+            if params[:4] == ["args", "user_id", "meta", "cancel"]:
+                return await loop.run_in_executor(None, handler, args, user_id, meta, cancel)
+            return await loop.run_in_executor(None, lambda: handler(**args))
 
     async def execute_batch(
         self,

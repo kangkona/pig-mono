@@ -459,15 +459,15 @@ class Agent:
                             )
                         )
 
-                        # Use enhanced registry execute
-                        if hasattr(self.registry, "execute_sync"):
-                            result = self.registry.execute_sync(tool_name, tool_args)
-                        else:
+                        # Prefer async registry execution so async handlers are awaited.
+                        if hasattr(self.registry, "execute"):
                             result = await self.registry.execute(
                                 tool_call=tool_call_obj,
                                 user_id="default",  # TODO: Make configurable
                                 meta={},
                             )
+                        else:
+                            result = self.registry.execute_sync(tool_name, tool_args)
 
                         tool_results.append(
                             {
@@ -892,10 +892,18 @@ class Agent:
                 self.on_tool_start(tool_name, tool_args)
 
             try:
-                if hasattr(self.registry, "execute_sync"):
-                    result = self.registry.execute_sync(tool_name, tool_args)
+                if hasattr(self.registry, "execute"):
+                    from types import SimpleNamespace
+
+                    tool_call_obj = SimpleNamespace(
+                        function=SimpleNamespace(
+                            name=tool_name,
+                            arguments=tool_args_str,
+                        )
+                    )
+                    result = await self.registry.execute(tool_call_obj, "default", {}, cancel)
                 else:
-                    result = self._as_tool_result(self.registry.execute(tool_name, **tool_args))
+                    result = self.registry.execute_sync(tool_name, tool_args)
                 self.history.append(
                     Message(
                         role="tool",
