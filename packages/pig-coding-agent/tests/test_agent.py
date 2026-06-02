@@ -286,6 +286,64 @@ def test_coding_agent_uses_project_config_session_dir_when_env_missing(mock_llm,
     assert saved.parent == session_dir
 
 
+def test_coding_agent_uses_global_config_session_dir_when_project_missing(
+    mock_llm, tmp_path, monkeypatch
+):
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    session_dir = tmp_path / "global-sessions"
+    fake_home = tmp_path / "home"
+    (fake_home / ".agents").mkdir(parents=True)
+    monkeypatch.setenv("HOME", str(fake_home))
+    ((fake_home / ".agents") / "config.json").write_text(
+        json.dumps(
+            {
+                "session_dir": str(session_dir),
+            }
+        )
+    )
+
+    agent = CodingAgent(
+        llm=mock_llm,
+        workspace=str(workspace),
+        verbose=False,
+    )
+
+    saved = agent.session.save()
+    assert saved.parent == session_dir
+
+
+def test_coding_agent_project_config_session_dir_overrides_global_config(
+    mock_llm, tmp_path, monkeypatch
+):
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    global_session_dir = tmp_path / "global-sessions"
+    project_session_dir = tmp_path / "project-sessions"
+    fake_home = tmp_path / "home"
+    (fake_home / ".agents").mkdir(parents=True)
+    monkeypatch.setenv("HOME", str(fake_home))
+    ((fake_home / ".agents") / "config.json").write_text(
+        json.dumps(
+            {
+                "session_dir": str(global_session_dir),
+            }
+        )
+    )
+    agents_dir = workspace / ".agents"
+    agents_dir.mkdir()
+    (agents_dir / "config.json").write_text(json.dumps({"session_dir": str(project_session_dir)}))
+
+    agent = CodingAgent(
+        llm=mock_llm,
+        workspace=str(workspace),
+        verbose=False,
+    )
+
+    saved = agent.session.save()
+    assert saved.parent == project_session_dir
+
+
 def test_coding_agent_fork_keeps_explicit_session_id(mock_llm, temp_workspace):
     source = Session(name="existing", workspace=str(temp_workspace), auto_save=False)
     source.add_message("user", "hello")
