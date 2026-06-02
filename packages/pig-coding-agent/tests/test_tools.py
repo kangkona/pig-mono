@@ -169,6 +169,31 @@ def test_shell_tools_timeout():
     assert "timed out" in result.lower() or "error" in result.lower()
 
 
+def test_shell_tools_truncates_large_line_output_without_counting_trailing_newline_twice():
+    """Large single-line output should trim to a stable tail without phantom newline lines."""
+    tools = ShellTools()
+
+    payload = "X" * 300_000 + "\n"
+    result = tools.run_command(f"printf '{payload}'")
+
+    assert "[Output truncated" in result
+    assert "300001" not in result
+    assert result.rstrip("\n").endswith("X" * 2000)
+
+
+def test_shell_tools_truncates_many_lines_without_extra_trailing_newline_line():
+    """Line-limited output should ignore the final trailing newline as an extra line."""
+    tools = ShellTools()
+
+    command = "python3 - <<'PY'\nfor i in range(1, 4001):\n    print(f\"line-{i:04d}\")\nPY"
+    result = tools.run_command(command)
+
+    assert "[Showing lines 2001-4000 of 4000." in result
+    assert "line-2001" in result
+    assert "line-4000" in result
+    assert "4001" not in result
+
+
 def test_shell_tools_git_status():
     """Test git status command."""
     tools = ShellTools()

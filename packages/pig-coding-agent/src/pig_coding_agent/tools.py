@@ -5,6 +5,38 @@ from pathlib import Path
 
 from pig_agent_core import tool
 
+MAX_COMMAND_OUTPUT_BYTES = 64_000
+MAX_COMMAND_OUTPUT_LINES = 2_000
+
+
+def _truncate_command_output(output: str) -> str:
+    """Truncate shell output to a predictable tail-focused summary."""
+    if not output:
+        return output
+
+    had_trailing_newline = output.endswith("\n")
+    logical_output = output[:-1] if had_trailing_newline else output
+    lines = logical_output.split("\n") if logical_output else []
+
+    if len(lines) > MAX_COMMAND_OUTPUT_LINES:
+        kept = lines[-MAX_COMMAND_OUTPUT_LINES:]
+        start_line = len(lines) - MAX_COMMAND_OUTPUT_LINES + 1
+        truncated = "\n".join(kept)
+        return (
+            f"{truncated}\n"
+            f"[Showing lines {start_line}-{len(lines)} of {len(lines)}. Full output truncated.]"
+        )
+
+    encoded = logical_output.encode("utf-8")
+    if len(encoded) > MAX_COMMAND_OUTPUT_BYTES:
+        tail = encoded[-MAX_COMMAND_OUTPUT_BYTES:]
+        while tail and (tail[0] & 0xC0) == 0x80:
+            tail = tail[1:]
+        truncated = tail.decode("utf-8", errors="ignore")
+        return f"[Output truncated to last {MAX_COMMAND_OUTPUT_BYTES} bytes]\n{truncated}"
+
+    return output
+
 
 class FileTools:
     """File operation tools."""
@@ -291,7 +323,7 @@ class ShellTools:
                 output += f"\nErrors:\n{result.stderr}"
             if exclude_from_context:
                 return "[Output excluded from model context]"
-            return output
+            return _truncate_command_output(output)
         except subprocess.TimeoutExpired:
             return "Error: Command timed out"
         except Exception as e:
