@@ -191,3 +191,31 @@ def test_session_save_uses_session_id_in_filename_when_name_reused(tmp_path):
     assert path1 != path2
     assert path1.exists()
     assert path2.exists()
+
+
+def test_session_save_uses_env_session_dir(tmp_path, monkeypatch):
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    session_dir = tmp_path / "custom-sessions"
+    monkeypatch.setenv("PIG_CODING_AGENT_SESSION_DIR", str(session_dir))
+
+    session = Session(name="test", workspace=str(workspace), auto_save=False)
+    path = session.save()
+
+    assert path.parent == session_dir
+    assert path.exists()
+
+
+def test_session_load_preserves_workspace_from_header_with_env_session_dir(tmp_path, monkeypatch):
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    session_dir = tmp_path / "custom-sessions"
+    monkeypatch.setenv("PIG_CODING_AGENT_SESSION_DIR", str(session_dir))
+
+    session = Session(name="test", workspace=str(workspace), auto_save=False)
+    session.add_message("user", "hello")
+    path = session.save()
+
+    loaded = Session.load(path)
+
+    assert loaded.workspace == workspace

@@ -1,10 +1,22 @@
 """Session manager for listing and selecting sessions."""
 
+import os
 import re
 from datetime import datetime
 from pathlib import Path
 
 _SESSION_ID_RE = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$")
+_SESSION_DIR_ENV = "PIG_CODING_AGENT_SESSION_DIR"
+
+
+def resolve_session_dir(workspace: Path | None = None) -> Path:
+    """Resolve the effective session directory for a workspace."""
+    env_dir = os.environ.get(_SESSION_DIR_ENV)
+    if env_dir:
+        return Path(env_dir).expanduser().resolve()
+
+    base = Path(workspace) if workspace else Path.cwd()
+    return base / ".sessions"
 
 
 def assert_valid_session_id(session_id: str) -> None:
@@ -30,6 +42,7 @@ class SessionInfo:
         self.name = self.file_stem
         self.modified = datetime.fromtimestamp(path.stat().st_mtime)
         self.size = path.stat().st_size
+        self.workspace: Path | None = None
 
         # Try to load header for more info
         try:
@@ -39,6 +52,9 @@ class SessionInfo:
                 header = json.loads(f.readline())
                 self.session_name = header.get("name", self.file_stem)
                 self.name = self.session_name
+                workspace = header.get("workspace")
+                if isinstance(workspace, str) and workspace:
+                    self.workspace = Path(workspace).expanduser().resolve()
                 self.created = datetime.fromisoformat(header["created_at"])
                 self.entries = header.get("metadata", {}).get("entries", 0)
         except Exception:
@@ -60,7 +76,8 @@ class SessionManager:
             workspace: Workspace directory
         """
         self.workspace = Path(workspace) if workspace else Path.cwd()
-        self.sessions_dir = self.workspace / ".sessions"
+        self.sessions_dir = resolve_session_dir(self.workspace)
+        self._filter_by_workspace = os.environ.get(_SESSION_DIR_ENV) is not None
 
     def list_sessions(self, limit: int | None = None) -> list[SessionInfo]:
         """List available sessions.
@@ -78,6 +95,11 @@ class SessionManager:
         for session_file in self.sessions_dir.glob("*.jsonl"):
             try:
                 info = SessionInfo(session_file)
+                if self._filter_by_workspace and info.workspace not in {
+                    None,
+                    self.workspace.resolve(),
+                }:
+                    continue
                 sessions.append(info)
             except Exception as e:
                 print(f"Warning: Failed to load session info from {session_file}: {e}")

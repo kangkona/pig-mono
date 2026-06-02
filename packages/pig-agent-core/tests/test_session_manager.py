@@ -161,6 +161,40 @@ def test_session_manager_find_missing(temp_workspace):
     assert found is None
 
 
+def test_session_manager_uses_env_session_dir(tmp_path, monkeypatch):
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    session_dir = tmp_path / "custom-sessions"
+    monkeypatch.setenv("PIG_CODING_AGENT_SESSION_DIR", str(session_dir))
+
+    mgr = SessionManager(workspace)
+
+    assert mgr.sessions_dir == session_dir
+
+
+def test_session_manager_scopes_custom_session_dir_to_current_workspace(tmp_path, monkeypatch):
+    workspace1 = tmp_path / "workspace-1"
+    workspace2 = tmp_path / "workspace-2"
+    workspace1.mkdir()
+    workspace2.mkdir()
+    session_dir = tmp_path / "custom-sessions"
+    monkeypatch.setenv("PIG_CODING_AGENT_SESSION_DIR", str(session_dir))
+
+    session1 = Session(name="one", workspace=str(workspace1), auto_save=False)
+    session1.add_message("user", "hello")
+    session1.save()
+
+    session2 = Session(name="two", workspace=str(workspace2), auto_save=False)
+    session2.add_message("user", "world")
+    session2.save()
+
+    mgr1 = SessionManager(workspace1)
+    sessions = mgr1.list_sessions()
+
+    assert [session.name for session in sessions] == ["one"]
+    assert mgr1.find_session("two") is None
+
+
 def test_session_manager_delete(temp_workspace):
     """Test deleting a session."""
     session = Session(name="delete-me", workspace=str(temp_workspace), auto_save=False)

@@ -193,6 +193,22 @@ def test_coding_agent_creates_new_session_when_session_id_missing(mock_llm, temp
     assert agent.session.id == "manual-session-id"
 
 
+def test_coding_agent_uses_env_session_dir_for_new_sessions(mock_llm, tmp_path, monkeypatch):
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    session_dir = tmp_path / "custom-sessions"
+    monkeypatch.setenv("PIG_CODING_AGENT_SESSION_DIR", str(session_dir))
+
+    agent = CodingAgent(
+        llm=mock_llm,
+        workspace=str(workspace),
+        verbose=False,
+    )
+
+    saved = agent.session.save()
+    assert saved.parent == session_dir
+
+
 def test_coding_agent_fork_keeps_explicit_session_id(mock_llm, temp_workspace):
     source = Session(name="existing", workspace=str(temp_workspace), auto_save=False)
     source.add_message("user", "hello")

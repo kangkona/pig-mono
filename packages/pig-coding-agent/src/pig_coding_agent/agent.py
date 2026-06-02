@@ -64,6 +64,7 @@ class CodingAgent:
         self.llm = llm or LLM()
         self.verbose = verbose
         self.excluded_tools = set(excluded_tools or set())
+        self.sessions_dir = SessionManager(self.workspace).sessions_dir
         self._session_start_reason = "startup"
         self._previous_session_file: str | None = None
 
@@ -297,7 +298,7 @@ When generating code, provide clean, well-documented, production-ready code.
         shutdown_reason = "normal"
 
         # Set up interactive prompt with completion and history
-        history_file = str(self.workspace / ".sessions" / ".input_history")
+        history_file = str(self.sessions_dir / ".input_history")
         prompt = InteractivePrompt(
             commands=self._build_commands(),
             workspace=str(self.workspace),
@@ -612,7 +613,7 @@ Tools: {len(self.agent.registry)}
 
         if not sessions:
             self.ui.system("No sessions found")
-            self.ui.system(f"Sessions are saved to: {self.workspace}/.sessions/")
+            self.ui.system(f"Sessions are saved to: {self.sessions_dir}")
             return
 
         sessions_text = session_mgr.format_session_list(sessions)
@@ -773,7 +774,7 @@ Files are automatically read and added to context!
 
 **Features:**
 
-• Sessions auto-save to .sessions/
+• Sessions auto-save to the resolved session directory
 • Extensions auto-load from .agents/extensions/
 • Skills auto-discover from .agents/skills/
 • Prompts auto-load from .agents/prompts/

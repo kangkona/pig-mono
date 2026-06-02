@@ -9,6 +9,7 @@ from typing import Any, cast
 
 from pydantic import BaseModel, Field
 
+from .session_manager import resolve_session_dir
 from .tools import ToolResult
 
 
@@ -364,8 +365,8 @@ class Session:
         """
         if path is None:
             # Auto-generate path
-            session_dir = self.workspace / ".sessions"
-            session_dir.mkdir(exist_ok=True)
+            session_dir = resolve_session_dir(self.workspace)
+            session_dir.mkdir(parents=True, exist_ok=True)
             path = session_dir / f"{self.name}-{self.id[:8]}.jsonl"
 
         metadata = dict(self.metadata)
@@ -375,6 +376,7 @@ class Session:
         data = {
             "id": self.id,
             "name": self.name,
+            "workspace": str(self.workspace),
             "created_at": self.created_at.isoformat(),
             "updated_at": self.updated_at.isoformat(),
             "metadata": metadata,
@@ -405,7 +407,13 @@ class Session:
             tree = SessionTree.from_jsonl_iter(f)
 
         # Create session
-        session = cls(name=header["name"], workspace=str(path.parent.parent), auto_save=False)
+        workspace = header.get("workspace")
+        resolved_workspace = (
+            str(Path(workspace).expanduser())
+            if isinstance(workspace, str) and workspace
+            else str(path.parent.parent)
+        )
+        session = cls(name=header["name"], workspace=resolved_workspace, auto_save=False)
 
         session.id = header["id"]
         session.created_at = datetime.fromisoformat(header["created_at"])
