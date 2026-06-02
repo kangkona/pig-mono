@@ -186,6 +186,13 @@ def test_alacritty_terminal_supports_hyperlinks() -> None:
     assert supports_osc8_hyperlinks({"TERM_PROGRAM": "alacritty"})
 
 
+def test_windows_terminal_supports_hyperlinks_without_term_program() -> None:
+    linked = hyperlink("file.py", "file:///tmp/file.py", env={"WT_SESSION": "1"})
+
+    assert linked.startswith("\033]8;;file:///tmp/file.py")
+    assert linked.endswith("\033]8;;\033\\")
+
+
 def test_terminal_size_uses_environment_fallback() -> None:
     assert terminal_size(default=(1, 1)) in {(1, 1), terminal_size(default=(1, 1))}
     assert supports_osc8_hyperlinks({"WT_SESSION": "1"})
