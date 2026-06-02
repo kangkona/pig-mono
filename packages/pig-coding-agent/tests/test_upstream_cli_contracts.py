@@ -7,8 +7,11 @@ import json
 from unittest.mock import Mock, patch
 
 import click
+import typer
 from pig_agent_core import ExtensionManager
 from pig_coding_agent.cli import JsonLineWriter, main, run_rpc_mode
+
+CLI_EXIT_EXCEPTIONS = (typer.Exit, click.exceptions.Exit, SystemExit)
 
 
 def test_json_line_writer_emits_strict_jsonl() -> None:
@@ -70,7 +73,7 @@ def test_main_rejects_empty_startup_name(tmp_path):
                 workspace=tmp_path,
                 name="   ",
             )
-        except (click.exceptions.Exit, SystemExit) as exc:
+        except CLI_EXIT_EXCEPTIONS as exc:
             assert getattr(exc, "exit_code", getattr(exc, "code", None)) == 1
         else:
             raise AssertionError("main should reject empty --name values")
@@ -94,7 +97,7 @@ def test_main_rejects_session_id_with_conflicting_session_selector(tmp_path):
                 session_id="fixed-session",
                 session_name="resume-me",
             )
-        except (click.exceptions.Exit, SystemExit) as exc:
+        except CLI_EXIT_EXCEPTIONS as exc:
             assert getattr(exc, "exit_code", getattr(exc, "code", None)) == 1
         else:
             raise AssertionError("main should reject conflicting session selection flags")
@@ -119,7 +122,7 @@ def test_main_rejects_invalid_session_id(tmp_path):
                 workspace=tmp_path,
                 session_id="-bad",
             )
-        except (click.exceptions.Exit, SystemExit) as exc:
+        except CLI_EXIT_EXCEPTIONS as exc:
             assert getattr(exc, "exit_code", getattr(exc, "code", None)) == 1
         else:
             raise AssertionError("main should reject invalid session ids")
@@ -146,7 +149,7 @@ def test_main_rejects_fork_with_conflicting_session_selector(tmp_path):
                 fork="source-1234",
                 session_name="resume-me",
             )
-        except (click.exceptions.Exit, SystemExit) as exc:
+        except CLI_EXIT_EXCEPTIONS as exc:
             assert getattr(exc, "exit_code", getattr(exc, "code", None)) == 1
         else:
             raise AssertionError("main should reject conflicting fork/session selectors")
