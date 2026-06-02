@@ -359,6 +359,38 @@ def test_json_mode_does_not_print_rich_startup_to_stdout(
 @patch.dict("os.environ", {"OPENAI_API_KEY": "test-key"})
 @patch("pig_coding_agent.cli.LLM")
 @patch("pig_coding_agent.cli.CodingAgent")
+def test_default_mode_merges_piped_stdin_into_initial_prompt(
+    mock_agent_class, mock_llm_class, tmp_path
+):
+    ctx = Mock(invoked_subcommand=None)
+    mock_llm = Mock()
+    mock_llm.config = Mock(model="test-model")
+    mock_llm_class.return_value = mock_llm
+    mock_agent = Mock()
+    mock_agent.session = None
+    mock_agent.skill_manager = None
+    mock_agent.extension_manager = None
+    mock_agent.run_interactive = Mock()
+    mock_agent.agent.run = Mock(return_value=Mock(content="done"))
+    mock_agent_class.return_value = mock_agent
+
+    fake_stdin = io.StringIO("stdin says hi\n")
+
+    with (
+        patch("pig_coding_agent.cli.console") as console,
+        patch("select.select", return_value=([object()], [], [])),
+        patch("sys.stdin", fake_stdin),
+    ):
+        main(ctx=ctx, provider="openai", workspace=tmp_path)
+
+    mock_agent.agent.run.assert_called_once_with("stdin says hi")
+    mock_agent.run_interactive.assert_not_called()
+    console.print.assert_not_called()
+
+
+@patch.dict("os.environ", {"OPENAI_API_KEY": "test-key"})
+@patch("pig_coding_agent.cli.LLM")
+@patch("pig_coding_agent.cli.CodingAgent")
 def test_rpc_mode_reserves_stdout_by_disabling_verbose_startup(
     mock_agent_class, mock_llm_class, tmp_path
 ):

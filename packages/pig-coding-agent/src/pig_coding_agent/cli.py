@@ -3,8 +3,9 @@
 import json
 import os
 import sys
+from io import UnsupportedOperation
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeVar
 
 import typer
 from pig_agent_core import assert_valid_session_id
@@ -20,9 +21,28 @@ app = typer.Typer(
     invoke_without_command=True,
 )
 console = Console()
+T = TypeVar("T")
 
 
-def _resolve_option_value[T](value: T) -> T | None:
+def _read_piped_stdin() -> str | None:
+    """Return piped stdin content when available in non-protocol modes."""
+    import select
+
+    try:
+        ready = select.select([sys.stdin], [], [], 0.0)[0]
+    except (OSError, ValueError, UnsupportedOperation):
+        return None
+
+    if not ready:
+        return None
+
+    data = sys.stdin.read()
+    if not data:
+        return None
+    return data.rstrip("\n")
+
+
+def _resolve_option_value(value: T) -> T | None:
     """Unwrap direct-call Typer OptionInfo defaults during tests."""
     if isinstance(value, typer.models.OptionInfo):
         return None
@@ -266,19 +286,29 @@ def main(
         excluded_tools=_parse_excluded_tools(resolved_exclude_tools),
     )
 
+    piped_input = None
     if not protocol_mode:
+        piped_input = _read_piped_stdin()
+
+    if not protocol_mode and piped_input is None:
         console.print("[green]✓ Coding Agent started[/green]")
         console.print(f"Model: [cyan]{llm.config.model}[/cyan]")
         console.print(f"Workspace: [cyan]{workspace.resolve()}[/cyan]")
 
-    if not protocol_mode and agent.session:
+    if not protocol_mode and piped_input is None and agent.session:
         console.print(f"Session: [cyan]{agent.session.name}[/cyan]")
 
-    if not protocol_mode and agent.skill_manager and len(agent.skill_manager) > 0:
+    if (
+        not protocol_mode
+        and piped_input is None
+        and agent.skill_manager
+        and len(agent.skill_manager) > 0
+    ):
         console.print(f"Skills: [cyan]{len(agent.skill_manager)} loaded[/cyan]")
 
     if (
         not protocol_mode
+        and piped_input is None
         and agent.extension_manager
         and len(agent.extension_manager.extensions) > 0
     ):
@@ -290,6 +320,11 @@ def main(
     elif mode == "rpc":
         run_rpc_mode(agent)
     else:
+        if piped_input:
+            response = agent.agent.run(piped_input)
+            if response.content:
+                print(response.content)
+            return
         console.print()
         console.print("[dim]Type /help for commands, /exit to quit[/dim]")
         console.print()
