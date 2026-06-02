@@ -39,6 +39,26 @@ def _display_width_char(char: str) -> int:
     return 2 if unicodedata.east_asian_width(char) in {"W", "F"} else 1
 
 
+def _tokenize_terminal_text(text: str) -> list[tuple[str, str]]:
+    """Split text into ANSI/OSC control tokens and visible text tokens."""
+    tokens: list[tuple[str, str]] = []
+    i = 0
+    while i < len(text):
+        ansi_match = ANSI_RE.match(text, i)
+        if ansi_match:
+            tokens.append(("control", ansi_match.group(0)))
+            i = ansi_match.end()
+            continue
+        osc_match = OSC_RE.match(text, i)
+        if osc_match:
+            tokens.append(("control", osc_match.group(0)))
+            i = osc_match.end()
+            continue
+        tokens.append(("text", text[i]))
+        i += 1
+    return tokens
+
+
 def terminal_size(default: tuple[int, int] = (80, 24)) -> tuple[int, int]:
     """Return terminal size with conservative environment fallback."""
     columns = os.environ.get("COLUMNS")
@@ -68,17 +88,20 @@ def safe_wrap(text: str, width: int, *, max_lines: int | None = None) -> list[st
         if visible_length(raw_line) <= width:
             lines.append(raw_line)
         else:
-            plain = strip_terminal_sequences(raw_line)
             wrapped: list[str] = []
             current: list[str] = []
             current_width = 0
-            for char in plain:
-                char_width = _display_width_char(char)
+            for token_type, token_value in _tokenize_terminal_text(raw_line):
+                if token_type == "control":
+                    current.append(token_value)
+                    continue
+
+                char_width = _display_width_char(token_value)
                 if current and current_width + char_width > width:
                     wrapped.append("".join(current))
                     current = []
                     current_width = 0
-                current.append(char)
+                current.append(token_value)
                 current_width += char_width
 
             if current:

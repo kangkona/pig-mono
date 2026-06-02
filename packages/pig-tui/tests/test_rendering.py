@@ -26,6 +26,16 @@ def test_safe_wrap_respects_display_width_for_wide_unicode() -> None:
     assert wrapped == ["你好", "世界"]
 
 
+def test_safe_wrap_preserves_ansi_sequences_while_wrapping() -> None:
+    wrapped = safe_wrap("\x1b[31m你好世界\x1b[0m", 4)
+
+    assert wrapped[0].startswith("\x1b[31m")
+    assert wrapped[-1].endswith("\x1b[0m")
+    stripped_parts = [segment.replace("\x1b[31m", "").replace("\x1b[0m", "") for segment in wrapped]
+    stripped = "".join(stripped_parts)
+    assert stripped == "你好世界"
+
+
 def test_safe_wrap_keeps_combining_marks_with_base_character() -> None:
     wrapped = safe_wrap("e\u0301e\u0301e\u0301", 2)
 
