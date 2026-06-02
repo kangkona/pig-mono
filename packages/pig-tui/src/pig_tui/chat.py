@@ -25,9 +25,10 @@ class StreamWriter:
 
     def write(self, text: str) -> None:
         """Write text to stream."""
-        self.buffer.append(text)
+        normalized = normalize_terminal_output(text)
+        self.buffer.append(normalized)
         # Print immediately for streaming effect
-        self.console.print(text, style=self.style, end="")
+        self.console.print(normalized, style=self.style, end="")
         sys.stdout.flush()
 
     def __enter__(self) -> "StreamWriter":

@@ -88,6 +88,18 @@ def test_chat_ui_system_message_normalizes_thai_and_lao_am(mock_console):
 
 
 @patch("pig_tui.chat.Console")
+def test_assistant_stream_normalizes_thai_and_lao_am(mock_console):
+    chat = ChatUI()
+
+    with chat.assistant_stream() as writer:
+        writer.write("ำabc ຳdef")
+
+    stream_call = chat.console.print.call_args_list[0]
+    assert stream_call.args == ("ําabc ໍາdef",)
+    assert stream_call.kwargs["end"] == ""
+
+
+@patch("pig_tui.chat.Console")
 def test_chat_ui_error_message(mock_console):
     """Test displaying error message."""
     chat = ChatUI()
