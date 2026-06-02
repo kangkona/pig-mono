@@ -105,6 +105,32 @@ def test_main_rejects_session_id_with_conflicting_session_selector(tmp_path):
 
 
 @patch.dict("os.environ", {"OPENAI_API_KEY": "test-key"})
+def test_main_rejects_invalid_session_id(tmp_path):
+    ctx = Mock(invoked_subcommand=None)
+
+    with (
+        patch("pig_coding_agent.cli.console") as console,
+        patch("pig_coding_agent.cli.LLM"),
+    ):
+        try:
+            main(
+                ctx=ctx,
+                provider="openai",
+                workspace=tmp_path,
+                session_id="-bad",
+            )
+        except (click.exceptions.Exit, SystemExit) as exc:
+            assert getattr(exc, "exit_code", getattr(exc, "code", None)) == 1
+        else:
+            raise AssertionError("main should reject invalid session ids")
+
+    console.print.assert_any_call(
+        "[red]Error: Session id must be non-empty, contain only alphanumeric "
+        "characters, '-', '_', and '.', and start and end with an alphanumeric character[/red]"
+    )
+
+
+@patch.dict("os.environ", {"OPENAI_API_KEY": "test-key"})
 @patch("pig_coding_agent.cli.LLM")
 @patch("pig_coding_agent.cli.CodingAgent")
 def test_main_passes_explicit_compat_mode_to_llm(mock_agent_class, mock_llm_class, tmp_path):

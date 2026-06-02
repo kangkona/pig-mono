@@ -1,7 +1,19 @@
 """Session manager for listing and selecting sessions."""
 
+import re
 from datetime import datetime
 from pathlib import Path
+
+_SESSION_ID_RE = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$")
+
+
+def assert_valid_session_id(session_id: str) -> None:
+    """Validate session ids used for automation and explicit session selection."""
+    if not _SESSION_ID_RE.fullmatch(session_id):
+        raise ValueError(
+            "Session id must be non-empty, contain only alphanumeric characters, '-', '_', "
+            "and '.', and start and end with an alphanumeric character"
+        )
 
 
 class SessionInfo:

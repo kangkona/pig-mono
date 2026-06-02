@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 import typer
+from pig_agent_core import assert_valid_session_id
 from pig_llm import LLM
 from rich.console import Console
 
@@ -78,6 +79,12 @@ def _validate_session_selector_flags(
             f"[red]Error: --session-id cannot be combined with {', '.join(conflicting_flags)}[/red]"
         )
         raise typer.Exit(1)
+
+    try:
+        assert_valid_session_id(session_id)
+    except ValueError as exc:
+        console.print(f"[red]Error: {exc}[/red]")
+        raise typer.Exit(1) from exc
 
 
 def _validate_startup_name(name: str | None) -> None:

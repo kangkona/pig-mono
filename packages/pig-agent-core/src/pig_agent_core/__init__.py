@@ -29,7 +29,7 @@ from .registry import ToolRegistry
 from .resilience.profile import FailoverReason, ProfileManager, classify_failure
 from .resilience.retry import ResilienceExhaustedError, resilient_call, resilient_streaming_call
 from .session import Session, SessionEntry, SessionTree
-from .session_manager import SessionInfo, SessionManager
+from .session_manager import SessionInfo, SessionManager, assert_valid_session_id
 from .share import GistSharer
 from .skills import Skill, SkillManager
 from .token_counter import count_tokens
@@ -90,6 +90,7 @@ __all__ = [
     "SessionEntry",
     "SessionManager",
     "SessionInfo",
+    "assert_valid_session_id",
     # Extensions
     "ExtensionAPI",
     "ExtensionManager",
