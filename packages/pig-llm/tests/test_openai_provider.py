@@ -939,6 +939,50 @@ def test_custom_opencode_zen_grok_build_omits_unsupported_off_thinking() -> None
     assert "reasoning_effort" not in sync_create.call_args.kwargs
 
 
+def test_custom_opencode_zen_deepseek_v4_flash_omits_unsupported_medium_thinking() -> None:
+    sync_create = Mock(return_value=_completion_response())
+    provider = _provider_with_clients(
+        sync_create,
+        AsyncMock(),
+        Config(
+            provider="openai",
+            api_key="test-key",
+            base_url="https://opencode.ai/zen/v1",
+        ),
+    )
+
+    provider.complete(
+        _messages(),
+        model="deepseek-v4-flash",
+        thinking_level="medium",
+    )
+
+    assert "thinking" not in sync_create.call_args.kwargs
+    assert "reasoning_effort" not in sync_create.call_args.kwargs
+
+
+def test_custom_opencode_zen_deepseek_v4_flash_maps_xhigh_reasoning_to_max() -> None:
+    sync_create = Mock(return_value=_completion_response())
+    provider = _provider_with_clients(
+        sync_create,
+        AsyncMock(),
+        Config(
+            provider="openai",
+            api_key="test-key",
+            base_url="https://opencode.ai/zen/v1",
+        ),
+    )
+
+    provider.complete(
+        _messages(),
+        model="deepseek-v4-flash",
+        thinking_level="xhigh",
+    )
+
+    assert sync_create.call_args.kwargs["thinking"] == {"type": "enabled"}
+    assert sync_create.call_args.kwargs["reasoning_effort"] == "max"
+
+
 @pytest.mark.asyncio
 async def test_acomplete_sends_max_completion_tokens_to_openai() -> None:
     async_create = AsyncMock(return_value=_completion_response())
