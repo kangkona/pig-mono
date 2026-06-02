@@ -607,6 +607,56 @@ async def test_respond_stream_emits_agent_end_success_event() -> None:
 
 
 @pytest.mark.asyncio
+async def test_respond_stream_success_drains_followup_queued_from_agent_end() -> None:
+    class FakeChunk:
+        def __init__(self, content: str):
+            self.choices = [
+                SimpleNamespace(
+                    delta=SimpleNamespace(content=content, tool_calls=None),
+                    finish_reason=None,
+                )
+            ]
+
+    class FakeLLM:
+        config = SimpleNamespace(model="fake")
+
+        def __init__(self):
+            self.messages: list[str] = []
+
+        def achat_stream(self, messages, tools=None):
+            latest = messages[-1].content
+            self.messages.append(latest)
+
+            async def stream():
+                yield FakeChunk(f"reply:{latest}")
+
+            return stream()
+
+    agent_ref: dict[str, Agent] = {}
+    queued = {"done": False}
+
+    def on_event(event):
+        if (
+            event.type.value == "agent_end"
+            and event.data.get("success") is True
+            and not queued["done"]
+        ):
+            queued["done"] = True
+            agent_ref["agent"].message_queue.add_followup("follow-from-stream-end")
+
+    llm = FakeLLM()
+    agent = Agent(llm=llm, tools=[], verbose=False, event_callback=on_event)
+    agent_ref["agent"] = agent
+
+    chunks = []
+    async for chunk in agent.respond_stream("start"):
+        chunks.append(chunk)
+
+    assert chunks == ["reply:start", "reply:follow-from-stream-end"]
+    assert llm.messages == ["start", "follow-from-stream-end"]
+
+
+@pytest.mark.asyncio
 async def test_respond_stream_cancellation_emits_agent_end_failure_event() -> None:
     class FakeLLM:
         config = SimpleNamespace(model="fake")
