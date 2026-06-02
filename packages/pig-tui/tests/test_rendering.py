@@ -34,6 +34,18 @@ def test_visible_truncate_ignores_osc8_hyperlink_sequences() -> None:
     assert truncate_visible(text, 4) == "fil…"
 
 
+def test_visible_length_ignores_generic_osc_sequences() -> None:
+    text = "\033]133;A\033\\hello\033]133;B\033\\"
+
+    assert visible_length(text) == len("hello")
+
+
+def test_truncate_visible_ignores_generic_osc_sequences() -> None:
+    text = "\033]133;A\033\\hello world\033]133;B\033\\"
+
+    assert truncate_visible(text, 6) == "hello…"
+
+
 def test_markdown_normalization_preserves_ordered_markers_and_tasks() -> None:
     markdown = "10. keep marker\n- [x] shipped\n- [ ] pending"
 

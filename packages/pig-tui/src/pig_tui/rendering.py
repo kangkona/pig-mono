@@ -12,12 +12,12 @@ import re
 import textwrap
 
 ANSI_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
-OSC8_RE = re.compile(r"\x1b]8;[^\x1b\x07]*?(?:\x1b\\|\x07)")
+OSC_RE = re.compile(r"\x1b\][^\x1b\x07]*?(?:\x1b\\|\x07)")
 
 
 def strip_terminal_sequences(text: str) -> str:
     """Strip non-printing ANSI and OSC 8 hyperlink sequences."""
-    return ANSI_RE.sub("", OSC8_RE.sub("", text))
+    return ANSI_RE.sub("", OSC_RE.sub("", text))
 
 
 def terminal_size(default: tuple[int, int] = (80, 24)) -> tuple[int, int]:
