@@ -3,6 +3,7 @@
 from pig_tui.rendering import (
     hyperlink,
     normalize_markdown_for_terminal,
+    normalize_terminal_output,
     safe_wrap,
     supports_osc8_hyperlinks,
     terminal_size,
@@ -62,6 +63,14 @@ def test_visible_length_counts_wide_unicode_cells() -> None:
 
 def test_visible_length_ignores_zero_width_combining_marks() -> None:
     assert visible_length("e\u0301") == 1
+
+
+def test_normalize_terminal_output_expands_thai_and_lao_am_only_when_present() -> None:
+    assert normalize_terminal_output("ำ") == "ํา"
+    assert normalize_terminal_output("ຳ") == "ໍາ"
+    assert normalize_terminal_output("hello") == "hello"
+    assert visible_length(normalize_terminal_output("ำabc")) == visible_length("ำabc")
+    assert visible_length(normalize_terminal_output("ຳabc")) == visible_length("ຳabc")
 
 
 def test_truncate_visible_preserves_full_wide_character_boundaries() -> None:

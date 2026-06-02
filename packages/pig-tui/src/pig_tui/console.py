@@ -7,7 +7,7 @@ from rich.json import JSON
 from rich.markdown import Markdown
 from rich.syntax import Syntax
 
-from .rendering import normalize_markdown_for_terminal
+from .rendering import normalize_markdown_for_terminal, normalize_terminal_output
 
 
 class Console:
@@ -30,7 +30,10 @@ class Console:
             style: Rich style string (e.g., "bold blue")
             **kwargs: Additional arguments for rich.print
         """
-        self.console.print(*args, style=style, **kwargs)
+        normalized_args = tuple(
+            normalize_terminal_output(arg) if isinstance(arg, str) else arg for arg in args
+        )
+        self.console.print(*normalized_args, style=style, **kwargs)
 
     def markdown(self, text: str) -> None:
         """Render markdown text.

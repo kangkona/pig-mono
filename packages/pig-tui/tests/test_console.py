@@ -28,6 +28,16 @@ def test_console_print(mock_rich_console):
 
 
 @patch("pig_tui.console.RichConsole")
+def test_console_print_normalizes_thai_and_lao_am(mock_rich_console):
+    console = Console()
+
+    console.print("ำabc", "ຳdef")
+
+    args = console.console.print.call_args.args
+    assert args == ("ําabc", "ໍາdef")
+
+
+@patch("pig_tui.console.RichConsole")
 def test_console_markdown(mock_rich_console):
     """Test markdown rendering."""
     console = Console()

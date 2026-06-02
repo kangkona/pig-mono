@@ -15,6 +15,8 @@ from collections.abc import Callable, Mapping
 
 ANSI_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 OSC_RE = re.compile(r"\x1b\][^\x1b\x07]*?(?:\x1b\\|\x07)")
+THAI_LAO_AM_REGEX = re.compile(r"[\u0e33\u0eb3]")
+THAI_LAO_AM_DECOMPOSED = {"\u0e4d\u0e32", "\u0ecd\u0eb2"}
 
 
 def strip_terminal_sequences(text: str) -> str:
@@ -22,13 +24,29 @@ def strip_terminal_sequences(text: str) -> str:
     return ANSI_RE.sub("", OSC_RE.sub("", text))
 
 
+def normalize_terminal_output(text: str) -> str:
+    """Normalize terminal-bound text for AM vowel renderer quirks."""
+    if not THAI_LAO_AM_REGEX.search(text):
+        return text
+    return text.replace("\u0e33", "\u0e4d\u0e32").replace("\u0eb3", "\u0ecd\u0eb2")
+
+
 def _display_width(text: str) -> int:
     """Estimate terminal cell width for plain Unicode text."""
     width = 0
-    for char in text:
+    index = 0
+    while index < len(text):
+        if text[index : index + 2] in THAI_LAO_AM_DECOMPOSED:
+            width += 1
+            index += 2
+            continue
+
+        char = text[index]
         if unicodedata.combining(char):
+            index += 1
             continue
         width += 2 if unicodedata.east_asian_width(char) in {"W", "F"} else 1
+        index += 1
     return width
 
 

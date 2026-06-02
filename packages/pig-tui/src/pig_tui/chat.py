@@ -9,7 +9,7 @@ from rich.console import Console
 from rich.markdown import Markdown
 from rich.panel import Panel
 
-from .rendering import normalize_markdown_for_terminal
+from .rendering import normalize_markdown_for_terminal, normalize_terminal_output
 from .theme import Theme
 
 
@@ -85,11 +85,11 @@ class ChatUI:
             try:
                 rendered = Markdown(normalized)
             except Exception:
-                self.console.print(normalized)
+                self.console.print(normalize_terminal_output(normalized))
             else:
                 self.console.print(rendered)
         else:
-            self.console.print(f"{prefix}{message}")
+            self.console.print(f"{prefix}{normalize_terminal_output(message)}")
 
     def assistant(self, message: str) -> None:
         """Display assistant message.
@@ -106,11 +106,11 @@ class ChatUI:
             try:
                 rendered = Markdown(normalized)
             except Exception:
-                self.console.print(normalized)
+                self.console.print(normalize_terminal_output(normalized))
             else:
                 self.console.print(rendered)
         else:
-            self.console.print(f"{prefix}{message}")
+            self.console.print(f"{prefix}{normalize_terminal_output(message)}")
 
     @contextmanager
     def assistant_stream(self) -> Any:
@@ -132,7 +132,9 @@ class ChatUI:
             message: System message
         """
         timestamp = self._format_timestamp()
-        self.console.print(f"{timestamp}[{self.theme.system_color}]System: {message}[/]")
+        self.console.print(
+            f"{timestamp}[{self.theme.system_color}]System: {normalize_terminal_output(message)}[/]"
+        )
 
     def error(self, message: str) -> None:
         """Display error message.
@@ -141,7 +143,10 @@ class ChatUI:
             message: Error message
         """
         timestamp = self._format_timestamp()
-        self.console.print(f"{timestamp}[bold {self.theme.error_color}]Error: {message}[/]")
+        self.console.print(
+            f"{timestamp}[bold {self.theme.error_color}]Error: "
+            f"{normalize_terminal_output(message)}[/]"
+        )
 
     def panel(self, content: str, title: str = "") -> None:
         """Display content in a panel.

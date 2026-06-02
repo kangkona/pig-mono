@@ -78,6 +78,16 @@ def test_chat_ui_system_message(mock_console):
 
 
 @patch("pig_tui.chat.Console")
+def test_chat_ui_system_message_normalizes_thai_and_lao_am(mock_console):
+    chat = ChatUI()
+    chat.system("ำabc ຳdef")
+
+    rendered = chat.console.print.call_args.args[0]
+    assert "ําabc" in rendered
+    assert "ໍາdef" in rendered
+
+
+@patch("pig_tui.chat.Console")
 def test_chat_ui_error_message(mock_console):
     """Test displaying error message."""
     chat = ChatUI()
