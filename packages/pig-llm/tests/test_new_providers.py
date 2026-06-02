@@ -629,6 +629,9 @@ def test_azure_openai_provider_uses_session_affinity_headers() -> None:
         session_id="session-99",
     )
 
+    assert create.call_args.kwargs["extra_headers"]["session_id"] == "session-99"
+    assert create.call_args.kwargs["extra_headers"]["x-client-request-id"] == "session-99"
+    assert create.call_args.kwargs["extra_headers"]["x-session-affinity"] == "session-99"
     assert create.call_args.kwargs["extra_headers"]["session-id"] == "session-99"
 
 
@@ -752,6 +755,9 @@ def test_groq_provider_uses_session_affinity_headers() -> None:
         session_id="session-groq",
     )
 
+    assert create.call_args.kwargs["extra_headers"]["session_id"] == "session-groq"
+    assert create.call_args.kwargs["extra_headers"]["x-client-request-id"] == "session-groq"
+    assert create.call_args.kwargs["extra_headers"]["x-session-affinity"] == "session-groq"
     assert create.call_args.kwargs["extra_headers"]["session-id"] == "session-groq"
 
 

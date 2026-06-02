@@ -8,6 +8,7 @@ from ..compat import (
     OPENAI_COMPAT,
     apply_prompt_cache,
     apply_request_headers,
+    apply_session_affinity_headers,
     apply_thinking_level,
     build_token_limit_param,
 )
@@ -101,6 +102,7 @@ class AzureOpenAIProvider(Provider):
         """Generate a completion."""
         kwargs = apply_thinking_level(kwargs, OPENAI_COMPAT)
         kwargs = apply_prompt_cache(kwargs, OPENAI_COMPAT)
+        kwargs = apply_session_affinity_headers(kwargs, OPENAI_COMPAT)
         kwargs = apply_request_headers(kwargs)
         response = self.client.chat.completions.create(
             model=model,  # This is the deployment name in Azure
@@ -141,6 +143,7 @@ class AzureOpenAIProvider(Provider):
         """Stream a completion."""
         kwargs = apply_thinking_level(kwargs, OPENAI_COMPAT)
         kwargs = apply_prompt_cache(kwargs, OPENAI_COMPAT)
+        kwargs = apply_session_affinity_headers(kwargs, OPENAI_COMPAT)
         kwargs = apply_request_headers(kwargs)
         stream = self.client.chat.completions.create(
             model=model,
@@ -175,6 +178,7 @@ class AzureOpenAIProvider(Provider):
         """Async generate a completion."""
         kwargs = apply_thinking_level(kwargs, OPENAI_COMPAT)
         kwargs = apply_prompt_cache(kwargs, OPENAI_COMPAT)
+        kwargs = apply_session_affinity_headers(kwargs, OPENAI_COMPAT)
         kwargs = apply_request_headers(kwargs)
         response = await self.async_client.chat.completions.create(
             model=model,
@@ -215,6 +219,7 @@ class AzureOpenAIProvider(Provider):
         """Async stream a completion."""
         kwargs = apply_thinking_level(kwargs, OPENAI_COMPAT)
         kwargs = apply_prompt_cache(kwargs, OPENAI_COMPAT)
+        kwargs = apply_session_affinity_headers(kwargs, OPENAI_COMPAT)
         kwargs = apply_request_headers(kwargs)
         stream = await self.async_client.chat.completions.create(
             model=model,

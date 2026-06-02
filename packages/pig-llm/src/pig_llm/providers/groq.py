@@ -4,7 +4,12 @@ from collections.abc import AsyncIterator, Iterator
 
 from groq import AsyncGroq, Groq
 
-from ..compat import OPENAI_COMPAT, apply_prompt_cache, apply_request_headers
+from ..compat import (
+    OPENAI_COMPAT,
+    apply_prompt_cache,
+    apply_request_headers,
+    apply_session_affinity_headers,
+)
 from ..config import Config
 from ..models import Message, Response, StreamChunk
 from ._base import Provider
@@ -78,6 +83,7 @@ class GroqProvider(Provider):
     ) -> Response:
         """Generate a completion."""
         kwargs = apply_prompt_cache(kwargs, OPENAI_COMPAT)
+        kwargs = apply_session_affinity_headers(kwargs, OPENAI_COMPAT)
         kwargs = apply_request_headers(kwargs)
         response = self.client.chat.completions.create(
             model=model,
@@ -113,6 +119,7 @@ class GroqProvider(Provider):
     ) -> Iterator[StreamChunk]:
         """Stream a completion."""
         kwargs = apply_prompt_cache(kwargs, OPENAI_COMPAT)
+        kwargs = apply_session_affinity_headers(kwargs, OPENAI_COMPAT)
         kwargs = apply_request_headers(kwargs)
         stream = self.client.chat.completions.create(
             model=model,
@@ -142,6 +149,7 @@ class GroqProvider(Provider):
     ) -> Response:
         """Async generate a completion."""
         kwargs = apply_prompt_cache(kwargs, OPENAI_COMPAT)
+        kwargs = apply_session_affinity_headers(kwargs, OPENAI_COMPAT)
         kwargs = apply_request_headers(kwargs)
         response = await self.async_client.chat.completions.create(
             model=model,
@@ -177,6 +185,7 @@ class GroqProvider(Provider):
     ) -> AsyncIterator[StreamChunk]:
         """Async stream a completion."""
         kwargs = apply_prompt_cache(kwargs, OPENAI_COMPAT)
+        kwargs = apply_session_affinity_headers(kwargs, OPENAI_COMPAT)
         kwargs = apply_request_headers(kwargs)
         stream = await self.async_client.chat.completions.create(
             model=model,
