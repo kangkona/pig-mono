@@ -2,6 +2,7 @@
 
 import io
 import os
+import signal
 from pathlib import Path
 from unittest.mock import Mock, patch
 
@@ -367,3 +368,42 @@ def test_run_json_mode_interactive_emits_error_shutdown_reason() -> None:
     json_mode.error.assert_called_once_with("Error: boom")
     json_mode.emit_event.assert_any_call("shutdown", {"reason": "error"})
     agent.extension_manager.cleanup.assert_called_once_with(reason="error")
+
+
+def test_main_installs_signal_cleanup_for_interactive_mode(mock_env, mock_ctx, tmp_path):
+    from pig_coding_agent.cli import main
+
+    mock_llm = Mock()
+    mock_llm.config = Mock(model="test-model")
+    mock_agent = Mock()
+    mock_agent.session = None
+    mock_agent.skill_manager = None
+    mock_agent.extension_manager = Mock()
+    mock_agent.extension_manager.extensions = {}
+    mock_agent.run_interactive = Mock()
+
+    handlers: dict[int, object] = {}
+
+    def fake_signal(sig, handler):
+        if sig not in handlers:
+            handlers[sig] = handler
+        return None
+
+    with (
+        patch("pig_coding_agent.cli.LLM", return_value=mock_llm),
+        patch("pig_coding_agent.cli.CodingAgent", return_value=mock_agent),
+        patch("pig_coding_agent.cli.console"),
+        patch("signal.signal", side_effect=fake_signal),
+    ):
+        main(ctx=mock_ctx, provider="openai", workspace=tmp_path)
+
+    assert signal.SIGTERM in handlers
+    assert signal.SIGHUP in handlers
+
+    with patch("sys.exit", side_effect=SystemExit(0)):
+        try:
+            handlers[signal.SIGTERM](signal.SIGTERM, None)
+        except SystemExit:
+            pass
+
+    mock_agent.extension_manager.cleanup.assert_called_once_with(reason="sigterm")

@@ -2,6 +2,7 @@
 
 import json
 import os
+import signal
 import sys
 from io import UnsupportedOperation
 from pathlib import Path
@@ -67,6 +68,25 @@ def _shutdown_extensions(agent: Any, reason: str) -> None:
     if extension_manager is None:
         return
     extension_manager.cleanup(reason=reason)
+
+
+def _run_with_signal_cleanup(agent: Any, runner) -> None:
+    """Run a callable while ensuring SIGTERM/SIGHUP trigger extension cleanup."""
+    previous_handlers: dict[int, Any] = {}
+
+    def _handle_signal(sig, frame) -> None:
+        reason = "sighup" if sig == signal.SIGHUP else "sigterm"
+        _shutdown_extensions(agent, reason)
+        sys.exit(0)
+
+    for sig in (signal.SIGTERM, signal.SIGHUP):
+        previous_handlers[sig] = signal.signal(sig, _handle_signal)
+
+    try:
+        runner()
+    finally:
+        for sig, previous in previous_handlers.items():
+            signal.signal(sig, previous)
 
 
 def _parse_excluded_tools(value: str | None) -> set[str]:
@@ -327,19 +347,23 @@ def main(
 
     # Handle different output modes
     if mode == "json":
-        run_json_mode(agent)
+        _run_with_signal_cleanup(agent, lambda: run_json_mode(agent))
     elif mode == "rpc":
-        run_rpc_mode(agent)
+        _run_with_signal_cleanup(agent, lambda: run_rpc_mode(agent))
     else:
         if piped_input:
-            response = agent.agent.run(piped_input)
-            if response.content:
-                print(response.content)
+
+            def run_piped() -> None:
+                response = agent.agent.run(piped_input)
+                if response.content:
+                    print(response.content)
+
+            _run_with_signal_cleanup(agent, run_piped)
             return
         console.print()
         console.print("[dim]Type /help for commands, /exit to quit[/dim]")
         console.print()
-        agent.run_interactive()
+        _run_with_signal_cleanup(agent, agent.run_interactive)
 
 
 def run_json_mode(agent):
