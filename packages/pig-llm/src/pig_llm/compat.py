@@ -249,13 +249,45 @@ TOGETHER_COMPAT = ProviderCompat(
     send_session_affinity_headers=True,
     reasoning_effort_models=frozenset({"deepseek-ai/deepseek-v4-pro"}),
     reasoning_effort_level_map={
+        "minimaxai/minimax-m2.5": {
+            "off": None,
+            "minimal": None,
+            "low": None,
+            "medium": None,
+            "high": {"enabled": True},
+            "xhigh": {"enabled": True},
+        },
+        "minimaxai/minimax-m2.7": {
+            "off": None,
+            "minimal": None,
+            "low": None,
+            "medium": None,
+            "high": {"enabled": True},
+            "xhigh": {"enabled": True},
+        },
+        "moonshotai/kimi-k2.5": {
+            "off": None,
+            "minimal": None,
+            "low": None,
+            "medium": None,
+            "high": {"enabled": True},
+            "xhigh": {"enabled": True},
+        },
+        "moonshotai/kimi-k2.6": {
+            "off": {"enabled": False},
+            "minimal": None,
+            "low": None,
+            "medium": None,
+            "high": {"enabled": True},
+            "xhigh": {"enabled": True},
+        },
         "deepseek-ai/deepseek-v4-pro": {
             "minimal": None,
             "low": None,
             "medium": None,
             "high": "high",
             "xhigh": None,
-        }
+        },
     },
     thinking_level_map={
         "off": {"enabled": False},
@@ -542,14 +574,36 @@ def apply_thinking_level(kwargs: dict[str, Any], compat: ProviderCompat) -> dict
         next_kwargs["reasoning"] = mapped
         next_kwargs.pop("thinking", None)
         level_map = compat.reasoning_effort_level_map.get(model_key, {})
-        if model_key in compat.reasoning_effort_models:
+        if model_key in {
+            "minimaxai/minimax-m2.5",
+            "minimaxai/minimax-m2.7",
+            "moonshotai/kimi-k2.5",
+            "moonshotai/kimi-k2.6",
+        }:
+            reasoning = level_map.get(str(level))
+            if reasoning is None:
+                next_kwargs.pop("reasoning", None)
+                next_kwargs.pop("reasoning_effort", None)
+                return next_kwargs
+            next_kwargs["reasoning"] = reasoning
+        elif model_key in compat.reasoning_effort_models:
             reasoning_effort = level_map.get(str(level))
             if reasoning_effort is not None:
                 next_kwargs["reasoning_effort"] = reasoning_effort
             else:
                 next_kwargs.pop("reasoning_effort", None)
-        else:
+        if model_key not in compat.reasoning_effort_models and model_key not in {
+            "minimaxai/minimax-m2.5",
+            "minimaxai/minimax-m2.7",
+            "moonshotai/kimi-k2.5",
+            "moonshotai/kimi-k2.6",
+        }:
             next_kwargs.pop("reasoning_effort", None)
+        if next_kwargs.get("reasoning") is None:
+            next_kwargs.pop("thinking", None)
+            next_kwargs.pop("reasoning", None)
+            next_kwargs.pop("reasoning_effort", None)
+            return next_kwargs
         return next_kwargs
 
     if compat is TOGETHER_OPENAI_REASONING_COMPAT:
