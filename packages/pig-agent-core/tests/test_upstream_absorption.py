@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from types import SimpleNamespace
 
@@ -454,3 +455,67 @@ async def test_respond_stream_emits_agent_end_success_event() -> None:
     assert chunks == ["hello", " world"]
     assert len(events) == 1
     assert events[0].data["success"] is True
+
+
+@pytest.mark.asyncio
+async def test_respond_stream_cancellation_emits_agent_end_failure_event() -> None:
+    class FakeLLM:
+        config = SimpleNamespace(model="fake")
+
+        def achat_stream(self, messages, tools=None):
+            async def stream():
+                yield SimpleNamespace(
+                    choices=[
+                        SimpleNamespace(
+                            delta=SimpleNamespace(content="ignored", tool_calls=None),
+                            finish_reason=None,
+                        )
+                    ]
+                )
+
+            return stream()
+
+    events = []
+
+    def on_event(event):
+        if event.type.value == "agent_end":
+            events.append(event)
+
+    agent = Agent(llm=FakeLLM(), tools=[], verbose=False, event_callback=on_event)
+    cancel = asyncio.Event()
+    cancel.set()
+
+    chunks = []
+    async for chunk in agent.respond_stream("start", cancel=cancel):
+        chunks.append(chunk)
+
+    assert chunks == ["Request was cancelled."]
+    assert len(events) == 1
+    assert events[0].data["success"] is False
+    assert events[0].data["error"] == "Request was cancelled."
+
+
+@pytest.mark.asyncio
+async def test_respond_stream_llm_failure_emits_agent_end_failure_event() -> None:
+    class FailingLLM:
+        config = SimpleNamespace(model="fake")
+
+        async def achat_stream(self, messages, tools=None):
+            raise RuntimeError("stream boom")
+
+    events = []
+
+    def on_event(event):
+        if event.type.value == "agent_end":
+            events.append(event)
+
+    agent = Agent(llm=FailingLLM(), tools=[], verbose=False, event_callback=on_event)
+
+    with pytest.raises(RuntimeError, match="stream boom"):
+        chunks = []
+        async for chunk in agent.respond_stream("start"):
+            chunks.append(chunk)
+
+    assert len(events) == 1
+    assert events[0].data["success"] is False
+    assert events[0].data["error"] == "stream boom"

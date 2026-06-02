@@ -654,6 +654,7 @@ class Agent:
 
             # Check for cancellation
             if cancel and cancel.is_set():
+                self._emit_agent_end(success=False, error="Request was cancelled.")
                 yield "Request was cancelled."
                 return
 
@@ -667,10 +668,15 @@ class Agent:
                 messages=self.history,
                 tools=tools_schema,
             )
-            if asyncio.iscoroutine(stream_call):
-                response_stream = await stream_call
-            else:
-                response_stream = stream_call
+            try:
+                if asyncio.iscoroutine(stream_call):
+                    response_stream = await stream_call
+                else:
+                    response_stream = stream_call
+            except Exception as e:
+                self._log(f"[red]Streaming LLM call failed: {e}[/red]")
+                self._emit_agent_end(success=False, error=str(e))
+                raise
 
             # Accumulate streaming response
             content_parts = []
