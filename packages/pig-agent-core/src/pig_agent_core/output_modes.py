@@ -116,9 +116,11 @@ class RPCMode:
             self.last_shutdown_reason = "interrupt"
             return None
         except json.JSONDecodeError as e:
+            self.last_shutdown_reason = "error"
             self.send_error(f"Invalid JSON: {e}")
             return None
         except Exception as e:
+            self.last_shutdown_reason = "error"
             self.send_error(f"Error reading request: {e}")
             return None
 
