@@ -96,6 +96,10 @@ class SessionManager:
         Returns:
             Path to session file if found
         """
+        explicit_path = Path(name_or_id).expanduser()
+        if explicit_path.exists():
+            return explicit_path.resolve()
+
         sessions = self.list_sessions()
 
         for info in sessions:

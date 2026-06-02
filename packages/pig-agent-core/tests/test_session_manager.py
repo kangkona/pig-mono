@@ -133,6 +133,16 @@ def test_session_manager_find_by_name(temp_workspace):
     assert found == path
 
 
+def test_session_manager_find_by_explicit_path(temp_workspace):
+    session = Session(name="find-by-path", workspace=str(temp_workspace), auto_save=False)
+    path = session.save()
+
+    mgr = SessionManager(temp_workspace)
+    found = mgr.find_session(str(path))
+
+    assert found == path
+
+
 def test_session_manager_find_missing(temp_workspace):
     """Test finding non-existent session."""
     mgr = SessionManager(temp_workspace)
