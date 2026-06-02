@@ -194,6 +194,21 @@ def test_coding_agent_creates_new_session_when_session_id_missing(mock_llm, temp
     assert agent.session.id == "manual-session-id"
 
 
+def test_coding_agent_preserves_full_explicit_session_id_in_saved_filename(
+    mock_llm, temp_workspace
+):
+    agent = CodingAgent(
+        llm=mock_llm,
+        workspace=str(temp_workspace),
+        verbose=False,
+        session_id="manual-session-id",
+    )
+
+    saved = agent.session.save()
+
+    assert saved.name == "coding-session-manual-session-id.jsonl"
+
+
 def test_coding_agent_uses_env_session_dir_for_new_sessions(mock_llm, tmp_path, monkeypatch):
     workspace = tmp_path / "workspace"
     workspace.mkdir()

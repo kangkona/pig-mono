@@ -237,3 +237,12 @@ def test_session_save_uses_explicit_session_dir_over_env(tmp_path, monkeypatch):
     path = session.save()
 
     assert path.parent == explicit_session_dir
+
+
+def test_session_save_uses_full_explicit_session_id_in_filename(tmp_path):
+    session = Session(name="shared-name", workspace=str(tmp_path), auto_save=False)
+    session.id = "manual-session-id"
+
+    path = session.save()
+
+    assert path.name == "shared-name-manual-session-id.jsonl"

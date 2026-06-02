@@ -1,6 +1,7 @@
 """Session management with tree structure and JSONL storage."""
 
 import json
+import re
 import uuid
 from collections.abc import Iterable
 from datetime import datetime
@@ -11,6 +12,11 @@ from pydantic import BaseModel, Field
 
 from .session_manager import resolve_session_dir
 from .tools import ToolResult
+
+_UUID_LIKE_ID_RE = re.compile(
+    r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+    re.IGNORECASE,
+)
 
 
 def serialize_compaction_tool_result(result: ToolResult | Any, max_chars: int = 4000) -> str:
@@ -371,7 +377,8 @@ class Session:
             # Auto-generate path
             session_dir = resolve_session_dir(self.workspace, self.session_dir)
             session_dir.mkdir(parents=True, exist_ok=True)
-            path = session_dir / f"{self.name}-{self.id[:8]}.jsonl"
+            file_id = self.id[:8] if _UUID_LIKE_ID_RE.fullmatch(self.id) else self.id
+            path = session_dir / f"{self.name}-{file_id}.jsonl"
 
         metadata = dict(self.metadata)
         metadata["entries"] = len(self.tree.entries)
