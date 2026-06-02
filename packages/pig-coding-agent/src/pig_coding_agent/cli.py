@@ -13,6 +13,7 @@ from pig_llm import LLM
 from rich.console import Console
 
 from .agent import CodingAgent
+from .config import ConfigManager
 
 app = typer.Typer(
     name="pig-code",
@@ -198,6 +199,11 @@ def main(
         continue_session=resolved_continue,
     )
     _validate_startup_name(resolved_name)
+
+    if resolved_session_dir is None and os.environ.get("PIG_CODING_AGENT_SESSION_DIR") is None:
+        configured_session_dir = ConfigManager(workspace).get_session_dir()
+        if configured_session_dir:
+            resolved_session_dir = Path(configured_session_dir).expanduser()
 
     # Get API key
     api_key = os.getenv(f"{provider.upper()}_API_KEY")

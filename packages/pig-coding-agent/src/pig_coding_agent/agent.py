@@ -1,5 +1,6 @@
 """Coding agent with file operations and code generation."""
 
+import os
 from pathlib import Path
 
 from pig_agent_core import (
@@ -17,6 +18,7 @@ from pig_llm import LLM
 from pig_tui import ChatUI, InteractivePrompt, hyperlink
 
 from .billing import CostTracker
+from .config import ConfigManager
 from .file_reference import FileReferenceParser
 from .resilience import create_profile_manager_from_env, get_profile_status
 from .tools import CodeTools, FileTools, ShellTools
@@ -66,6 +68,8 @@ class CodingAgent:
         self.llm = llm or LLM()
         self.verbose = verbose
         self.excluded_tools = set(excluded_tools or set())
+        if session_dir is None and os.environ.get("PIG_CODING_AGENT_SESSION_DIR") is None:
+            session_dir = ConfigManager(self.workspace).get_session_dir()
         self.sessions_dir = SessionManager(self.workspace, session_dir=session_dir).sessions_dir
         self._session_start_reason = "startup"
         self._previous_session_file: str | None = None

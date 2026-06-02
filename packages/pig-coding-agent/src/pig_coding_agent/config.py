@@ -26,6 +26,7 @@ class AgentConfig(BaseModel):
     # Session settings
     auto_save_session: bool = True
     session_cleanup_days: int = 30
+    session_dir: str | None = None
 
     # Display settings
     verbose: bool = True
@@ -138,6 +139,11 @@ class ConfigManager:
         """
         config = self.load_config()
         return getattr(config, key, None)
+
+    def get_session_dir(self) -> str | None:
+        """Get configured session directory if present."""
+        config = self.load_config()
+        return config.session_dir
 
     def set_config_value(self, key: str, value: Any, global_config: bool = False) -> None:
         """Set a specific config value.

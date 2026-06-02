@@ -1,5 +1,6 @@
 """Tests for CodingAgent."""
 
+import json
 from unittest.mock import Mock, patch
 
 import pytest
@@ -244,6 +245,30 @@ def test_coding_agent_explicit_session_dir_overrides_env(mock_llm, tmp_path, mon
 
     saved = agent.session.save()
     assert saved.parent == explicit_session_dir
+
+
+def test_coding_agent_uses_project_config_session_dir_when_env_missing(mock_llm, tmp_path):
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    session_dir = tmp_path / "config-sessions"
+    config_dir = workspace / ".agents"
+    config_dir.mkdir()
+    (config_dir / "config.json").write_text(
+        json.dumps(
+            {
+                "session_dir": str(session_dir),
+            }
+        )
+    )
+
+    agent = CodingAgent(
+        llm=mock_llm,
+        workspace=str(workspace),
+        verbose=False,
+    )
+
+    saved = agent.session.save()
+    assert saved.parent == session_dir
 
 
 def test_coding_agent_fork_keeps_explicit_session_id(mock_llm, temp_workspace):
