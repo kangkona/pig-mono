@@ -231,12 +231,12 @@ async def test_agent_respond_with_cancellation():
     cancel = asyncio.Event()
     cancel.set()
 
-    # Test cancellation
+    # Test cancellation: aborts cleanly, yielding nothing (no fake message).
     chunks = []
     async for chunk in agent.respond_stream("Hello", cancel=cancel):
         chunks.append(chunk)
 
-    assert chunks == ["Request was cancelled."]
+    assert chunks == []
 
 
 def _mock_llm_returning(content):

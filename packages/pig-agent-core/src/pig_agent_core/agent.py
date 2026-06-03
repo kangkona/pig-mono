@@ -68,7 +68,10 @@ class Agent:
         self.name = name
         self.llm = llm or LLM()
         self.system_prompt = system_prompt
-        self.max_iterations = max_rounds or max_iterations  # max_rounds takes precedence
+        # max_rounds takes precedence over the legacy max_iterations. Use an
+        # explicit None check so an explicit max_rounds=0 (unbounded, pi-mono
+        # style) is honored instead of falling back via `or`.
+        self.max_iterations = max_rounds if max_rounds is not None else max_iterations
         self.max_rounds_with_plan = max_rounds_with_plan
         self.on_tool_start = on_tool_start
         self.on_tool_end = on_tool_end
@@ -298,7 +301,8 @@ class Agent:
         self.history.append(Message(role="user", content=message))
 
         iterations = 0
-        while iterations < self.max_iterations:
+        unbounded = self.max_iterations <= 0
+        while unbounded or iterations < self.max_iterations:
             iterations += 1
             self._log(f"Iteration {iterations}", style="dim")
 
@@ -419,6 +423,7 @@ class Agent:
 
         iterations = 0
         max_iters = self.max_iterations
+        unbounded = max_iters <= 0
 
         # Check if plan tool was used and apply max_rounds_with_plan
         if self._plan_used and self.max_rounds_with_plan:
@@ -432,7 +437,7 @@ class Agent:
                 self._log(f"Plan nag: {nag_message}")
                 self.history.append(Message(role="user", content=nag_message))
 
-        while iterations < max_iters:
+        while unbounded or iterations < max_iters:
             iterations += 1
             self._log(f"Iteration {iterations}")
 
@@ -748,12 +753,16 @@ class Agent:
         self,
         message: str,
         cancel: asyncio.Event | None = None,
+        max_iterations: int | None = None,
     ) -> AsyncIterator[str]:
         """Streaming respond method that yields text chunks.
 
         Args:
             message: User message
             cancel: Optional cancellation event
+            max_iterations: Per-call round cap. None uses the agent default;
+                a value <= 0 means unbounded (loop until natural completion,
+                a terminate tool result, or cancellation) — pi-mono parity.
 
         Yields:
             Text chunks from the agent response
@@ -761,30 +770,34 @@ class Agent:
         self._log_turn(f"User: {message}")
         self.history.append(Message(role="user", content=message))
 
-        async for chunk in self._master_loop(cancel):
+        async for chunk in self._master_loop(cancel, max_iterations):
             yield chunk
 
     async def _master_loop(
         self,
         cancel: asyncio.Event | None = None,
+        max_iterations: int | None = None,
     ) -> AsyncIterator[str]:
         """Unified streaming master loop with tool calling support.
 
         Args:
             cancel: Optional cancellation event
+            max_iterations: Per-call round cap (None = agent default, <= 0 = unbounded)
 
         Yields:
             Text chunks from the final agent response
         """
+        effective_max = self.max_iterations if max_iterations is None else max_iterations
+        unbounded = effective_max <= 0
+
         iterations = 0
-        while iterations < self.max_iterations:
+        while unbounded or iterations < effective_max:
             iterations += 1
             self._log(f"Iteration {iterations}", style="dim")
 
-            # Check for cancellation
+            # Check for cancellation before starting the next round
             if cancel and cancel.is_set():
-                self._emit_agent_end(success=False, error="Request was cancelled.")
-                yield "Request was cancelled."
+                self._emit_agent_end(success=False, error="aborted")
                 return
 
             # Get tool schemas
@@ -814,6 +827,9 @@ class Agent:
             buffered = []
 
             async for chunk in response_stream:
+                if cancel and cancel.is_set():
+                    break
+
                 if not hasattr(chunk, "choices") or not chunk.choices:
                     continue
 
@@ -847,6 +863,17 @@ class Agent:
                                 and tc_delta.function.arguments
                             ):
                                 tool_calls_acc[idx]["arguments"] += tc_delta.function.arguments
+
+            # Aborted mid-stream (or right after): preserve whatever streamed so the
+            # session reflects it, surface it to the caller, and stop cleanly without
+            # leaving a dangling assistant-with-tool_calls message in history.
+            if cancel and cancel.is_set():
+                partial = "".join(content_parts)
+                if partial:
+                    self.history.append(Message(role="assistant", content=partial))
+                    yield partial
+                self._emit_agent_end(success=False, error="aborted")
+                return
 
             # If no tool calls, yield buffered content and return
             if not tool_calls_acc:
@@ -905,9 +932,16 @@ class Agent:
                             yield chunk
                 return
 
+            # Inject steering messages queued during this turn (e.g. typed while
+            # the agent was streaming) before the next LLM call. Mirrors run().
+            if self.message_queue.has_steering():
+                for msg in self.message_queue.get_steering_messages():
+                    self._log(f"⚡ Steering: {msg.content}", style="yellow")
+                    self.history.append(Message(role="user", content=msg.content))
+
             # Continue loop for next iteration
 
-        # Max iterations reached
+        # Bounded loop exhausted its round budget (unreachable when unbounded).
         self._emit_agent_end(
             success=False,
             error="Maximum iterations reached without completion.",

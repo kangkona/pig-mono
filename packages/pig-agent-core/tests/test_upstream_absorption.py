@@ -829,10 +829,10 @@ async def test_respond_stream_cancellation_emits_agent_end_failure_event() -> No
     async for chunk in agent.respond_stream("start", cancel=cancel):
         chunks.append(chunk)
 
-    assert chunks == ["Request was cancelled."]
+    assert chunks == []  # aborted cleanly without injecting a fake message
     assert len(events) == 1
     assert events[0].data["success"] is False
-    assert events[0].data["error"] == "Request was cancelled."
+    assert events[0].data["error"] == "aborted"
 
 
 @pytest.mark.asyncio
@@ -1318,3 +1318,204 @@ async def test_respond_stream_executes_parallel_safe_async_tools_concurrently() 
     tool_messages = [message for message in agent.history if message.role == "tool"]
     assert tool_messages[0].content == "think-parallel:True"
     assert tool_messages[1].content == "time-parallel:True"
+
+
+class _StreamChunk:
+    """Minimal OpenAI-style streaming chunk for tests."""
+
+    def __init__(self, *, content: str = "", tool_calls=None):
+        self.choices = [
+            SimpleNamespace(
+                delta=SimpleNamespace(content=content or None, tool_calls=tool_calls),
+                finish_reason=None,
+            )
+        ]
+
+
+class _ToolDelta:
+    def __init__(self, index: int, *, call_id=None, name=None, arguments=None):
+        self.index = index
+        self.id = call_id
+        self.function = SimpleNamespace(name=name, arguments=arguments)
+
+
+@pytest.mark.asyncio
+async def test_master_loop_unbounded_runs_past_default_cap() -> None:
+    """max_iterations<=0 loops until natural completion, never emitting the cap message."""
+
+    class FakeLLM:
+        config = SimpleNamespace(model="fake")
+
+        def __init__(self):
+            self.calls = 0
+
+        def achat_stream(self, messages, tools=None):
+            self.calls += 1
+            calls = self.calls
+
+            async def stream():
+                # 25 tool-calling rounds (well past the default 10) then a final answer.
+                if calls <= 25:
+                    yield _StreamChunk(
+                        tool_calls=[_ToolDelta(0, call_id=f"c{calls}", name="noop", arguments="{}")]
+                    )
+                else:
+                    yield _StreamChunk(content="done")
+
+            return stream()
+
+    def noop():
+        return "ok"
+
+    llm = FakeLLM()
+    agent = Agent(llm=llm, tools=[], verbose=False, max_rounds=0)  # 0 = unbounded
+    assert agent.max_iterations == 0
+    agent.registry.register("noop", noop, {"type": "function", "function": {"name": "noop"}})
+
+    chunks = []
+    async for chunk in agent.respond_stream("go"):
+        chunks.append(chunk)
+
+    assert "".join(chunks) == "done"
+    assert "Maximum iterations reached without completion." not in chunks
+    assert llm.calls == 26
+
+
+@pytest.mark.asyncio
+async def test_master_loop_default_cap_still_enforced() -> None:
+    """A model that never stops still hits the default 10-round cap when bounded."""
+
+    class FakeLLM:
+        config = SimpleNamespace(model="fake")
+
+        def achat_stream(self, messages, tools=None):
+            async def stream():
+                yield _StreamChunk(
+                    tool_calls=[_ToolDelta(0, call_id="c", name="noop", arguments="{}")]
+                )
+
+            return stream()
+
+    agent = Agent(llm=FakeLLM(), tools=[], verbose=False)  # default cap = 10
+    agent.registry.register(
+        "noop", lambda: "ok", {"type": "function", "function": {"name": "noop"}}
+    )
+
+    chunks = []
+    async for chunk in agent.respond_stream("go"):
+        chunks.append(chunk)
+
+    assert chunks == ["Maximum iterations reached without completion."]
+
+
+@pytest.mark.asyncio
+async def test_master_loop_cancel_before_round_aborts_cleanly() -> None:
+    """A cancel set before a round yields nothing and emits an 'aborted' agent_end."""
+
+    class FakeLLM:
+        config = SimpleNamespace(model="fake")
+
+        def achat_stream(self, messages, tools=None):
+            async def stream():
+                yield _StreamChunk(content="should not be reached")
+
+            return stream()
+
+    events = []
+    agent = Agent(
+        llm=FakeLLM(),
+        tools=[],
+        verbose=False,
+        event_callback=lambda e: events.append(e) if e.type.value == "agent_end" else None,
+    )
+    cancel = asyncio.Event()
+    cancel.set()
+
+    chunks = []
+    async for chunk in agent.respond_stream("go", cancel=cancel):
+        chunks.append(chunk)
+
+    assert chunks == []  # no fake "Request was cancelled." message
+    assert len(events) == 1
+    assert events[0].data["success"] is False
+    assert events[0].data["error"] == "aborted"
+
+
+@pytest.mark.asyncio
+async def test_master_loop_cancel_mid_stream_preserves_partial() -> None:
+    """Cancel during the LLM stream preserves partial text and aborts before tools."""
+
+    cancel = asyncio.Event()
+
+    class FakeLLM:
+        config = SimpleNamespace(model="fake")
+
+        def achat_stream(self, messages, tools=None):
+            async def stream():
+                yield _StreamChunk(content="partial answer ")
+                cancel.set()  # user hits Esc mid-stream
+                yield _StreamChunk(content="this should be dropped")
+
+            return stream()
+
+    events = []
+    agent = Agent(
+        llm=FakeLLM(),
+        tools=[],
+        verbose=False,
+        event_callback=lambda e: events.append(e) if e.type.value == "agent_end" else None,
+    )
+
+    chunks = []
+    async for chunk in agent.respond_stream("go", cancel=cancel):
+        chunks.append(chunk)
+
+    assert chunks == ["partial answer "]
+    assert agent.history[-1].role == "assistant"
+    assert agent.history[-1].content == "partial answer "
+    assert events[0].data["error"] == "aborted"
+
+
+@pytest.mark.asyncio
+async def test_master_loop_injects_steering_between_rounds() -> None:
+    """Steering queued during a streaming turn is injected before the next LLM call."""
+
+    class FakeLLM:
+        config = SimpleNamespace(model="fake")
+
+        def __init__(self):
+            self.calls = 0
+            self.seen_messages: list[list[str]] = []
+
+        def achat_stream(self, messages, tools=None):
+            self.calls += 1
+            self.seen_messages.append([m.content for m in messages])
+            calls = self.calls
+
+            async def stream():
+                if calls == 1:
+                    yield _StreamChunk(
+                        tool_calls=[_ToolDelta(0, call_id="c1", name="noop", arguments="{}")]
+                    )
+                else:
+                    yield _StreamChunk(content="done")
+
+            return stream()
+
+    llm = FakeLLM()
+    agent = Agent(llm=llm, tools=[], verbose=False)
+
+    def noop():
+        # Simulate the user typing while the tool ran: queue a steering message.
+        agent.message_queue.add_steering("actually do X instead")
+        return "ok"
+
+    agent.registry.register("noop", noop, {"type": "function", "function": {"name": "noop"}})
+
+    chunks = []
+    async for chunk in agent.respond_stream("go"):
+        chunks.append(chunk)
+
+    assert "".join(chunks) == "done"
+    # The second LLM call must have seen the injected steering message.
+    assert any("actually do X instead" in m for m in llm.seen_messages[1])
