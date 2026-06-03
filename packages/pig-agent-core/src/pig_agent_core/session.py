@@ -417,13 +417,17 @@ class Session:
         metadata = dict(self.metadata)
         metadata["entries"] = len(self.tree.entries)
 
-        # Save metadata and tree
+        # Save metadata and tree. Persist the authoritative current/root ids so
+        # reload restores the exact conversation tip instead of inferring it from
+        # entry timestamps (which resurrects stale off-path branch leaves).
         data = {
             "id": self.id,
             "name": self.name,
             "workspace": str(self.workspace),
             "created_at": self.created_at.isoformat(),
             "updated_at": self.updated_at.isoformat(),
+            "current_id": self.tree.current_id,
+            "root_id": self.tree.root_id,
             "metadata": metadata,
         }
 
@@ -468,6 +472,16 @@ class Session:
         session.metadata = header["metadata"]
         session.tree = tree
         session._save_path = path.resolve()
+
+        # Prefer the persisted tip/root when present and still valid; fall back
+        # to from_jsonl_iter's timestamp heuristic for legacy files that predate
+        # these header fields.
+        header_current = header.get("current_id")
+        if isinstance(header_current, str) and header_current in tree.entries:
+            tree.current_id = header_current
+        header_root = header.get("root_id")
+        if isinstance(header_root, str) and header_root in tree.entries:
+            tree.root_id = header_root
 
         return session
 

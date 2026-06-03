@@ -265,3 +265,32 @@ def test_session_save_preserves_loaded_legacy_path(tmp_path):
 
     assert saved == legacy_path
     assert legacy_path.exists()
+
+
+def test_reload_after_compaction_restores_exact_tip(tmp_path):
+    """A compacted session must reload to its real tip, not a stale branch leaf.
+
+    Reload previously inferred current_id from the max-timestamp leaf, which
+    resurrected an abandoned off-path branch whenever that branch had a newer
+    timestamp than the active conversation. The persisted current_id/root_id
+    must pin the exact tip instead.
+    """
+    session = Session(name="compact", workspace=str(tmp_path), auto_save=False)
+    ids = [session.add_message("user", f"m{i}").id for i in range(12)]
+    real_tip = session.tree.current_id
+
+    # Abandoned branch off an early node, with a newer-than-everything timestamp.
+    branch = session.tree.add_entry("assistant", "BRANCH-CHILD", parent_id=ids[1])
+    session.tree.entries[branch.id].timestamp = "9999-12-31T23:59:59"
+    session.tree.current_id = real_tip
+
+    session.compact()
+    after_compact = [e.content for e in session.get_current_conversation()]
+    path = session.save()
+
+    reloaded = Session.load(path)
+    after_reload = [e.content for e in reloaded.get_current_conversation()]
+
+    assert "BRANCH-CHILD" not in after_reload
+    assert after_reload == after_compact
+    assert reloaded.tree.current_id == session.tree.current_id
