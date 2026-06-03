@@ -7,12 +7,14 @@ import openai
 from ..compat import (
     TOGETHER_COMPAT,
     TOGETHER_OPENAI_REASONING_COMPAT,
+    aiter_openai_stream_choices,
     apply_prompt_cache,
     apply_request_headers,
     apply_session_affinity_headers,
     apply_thinking_level,
     build_token_limit_param,
     extract_openai_usage,
+    iter_openai_stream_choices,
     normalize_messages,
 )
 from ..config import Config
@@ -162,8 +164,7 @@ class TogetherProvider(Provider):
             **kwargs,
         )
 
-        for chunk in stream:
-            choice = chunk.choices[0]
+        for chunk, choice in iter_openai_stream_choices(stream):
             if choice.delta.content:
                 yield StreamChunk(
                     content=choice.delta.content,
@@ -242,8 +243,7 @@ class TogetherProvider(Provider):
             **kwargs,
         )
 
-        async for chunk in stream:
-            choice = chunk.choices[0]
+        async for chunk, choice in aiter_openai_stream_choices(stream):
             if choice.delta.content:
                 yield StreamChunk(
                     content=choice.delta.content,

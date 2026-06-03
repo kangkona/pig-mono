@@ -153,6 +153,25 @@ def test_session_manager_find_by_relative_path(temp_workspace):
     assert found == path
 
 
+def test_session_manager_rejects_explicit_path_outside_sessions_dir(temp_workspace, tmp_path):
+    external_path = tmp_path / "external.jsonl"
+    external_path.write_text("{}\n")
+
+    mgr = SessionManager(temp_workspace)
+
+    assert mgr.find_session(str(external_path)) is None
+
+
+def test_session_manager_prefers_session_name_over_unrelated_workspace_path(temp_workspace):
+    session = Session(name="findme", workspace=str(temp_workspace), auto_save=False)
+    path = session.save()
+    (temp_workspace / "findme").mkdir()
+
+    mgr = SessionManager(temp_workspace)
+
+    assert mgr.find_session("findme") == path
+
+
 def test_session_manager_find_missing(temp_workspace):
     """Test finding non-existent session."""
     mgr = SessionManager(temp_workspace)

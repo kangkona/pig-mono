@@ -6,10 +6,12 @@ import openai
 
 from ..compat import (
     OPENAI_COMPAT,
+    aiter_openai_stream_choices,
     apply_prompt_cache,
     apply_request_headers,
     apply_thinking_level,
     build_token_limit_param,
+    iter_openai_stream_choices,
     normalize_messages,
 )
 from ..config import Config
@@ -162,8 +164,7 @@ class PerplexityProvider(Provider):
             **kwargs,
         )
 
-        for chunk in stream:
-            choice = chunk.choices[0]
+        for chunk, choice in iter_openai_stream_choices(stream):
             if choice.delta.content:
                 metadata = {"id": chunk.id}
                 # Include citations if available
@@ -256,8 +257,7 @@ class PerplexityProvider(Provider):
             **kwargs,
         )
 
-        async for chunk in stream:
-            choice = chunk.choices[0]
+        async for chunk, choice in aiter_openai_stream_choices(stream):
             if choice.delta.content:
                 metadata = {"id": chunk.id}
                 # Include citations if available

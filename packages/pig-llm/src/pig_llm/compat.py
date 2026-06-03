@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import os
 import re
+from collections.abc import AsyncIterator, Iterator
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Literal
@@ -801,6 +802,32 @@ def classify_provider_error(
 def is_context_overflow(error: BaseException | str, compat: ProviderCompat | None = None) -> bool:
     """Return True if an error looks like a context-window overflow."""
     return classify_provider_error(error, compat or OPENAI_COMPAT) == "context_overflow"
+
+
+def iter_openai_stream_choices(stream: Iterator[Any]) -> Iterator[tuple[Any, Any]]:
+    """Yield the first choice from OpenAI-compatible stream chunks, skipping usage-only chunks."""
+    for chunk in stream:
+        choices = getattr(chunk, "choices", None) or []
+        if not choices:
+            continue
+        choice = choices[0]
+        yield chunk, choice
+        if getattr(choice, "finish_reason", None):
+            break
+
+
+async def aiter_openai_stream_choices(
+    stream: AsyncIterator[Any],
+) -> AsyncIterator[tuple[Any, Any]]:
+    """Async variant of iter_openai_stream_choices."""
+    async for chunk in stream:
+        choices = getattr(chunk, "choices", None) or []
+        if not choices:
+            continue
+        choice = choices[0]
+        yield chunk, choice
+        if getattr(choice, "finish_reason", None):
+            break
 
 
 def extract_openai_usage(response: Any) -> dict[str, int]:

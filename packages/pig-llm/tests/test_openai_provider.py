@@ -55,6 +55,10 @@ def _terminal_stream_chunk(
     )
 
 
+def _empty_choices_chunk() -> SimpleNamespace:
+    return SimpleNamespace(id="chunk-empty", choices=[])
+
+
 class _AsyncChunks:
     def __init__(self, chunks: list[SimpleNamespace]):
         self._chunks = iter(chunks)
@@ -124,6 +128,23 @@ def test_stream_stops_consuming_after_terminal_finish_reason() -> None:
                 _stream_chunk(),
                 _terminal_stream_chunk(finish_reason="stop"),
                 _stream_chunk(),
+            ]
+        )
+    )
+    provider = _provider_with_clients(sync_create, AsyncMock())
+
+    chunks = list(provider.stream(_messages(), model="gpt-5.2"))
+
+    assert [chunk.content for chunk in chunks] == ["ok"]
+
+
+def test_stream_skips_usage_only_chunks_without_choices() -> None:
+    sync_create = Mock(
+        return_value=iter(
+            [
+                _empty_choices_chunk(),
+                _stream_chunk(),
+                _terminal_stream_chunk(finish_reason="stop"),
             ]
         )
     )
@@ -1154,6 +1175,24 @@ async def test_astream_stops_consuming_after_terminal_finish_reason() -> None:
                 _stream_chunk(),
                 _terminal_stream_chunk(finish_reason="stop"),
                 _stream_chunk(),
+            ]
+        )
+    )
+    provider = _provider_with_clients(Mock(), async_create)
+
+    chunks = [chunk async for chunk in provider.astream(_messages(), model="gpt-5.2")]
+
+    assert [chunk.content for chunk in chunks] == ["ok"]
+
+
+@pytest.mark.asyncio
+async def test_astream_skips_usage_only_chunks_without_choices() -> None:
+    async_create = AsyncMock(
+        return_value=_AsyncChunks(
+            [
+                _empty_choices_chunk(),
+                _stream_chunk(),
+                _terminal_stream_chunk(finish_reason="stop"),
             ]
         )
     )

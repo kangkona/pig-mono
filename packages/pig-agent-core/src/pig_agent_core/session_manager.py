@@ -130,6 +130,29 @@ class SessionManager:
         sessions = self.list_sessions(limit=1)
         return sessions[0] if sessions else None
 
+    def _resolve_explicit_session_path(self, name_or_id: str) -> Path | None:
+        """Resolve a path candidate only when it points inside the active sessions directory."""
+        candidate = Path(name_or_id).expanduser()
+        session_root = self.sessions_dir.resolve()
+
+        path_candidates: list[Path] = []
+        if candidate.is_absolute():
+            path_candidates.append(candidate)
+        else:
+            path_candidates.append((self.workspace / candidate).resolve())
+
+        for path_candidate in path_candidates:
+            if not path_candidate.exists() or not path_candidate.is_file():
+                continue
+            resolved = path_candidate.resolve()
+            if resolved.suffix != ".jsonl":
+                continue
+            if not resolved.is_relative_to(session_root):
+                continue
+            return resolved
+
+        return None
+
     def find_session(self, name_or_id: str) -> Path | None:
         """Find a session by name or partial ID.
 
@@ -139,12 +162,9 @@ class SessionManager:
         Returns:
             Path to session file if found
         """
-        explicit_path = Path(name_or_id).expanduser()
-        if explicit_path.exists():
-            return explicit_path.resolve()
-        workspace_relative = (self.workspace / explicit_path).resolve()
-        if workspace_relative.exists():
-            return workspace_relative
+        explicit_path = self._resolve_explicit_session_path(name_or_id)
+        if explicit_path is not None:
+            return explicit_path
 
         sessions = self.list_sessions()
 
