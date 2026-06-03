@@ -2,6 +2,7 @@
 
 from .chat import ChatUI
 from .console import Console
+from .keylistener import LiveInputListener
 from .layout import LayoutManager, Overlay, StatusLine
 from .progress import Progress, Spinner
 from .prompt import InteractivePrompt, Prompt
@@ -30,6 +31,7 @@ __version__ = "0.0.1"
 __all__ = [
     "ChatUI",
     "Console",
+    "LiveInputListener",
     "Prompt",
     "InteractivePrompt",
     "Progress",
