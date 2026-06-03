@@ -371,7 +371,7 @@ def test_run_json_mode_interactive_emits_error_shutdown_reason() -> None:
 
 
 def test_main_installs_signal_cleanup_for_interactive_mode(mock_env, mock_ctx, tmp_path):
-    from pig_coding_agent.cli import main
+    from pig_coding_agent.cli import _available_cleanup_signals, main
 
     mock_llm = Mock()
     mock_llm.config = Mock(model="test-model")
@@ -397,8 +397,9 @@ def test_main_installs_signal_cleanup_for_interactive_mode(mock_env, mock_ctx, t
     ):
         main(ctx=mock_ctx, provider="openai", workspace=tmp_path)
 
+    expected_signals = _available_cleanup_signals()
     assert signal.SIGTERM in handlers
-    assert signal.SIGHUP in handlers
+    assert tuple(handlers) == expected_signals
 
     with patch("sys.exit", side_effect=SystemExit(0)):
         try:
@@ -407,3 +408,11 @@ def test_main_installs_signal_cleanup_for_interactive_mode(mock_env, mock_ctx, t
             pass
 
     mock_agent.extension_manager.cleanup.assert_called_once_with(reason="sigterm")
+
+
+def test_available_cleanup_signals_skips_missing_sighup(monkeypatch):
+    from pig_coding_agent import cli
+
+    monkeypatch.delattr(cli.signal, "SIGHUP", raising=False)
+
+    assert cli._available_cleanup_signals() == (signal.SIGTERM,)

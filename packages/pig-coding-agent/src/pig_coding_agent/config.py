@@ -1,6 +1,7 @@
 """Configuration management for coding agent."""
 
 import json
+import os
 from pathlib import Path
 from typing import Any
 
@@ -71,9 +72,10 @@ class ConfigManager:
             workspace: Workspace directory
         """
         self.workspace = Path(workspace) if workspace else Path.cwd()
+        home_dir = Path(os.environ.get("HOME", Path.home())).expanduser()
 
         # Config file paths
-        self.global_config = Path.home() / ".agents" / "config.json"
+        self.global_config = home_dir / ".agents" / "config.json"
         self.project_config = self.workspace / ".agents" / "config.json"
 
     def load_config(self) -> AgentConfig:

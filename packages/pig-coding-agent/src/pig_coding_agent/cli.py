@@ -26,6 +26,15 @@ console = Console()
 T = TypeVar("T")
 
 
+def _available_cleanup_signals() -> tuple[int, ...]:
+    """Return supported process-termination signals for this platform."""
+    signals = [signal.SIGTERM]
+    sighup = getattr(signal, "SIGHUP", None)
+    if sighup is not None:
+        signals.append(sighup)
+    return tuple(signals)
+
+
 def _read_piped_stdin() -> str | None:
     """Return piped stdin content when available in non-protocol modes."""
     import select
@@ -73,13 +82,14 @@ def _shutdown_extensions(agent: Any, reason: str) -> None:
 def _run_with_signal_cleanup(agent: Any, runner) -> None:
     """Run a callable while ensuring SIGTERM/SIGHUP trigger extension cleanup."""
     previous_handlers: dict[int, Any] = {}
+    sighup = getattr(signal, "SIGHUP", None)
 
     def _handle_signal(sig, frame) -> None:
-        reason = "sighup" if sig == signal.SIGHUP else "sigterm"
+        reason = "sighup" if sighup is not None and sig == sighup else "sigterm"
         _shutdown_extensions(agent, reason)
         sys.exit(0)
 
-    for sig in (signal.SIGTERM, signal.SIGHUP):
+    for sig in _available_cleanup_signals():
         previous_handlers[sig] = signal.signal(sig, _handle_signal)
 
     try:

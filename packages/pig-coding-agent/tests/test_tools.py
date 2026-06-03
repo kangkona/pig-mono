@@ -1,5 +1,7 @@
 """Tests for coding agent tools."""
 
+import sys
+
 import pytest
 from pig_coding_agent.tools import CodeTools, FileTools, ShellTools
 
@@ -173,8 +175,11 @@ def test_shell_tools_truncates_large_line_output_without_counting_trailing_newli
     """Large single-line output should trim to a stable tail without phantom newline lines."""
     tools = ShellTools()
 
-    # Generate the large payload at runtime so the test does not depend on shell ARG_MAX limits.
-    command = "python3 - <<'PY'\nimport sys\nsys.stdout.write('X' * 300_000 + '\\n')\nPY"
+    command = (
+        f'"{sys.executable}" -c "import sys; '
+        """sys.stdout.write('X' * 300000 + '\\n')"""
+        '"'
+    )
     result = tools.run_command(command)
 
     assert "[Output truncated" in result
@@ -186,7 +191,11 @@ def test_shell_tools_truncates_many_lines_without_extra_trailing_newline_line():
     """Line-limited output should ignore the final trailing newline as an extra line."""
     tools = ShellTools()
 
-    command = "python3 - <<'PY'\nfor i in range(1, 4001):\n    print(f\"line-{i:04d}\")\nPY"
+    command = (
+        f'"{sys.executable}" -c "for i in range(1, 4001): '
+        """print(f'line-{i:04d}')"""
+        '"'
+    )
     result = tools.run_command(command)
 
     assert "[Showing lines 2001-4000 of 4000." in result
