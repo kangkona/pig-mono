@@ -173,8 +173,9 @@ def test_shell_tools_truncates_large_line_output_without_counting_trailing_newli
     """Large single-line output should trim to a stable tail without phantom newline lines."""
     tools = ShellTools()
 
-    payload = "X" * 300_000 + "\n"
-    result = tools.run_command(f"printf '{payload}'")
+    # Generate the large payload at runtime so the test does not depend on shell ARG_MAX limits.
+    command = "python3 - <<'PY'\nimport sys\nsys.stdout.write('X' * 300_000 + '\\n')\nPY"
+    result = tools.run_command(command)
 
     assert "[Output truncated" in result
     assert "300001" not in result
