@@ -282,6 +282,33 @@ def test_verbose_log_renders_through_attached_ui_without_duplicate_turns():
     assert "Iteration" in ui_text
 
 
+def test_verbose_log_does_not_parse_arbitrary_content_as_markup():
+    """Tool output containing '[...]' must render verbatim, never as Rich markup.
+
+    Regression: routing _log through the Rich console parsed interpolated
+    content as markup, which swallowed '[tag]'-looking substrings and raised
+    MarkupError on unbalanced tags like '[/]'.
+    """
+    import io
+
+    from rich.console import Console
+
+    ui = Mock()
+    ui.console = Console(file=io.StringIO(), force_terminal=True, width=100)
+
+    agent = Agent(llm=_mock_llm_returning("hi"), verbose=True)
+    agent.ui = ui
+
+    # Adversarial content that previously broke rendering
+    agent._log("✓ Result: WARN [deprecated] see [/] for details", style="green")
+
+    out = ui.console.file.getvalue()
+    assert "[deprecated]" in out  # not swallowed
+    assert "[/]" in out  # did not raise MarkupError
+    assert "[green]" not in out  # style applied via style=, not as a literal tag
+    assert "\x1b[32m" in out  # green actually applied
+
+
 def test_verbose_log_falls_back_to_print_without_ui():
     """Headless library use keeps printing turns + trace (unchanged behavior)."""
     import contextlib

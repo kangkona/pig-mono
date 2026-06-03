@@ -121,7 +121,7 @@ class Agent:
         tool_name = tool_call.get("function", {}).get("name")
         tool_args = json.loads(tool_call.get("function", {}).get("arguments", "{}"))
 
-        self._log(f"[cyan]→ Calling tool: {tool_name}({tool_args})[/cyan]")
+        self._log(f"→ Calling tool: {tool_name}({tool_args})", style="cyan")
 
         if self.before_tool_call:
             preflight = self.before_tool_call(tool_name, tool_args)
@@ -140,7 +140,7 @@ class Agent:
             else:
                 raw_result = self.registry.execute(tool_name, **tool_args)
                 result = self._as_tool_result(raw_result)
-            self._log(f"[green]✓ Result: {result.data if result.ok else result.error}[/green]")
+            self._log(f"✓ Result: {result.data if result.ok else result.error}", style="green")
 
             if self.after_tool_call:
                 try:
@@ -154,7 +154,7 @@ class Agent:
                 self.on_tool_end(tool_name, result)
         except Exception as e:
             result = ToolResult(ok=False, error=f"Error: {e}")
-            self._log(f"[red]✗ {result.error}[/red]")
+            self._log(f"✗ {result.error}", style="red")
 
         return self._tool_message(tool_call, tool_name, result), False
 
@@ -177,13 +177,16 @@ class Agent:
     def _log(self, message: str, style: str = "") -> None:
         """Log message if verbose.
 
-        Routes through an attached UI's Rich console when present so inline
-        markup (e.g. ``[cyan]…[/cyan]``) renders instead of leaking as literal
-        tags; falls back to a plain ``print`` when there is no UI.
+        When a UI is attached, render through its Rich console and apply colour
+        via the ``style`` argument rather than inline markup, printing the
+        message with ``markup=False`` so arbitrary interpolated content (tool
+        output, model text) is never parsed as Rich markup — which would either
+        swallow ``[...]`` substrings or raise ``MarkupError`` on unbalanced
+        tags. Falls back to a plain ``print`` when there is no UI.
 
         Args:
-            message: Message to log
-            style: Style for message (ignored, kept for compatibility)
+            message: Message to log (plain text; no Rich markup)
+            style: Optional Rich style applied to the whole line
         """
         if not self.verbose:
             return
@@ -191,7 +194,7 @@ class Agent:
         ui = getattr(self, "ui", None)
         console = getattr(ui, "console", None) if ui is not None else None
         if console is not None:
-            console.print(message)
+            console.print(message, style=style or None, markup=False, highlight=False)
         else:
             print(message)
 
@@ -214,7 +217,7 @@ class Agent:
 
         response: Response | None = None
         for message in messages:
-            self._log(f"[cyan]→ Follow-up: {message.content}[/cyan]")
+            self._log(f"→ Follow-up: {message.content}", style="cyan")
             response = self.run(message.content, check_queue=True)
         return response
 
@@ -291,13 +294,13 @@ class Agent:
         Returns:
             Agent response
         """
-        self._log_turn(f"[bold blue]User:[/bold blue] {message}")
+        self._log_turn(f"User: {message}")
         self.history.append(Message(role="user", content=message))
 
         iterations = 0
         while iterations < self.max_iterations:
             iterations += 1
-            self._log(f"[dim]Iteration {iterations}[/dim]")
+            self._log(f"Iteration {iterations}", style="dim")
 
             # Get tool schemas
             tools_schema = self.registry.get_schemas() if len(self.registry) > 0 else None
@@ -309,13 +312,13 @@ class Agent:
                     tools=tools_schema,
                 )
             except Exception as e:
-                self._log(f"[red]LLM call failed: {e}[/red]")
+                self._log(f"LLM call failed: {e}", style="red")
                 self._emit_agent_end(success=False, error=str(e))
                 raise
 
             # Check if tool calls are needed
             if hasattr(response, "tool_calls") and response.tool_calls:
-                self._log(f"[yellow]Tool calls requested: {len(response.tool_calls)}[/yellow]")
+                self._log(f"Tool calls requested: {len(response.tool_calls)}", style="yellow")
 
                 tool_results = []
                 for tool_call in response.tool_calls:
@@ -363,7 +366,7 @@ class Agent:
                 if check_queue and self.message_queue.has_steering():
                     steering = self.message_queue.get_steering_messages()
                     for msg in steering:
-                        self._log(f"[yellow]⚡ Steering: {msg.content}[/yellow]")
+                        self._log(f"⚡ Steering: {msg.content}", style="yellow")
                         self.history.append(Message(role="user", content=msg.content))
 
                 # Continue loop to get final response
@@ -371,7 +374,7 @@ class Agent:
             else:
                 # No tool calls, we have final response
                 self.history.append(Message(role="assistant", content=response.content))
-                self._log_turn(f"[bold green]Agent:[/bold green] {response.content}")
+                self._log_turn(f"Agent: {response.content}")
 
                 # Check for follow-up messages
                 if check_queue and self.message_queue.has_followup():
@@ -755,7 +758,7 @@ class Agent:
         Yields:
             Text chunks from the agent response
         """
-        self._log_turn(f"[bold blue]User:[/bold blue] {message}")
+        self._log_turn(f"User: {message}")
         self.history.append(Message(role="user", content=message))
 
         async for chunk in self._master_loop(cancel):
@@ -776,7 +779,7 @@ class Agent:
         iterations = 0
         while iterations < self.max_iterations:
             iterations += 1
-            self._log(f"[dim]Iteration {iterations}[/dim]")
+            self._log(f"Iteration {iterations}", style="dim")
 
             # Check for cancellation
             if cancel and cancel.is_set():
@@ -800,7 +803,7 @@ class Agent:
                 else:
                     response_stream = stream_call
             except Exception as e:
-                self._log(f"[red]Streaming LLM call failed: {e}[/red]")
+                self._log(f"Streaming LLM call failed: {e}", style="red")
                 self._emit_agent_end(success=False, error=str(e))
                 raise
 
@@ -849,7 +852,7 @@ class Agent:
             if not tool_calls_acc:
                 final_content = "".join(buffered)
                 self.history.append(Message(role="assistant", content=final_content))
-                self._log_turn(f"[bold green]Agent:[/bold green] {final_content}")
+                self._log_turn(f"Agent: {final_content}")
                 for part in buffered:
                     yield part
                 self._emit_agent_end(success=True)
@@ -956,7 +959,7 @@ class Agent:
             except json.JSONDecodeError:
                 tool_args = {}
 
-            self._log(f"[cyan]→ Calling tool: {tool_name}({tool_args})[/cyan]")
+            self._log(f"→ Calling tool: {tool_name}({tool_args})", style="cyan")
 
             if self.before_tool_call:
                 preflight = self.before_tool_call(tool_name, tool_args)
@@ -1005,7 +1008,7 @@ class Agent:
                         },
                     )
                 )
-                self._log(f"[green]✓ Result: {result.data if result.ok else result.error}[/green]")
+                self._log(f"✓ Result: {result.data if result.ok else result.error}", style="green")
 
                 if self.after_tool_call:
                     try:
@@ -1034,7 +1037,7 @@ class Agent:
                         },
                     )
                 )
-                self._log(f"[red]✗ {error_msg}[/red]")
+                self._log(f"✗ {error_msg}", style="red")
                 terminate_all = False
 
         return terminate_all
