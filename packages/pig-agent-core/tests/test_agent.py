@@ -237,3 +237,63 @@ async def test_agent_respond_with_cancellation():
         chunks.append(chunk)
 
     assert chunks == ["Request was cancelled."]
+
+
+def _mock_llm_returning(content):
+    llm = Mock()
+    llm.config = Mock(model="test-model")
+    llm.chat.return_value = Mock(content=content, tool_calls=None)
+    return llm
+
+
+def test_verbose_log_renders_through_attached_ui_without_duplicate_turns():
+    """With a UI attached, turn echoes are suppressed and markup is rendered.
+
+    Regression: core Agent._log used a raw print(), so it (a) double-printed
+    User/Agent lines already shown by the UI and (b) emitted literal Rich
+    markup tags like '[bold blue]'.
+    """
+    import io
+
+    from rich.console import Console
+
+    ui = Mock()
+    ui.console = Console(file=io.StringIO(), force_terminal=True, width=80)
+
+    agent = Agent(llm=_mock_llm_returning("hi"), verbose=True)
+    agent.ui = ui
+
+    captured = io.StringIO()
+    import contextlib
+
+    with contextlib.redirect_stdout(captured):
+        agent.run("ping")
+
+    stdout_text = captured.getvalue()
+    ui_text = ui.console.file.getvalue()
+
+    # UI owns turn rendering -> no raw stdout echoes
+    assert "User:" not in stdout_text
+    assert "Agent:" not in stdout_text
+    # Markup must be rendered, never emitted literally
+    assert "[bold blue]" not in stdout_text
+    assert "[bold blue]" not in ui_text
+    # Execution trace still surfaces, now through the Rich console
+    assert "Iteration" in ui_text
+
+
+def test_verbose_log_falls_back_to_print_without_ui():
+    """Headless library use keeps printing turns + trace (unchanged behavior)."""
+    import contextlib
+    import io
+
+    agent = Agent(llm=_mock_llm_returning("hi"), verbose=True)
+
+    captured = io.StringIO()
+    with contextlib.redirect_stdout(captured):
+        agent.run("ping")
+
+    text = captured.getvalue()
+    assert "User:" in text
+    assert "Agent:" in text
+    assert "Iteration" in text

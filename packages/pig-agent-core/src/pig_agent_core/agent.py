@@ -177,12 +177,33 @@ class Agent:
     def _log(self, message: str, style: str = "") -> None:
         """Log message if verbose.
 
+        Routes through an attached UI's Rich console when present so inline
+        markup (e.g. ``[cyan]…[/cyan]``) renders instead of leaking as literal
+        tags; falls back to a plain ``print`` when there is no UI.
+
         Args:
             message: Message to log
             style: Style for message (ignored, kept for compatibility)
         """
-        if self.verbose:
+        if not self.verbose:
+            return
+
+        ui = getattr(self, "ui", None)
+        console = getattr(ui, "console", None) if ui is not None else None
+        if console is not None:
+            console.print(message)
+        else:
             print(message)
+
+    def _log_turn(self, message: str) -> None:
+        """Echo a conversational turn (User/Agent).
+
+        When a UI is attached it owns turn rendering, so the library-level echo
+        is suppressed to avoid printing each message twice.
+        """
+        if getattr(self, "ui", None) is not None:
+            return
+        self._log(message)
 
     def _drain_followup_messages(
         self, messages: list[Any], *, check_queue: bool
@@ -270,7 +291,7 @@ class Agent:
         Returns:
             Agent response
         """
-        self._log(f"[bold blue]User:[/bold blue] {message}")
+        self._log_turn(f"[bold blue]User:[/bold blue] {message}")
         self.history.append(Message(role="user", content=message))
 
         iterations = 0
@@ -350,7 +371,7 @@ class Agent:
             else:
                 # No tool calls, we have final response
                 self.history.append(Message(role="assistant", content=response.content))
-                self._log(f"[bold green]Agent:[/bold green] {response.content}")
+                self._log_turn(f"[bold green]Agent:[/bold green] {response.content}")
 
                 # Check for follow-up messages
                 if check_queue and self.message_queue.has_followup():
@@ -390,7 +411,7 @@ class Agent:
         Returns:
             Agent response
         """
-        self._log(f"User: {message}")
+        self._log_turn(f"User: {message}")
         self.history.append(Message(role="user", content=message))
 
         iterations = 0
@@ -610,7 +631,7 @@ class Agent:
             else:
                 # No tool calls, we have final response
                 self.history.append(Message(role="assistant", content=response_content))
-                self._log(f"Agent: {response_content}")
+                self._log_turn(f"Agent: {response_content}")
 
                 # Check for follow-up messages
                 if check_queue and self.message_queue.has_followup():
@@ -734,7 +755,7 @@ class Agent:
         Yields:
             Text chunks from the agent response
         """
-        self._log(f"[bold blue]User:[/bold blue] {message}")
+        self._log_turn(f"[bold blue]User:[/bold blue] {message}")
         self.history.append(Message(role="user", content=message))
 
         async for chunk in self._master_loop(cancel):
@@ -828,7 +849,7 @@ class Agent:
             if not tool_calls_acc:
                 final_content = "".join(buffered)
                 self.history.append(Message(role="assistant", content=final_content))
-                self._log(f"[bold green]Agent:[/bold green] {final_content}")
+                self._log_turn(f"[bold green]Agent:[/bold green] {final_content}")
                 for part in buffered:
                     yield part
                 self._emit_agent_end(success=True)
