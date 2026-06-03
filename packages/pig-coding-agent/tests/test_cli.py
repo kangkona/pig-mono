@@ -323,6 +323,33 @@ def test_run_json_mode_piped_input_emits_error_shutdown_reason(monkeypatch):
     agent.extension_manager.cleanup.assert_called_once_with(reason="error")
 
 
+def test_run_json_mode_piped_input_emits_interrupt_shutdown_reason(monkeypatch):
+    """Piped JSON mode should emit interrupt shutdown semantics on keyboard interrupt."""
+    from pig_coding_agent.cli import run_json_mode
+
+    class InterruptingInput:
+        def __iter__(self):
+            return self
+
+        def __next__(self):
+            raise KeyboardInterrupt()
+
+    agent = Mock()
+    agent.extension_manager = Mock()
+    json_mode = Mock()
+
+    monkeypatch.setattr("sys.stdin", InterruptingInput())
+
+    with (
+        patch("select.select", return_value=([object()], [], [])),
+        patch("pig_agent_core.JSONOutputMode", return_value=json_mode),
+    ):
+        run_json_mode(agent)
+
+    json_mode.emit_event.assert_any_call("shutdown", {"reason": "interrupt"})
+    agent.extension_manager.cleanup.assert_called_once_with(reason="interrupt")
+
+
 def test_run_json_mode_emits_extension_shutdown_once_with_real_extension_manager() -> None:
     """JSON mode should not duplicate extension shutdown events."""
     from pig_coding_agent.cli import run_json_mode
@@ -346,6 +373,31 @@ def test_run_json_mode_emits_extension_shutdown_once_with_real_extension_manager
         run_json_mode(agent)
 
     assert shutdown_events == [{"reason": "eof"}]
+
+
+def test_run_json_mode_cleans_up_extensions_before_shutdown_event() -> None:
+    """Protocol shutdown events should not fire before extension teardown."""
+    from pig_coding_agent.cli import run_json_mode
+
+    order: list[str] = []
+    agent = Mock()
+    agent.extension_manager = Mock()
+    agent.extension_manager.cleanup.side_effect = lambda reason: order.append(f"cleanup:{reason}")
+    json_mode = Mock()
+    json_mode.emit_event.side_effect = lambda event, data: order.append(
+        f"event:{event}:{data.get('reason', '')}"
+    )
+
+    with (
+        patch("select.select", return_value=([], [], [])),
+        patch("builtins.input", side_effect=EOFError()),
+        patch("pig_agent_core.JSONOutputMode", return_value=json_mode),
+    ):
+        run_json_mode(agent)
+
+    shutdown_event_index = order.index("event:shutdown:eof")
+    cleanup_index = order.index("cleanup:eof")
+    assert cleanup_index < shutdown_event_index
 
 
 def test_run_json_mode_interactive_emits_error_shutdown_reason() -> None:
@@ -416,3 +468,29 @@ def test_available_cleanup_signals_skips_missing_sighup(monkeypatch):
     monkeypatch.delattr(cli.signal, "SIGHUP", raising=False)
 
     assert cli._available_cleanup_signals() == (signal.SIGTERM,)
+
+
+def test_run_with_signal_cleanup_prefers_protocol_shutdown_callback() -> None:
+    from pig_coding_agent import cli
+
+    agent = Mock()
+    agent._protocol_shutdown = Mock()
+    handlers: dict[int, object] = {}
+
+    def fake_signal(sig, handler):
+        handlers[sig] = handler
+        return None
+
+    with (
+        patch("signal.signal", side_effect=fake_signal),
+        patch("sys.exit", side_effect=SystemExit(0)),
+    ):
+        try:
+            cli._run_with_signal_cleanup(
+                agent, lambda: handlers[signal.SIGTERM](signal.SIGTERM, None)
+            )
+        except SystemExit:
+            pass
+
+    agent._protocol_shutdown.assert_called_once_with("sigterm")
+    agent.extension_manager.cleanup.assert_not_called()

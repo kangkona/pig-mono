@@ -76,6 +76,9 @@ def _shutdown_extensions(agent: Any, reason: str) -> None:
     extension_manager = getattr(agent, "extension_manager", None)
     if extension_manager is None:
         return
+    if getattr(agent, "_extensions_shutdown_done", False) is True:
+        return
+    agent._extensions_shutdown_done = True
     extension_manager.cleanup(reason=reason)
 
 
@@ -86,7 +89,11 @@ def _run_with_signal_cleanup(agent: Any, runner) -> None:
 
     def _handle_signal(sig, frame) -> None:
         reason = "sighup" if sighup is not None and sig == sighup else "sigterm"
-        _shutdown_extensions(agent, reason)
+        shutdown = vars(agent).get("_protocol_shutdown") if hasattr(agent, "__dict__") else None
+        if callable(shutdown):
+            shutdown(reason)
+        else:
+            _shutdown_extensions(agent, reason)
         sys.exit(0)
 
     for sig in _available_cleanup_signals():
@@ -387,70 +394,84 @@ def run_json_mode(agent):
     json_out = JSONOutputMode()
 
     def emit_shutdown(reason: str) -> None:
-        json_out.emit_event("shutdown", {"reason": reason})
+        if getattr(agent, "_protocol_shutdown_emitted", False):
+            return
+        agent._protocol_shutdown_emitted = True
         _shutdown_extensions(agent, reason)
+        json_out.emit_event("shutdown", {"reason": reason})
+
+    agent._protocol_shutdown = emit_shutdown
+    agent._protocol_shutdown_emitted = False
 
     # Read from stdin if piped, otherwise interactive
     import select
 
-    if select.select([sys.stdin], [], [], 0.0)[0]:
-        # Input available, read line
-        for line in sys.stdin:
-            line = line.strip()
-            if not line:
-                continue
-
+    try:
+        if select.select([sys.stdin], [], [], 0.0)[0]:
+            # Input available, read line
             try:
-                # Parse input
-                data = json.loads(line)
-                message = data.get("message") or data.get("content")
+                for line in sys.stdin:
+                    line = line.strip()
+                    if not line:
+                        continue
 
-                if not message:
-                    json_out.error("No message in request")
-                    continue
+                    try:
+                        # Parse input
+                        data = json.loads(line)
+                        message = data.get("message") or data.get("content")
 
-                # Send message event
-                json_out.message("user", message)
+                        if not message:
+                            json_out.error("No message in request")
+                            continue
 
-                # Get response
-                response = agent.agent.run(message)
+                        # Send message event
+                        json_out.message("user", message)
 
-                # Send response
-                json_out.message("assistant", response.content)
-                json_out.done(response.content)
+                        # Get response
+                        response = agent.agent.run(message)
 
-            except json.JSONDecodeError as e:
-                json_out.error(f"Invalid JSON: {e}")
-            except Exception as e:
-                json_out.error(f"Error: {e}")
-                emit_shutdown("error")
-                return
-        emit_shutdown("eof")
-    else:
-        # Interactive JSON mode
-        json_out.emit_event("ready", {"agent": "pig-code", "mode": "json"})
+                        # Send response
+                        json_out.message("assistant", response.content)
+                        json_out.done(response.content)
 
-        while True:
-            try:
-                user_input = input()
-                if not user_input:
-                    continue
-
-                json_out.message("user", user_input)
-                response = agent.agent.run(user_input)
-                json_out.message("assistant", response.content)
-                json_out.done()
-
+                    except json.JSONDecodeError as e:
+                        json_out.error(f"Invalid JSON: {e}")
+                    except Exception as e:
+                        json_out.error(f"Error: {e}")
+                        emit_shutdown("error")
+                        return
             except KeyboardInterrupt:
                 emit_shutdown("interrupt")
-                break
-            except EOFError:
-                emit_shutdown("eof")
-                break
-            except Exception as e:
-                json_out.error(f"Error: {e}")
-                emit_shutdown("error")
-                break
+                return
+            emit_shutdown("eof")
+        else:
+            # Interactive JSON mode
+            json_out.emit_event("ready", {"agent": "pig-code", "mode": "json"})
+
+            while True:
+                try:
+                    user_input = input()
+                    if not user_input:
+                        continue
+
+                    json_out.message("user", user_input)
+                    response = agent.agent.run(user_input)
+                    json_out.message("assistant", response.content)
+                    json_out.done()
+
+                except KeyboardInterrupt:
+                    emit_shutdown("interrupt")
+                    break
+                except EOFError:
+                    emit_shutdown("eof")
+                    break
+                except Exception as e:
+                    json_out.error(f"Error: {e}")
+                    emit_shutdown("error")
+                    break
+    finally:
+        if getattr(agent, "_protocol_shutdown", None) is emit_shutdown:
+            agent._protocol_shutdown = None
 
 
 def run_rpc_mode(agent):
@@ -464,10 +485,14 @@ def run_rpc_mode(agent):
     rpc = RPCMode()
 
     def emit_shutdown(reason: str) -> None:
-        rpc.send_event("shutdown", {"reason": reason})
+        if getattr(agent, "_protocol_shutdown_emitted", False):
+            return
+        agent._protocol_shutdown_emitted = True
         _shutdown_extensions(agent, reason)
+        rpc.send_event("shutdown", {"reason": reason})
 
-    rpc._shutdown_callback = emit_shutdown
+    agent._protocol_shutdown = emit_shutdown
+    agent._protocol_shutdown_emitted = False
 
     def handle_request(method: str, params: dict) -> Any:
         """Handle RPC requests.
@@ -529,8 +554,12 @@ def run_rpc_mode(agent):
             raise ValueError(f"Unknown method: {method}")
 
     # Run server
-    rpc.run_server(handle_request)
-    emit_shutdown(getattr(rpc, "last_shutdown_reason", None) or "eof")
+    try:
+        rpc.run_server(handle_request)
+        emit_shutdown(getattr(rpc, "last_shutdown_reason", None) or "eof")
+    finally:
+        if getattr(agent, "_protocol_shutdown", None) is emit_shutdown:
+            agent._protocol_shutdown = None
 
 
 @app.command()

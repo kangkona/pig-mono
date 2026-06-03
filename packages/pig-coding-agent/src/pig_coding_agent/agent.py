@@ -68,6 +68,7 @@ class CodingAgent:
         self.llm = llm or LLM()
         self.verbose = verbose
         self.excluded_tools = set(excluded_tools or set())
+        self._extensions_shutdown_done = False
         if session_dir is None and os.environ.get("PIG_CODING_AGENT_SESSION_DIR") is None:
             session_dir = ConfigManager(self.workspace).get_session_dir()
         self.sessions_dir = SessionManager(self.workspace, session_dir=session_dir).sessions_dir
@@ -226,6 +227,9 @@ class CodingAgent:
         """Forward shutdown reason into extension cleanup lifecycle."""
         if not self.extension_manager:
             return
+        if self._extensions_shutdown_done:
+            return
+        self._extensions_shutdown_done = True
         try:
             self.extension_manager.cleanup(reason=reason)
         except Exception:

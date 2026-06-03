@@ -885,6 +885,30 @@ def test_shutdown_extensions_helper_emits_signal_reason_once_with_real_extension
     assert shutdown_events == [{"reason": "sigterm"}]
 
 
+def test_shutdown_extensions_helper_is_idempotent_with_real_extension_manager(
+    mock_llm, temp_workspace
+):
+    agent = CodingAgent(
+        llm=mock_llm,
+        workspace=str(temp_workspace),
+        verbose=False,
+        enable_extensions=False,
+    )
+    manager = ExtensionManager(agent.agent)
+    shutdown_events = []
+
+    @manager.api.on("session_shutdown")
+    def on_shutdown(event, ctx):
+        shutdown_events.append(event)
+
+    agent.extension_manager = manager
+
+    agent._shutdown_extensions("sigterm")
+    agent._shutdown_extensions("sigterm")
+
+    assert shutdown_events == [{"reason": "sigterm"}]
+
+
 def test_skill_invocation(mock_llm, temp_workspace):
     """Test invoking a skill."""
     # Create skill
