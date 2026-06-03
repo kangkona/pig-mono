@@ -4,7 +4,7 @@ import asyncio
 import inspect
 import json
 import threading
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 from .base import CancelledError, ToolResult
@@ -430,9 +430,13 @@ class ToolRegistry:
                 return ToolResult(ok=False, error="Cancelled during execution")
 
             try:
-                # Execute with timeout
-                result = await asyncio.wait_for(
-                    self._execute_handler(handler, args, user_id, meta, cancel), timeout=timeout
+                # Execute with timeout, racing against cancellation so an
+                # in-flight tool (e.g. a running shell command) is killed the
+                # moment the turn is aborted — not just between tools.
+                result = await self._run_with_cancel(
+                    self._execute_handler(handler, args, user_id, meta, cancel),
+                    timeout,
+                    cancel,
                 )
                 if isinstance(result, ToolResult):
                     return result
@@ -451,6 +455,48 @@ class ToolRegistry:
                     continue
 
         return ToolResult(ok=False, error=last_error or "Unknown error")
+
+    async def _run_with_cancel(
+        self,
+        coro: Awaitable[Any],
+        timeout: float,
+        cancel: asyncio.Event | None,
+    ) -> Any:
+        """Await ``coro`` (with timeout); if ``cancel`` fires first, cancel the task.
+
+        Strict no-op wrapper when ``cancel`` is None — preserves the exact
+        ``asyncio.wait_for`` behavior for json/rpc/sync paths. When a cancel
+        event is provided and is set while the handler runs, the handler task is
+        cancelled (propagating ``CancelledError`` into the handler so it can kill
+        any subprocess) and ``CancelledError`` is raised to the caller.
+        """
+        if cancel is None:
+            return await asyncio.wait_for(coro, timeout=timeout)
+
+        handler_task = asyncio.ensure_future(asyncio.wait_for(coro, timeout=timeout))
+        cancel_task = asyncio.ensure_future(cancel.wait())
+        done, _ = await asyncio.wait(
+            {handler_task, cancel_task}, return_when=asyncio.FIRST_COMPLETED
+        )
+
+        if handler_task in done:
+            cancel_task.cancel()
+            try:
+                await cancel_task
+            except asyncio.CancelledError:
+                pass
+            return handler_task.result()  # re-raises TimeoutError/handler errors
+
+        # Cancellation won the race: stop the in-flight handler. Awaiting the
+        # cancelled task raises asyncio.CancelledError (a BaseException), so catch
+        # it explicitly; then surface the registry's own CancelledError so
+        # _execute_tool returns a clean "Cancelled by user" result.
+        handler_task.cancel()
+        try:
+            await handler_task
+        except (asyncio.CancelledError, asyncio.TimeoutError, Exception):
+            pass
+        raise CancelledError()
 
     async def _execute_handler(
         self,

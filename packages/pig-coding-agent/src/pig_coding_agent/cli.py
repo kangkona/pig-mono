@@ -530,7 +530,9 @@ def run_rpc_mode(agent):
 
             from .tools import ShellTools
 
-            output = ShellTools().run_command(
+            # RPC bash is a discrete request/response with no turn-level cancel;
+            # use the synchronous helper directly.
+            output = ShellTools()._run_command_sync(
                 command,
                 cwd=params.get("cwd"),
                 exclude_from_context=bool(params.get("excludeFromContext")),

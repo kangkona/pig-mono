@@ -1,5 +1,6 @@
 """Built-in tools for coding agent."""
 
+import asyncio
 import subprocess
 from pathlib import Path
 
@@ -293,13 +294,17 @@ class ShellTools:
     """Shell command execution tools."""
 
     @tool(description="Execute a shell command")
-    def run_command(
+    async def run_command(
         self,
         command: str,
         cwd: str | None = None,
         exclude_from_context: bool = False,
     ) -> str:
-        """Execute shell command safely.
+        """Execute a shell command, killable when the turn is aborted.
+
+        Runs the command as an async subprocess so that when the surrounding
+        agent turn is cancelled (e.g. the user pressed Esc), the in-flight
+        process is killed instead of lingering.
 
         Args:
             command: Command to execute
@@ -309,6 +314,43 @@ class ShellTools:
         Returns:
             Command output
         """
+        proc = None
+        try:
+            proc = await asyncio.create_subprocess_shell(
+                command,
+                cwd=cwd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            try:
+                stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=30)
+            except asyncio.TimeoutError:
+                proc.kill()
+                await proc.wait()
+                return "Error: Command timed out"
+            output = stdout.decode(errors="replace")
+            stderr_text = stderr.decode(errors="replace")
+            if stderr_text:
+                output += f"\nErrors:\n{stderr_text}"
+            if exclude_from_context:
+                return "[Output excluded from model context]"
+            return _truncate_command_output(output)
+        except asyncio.CancelledError:
+            # Turn aborted mid-command: kill the subprocess and propagate.
+            if proc is not None and proc.returncode is None:
+                proc.kill()
+                await proc.wait()
+            raise
+        except Exception as e:
+            return f"Error: {e}"
+
+    def _run_command_sync(
+        self,
+        command: str,
+        cwd: str | None = None,
+        exclude_from_context: bool = False,
+    ) -> str:
+        """Synchronous shell execution used by the git helpers (not cancellable)."""
         try:
             result = subprocess.run(
                 command,
@@ -336,7 +378,7 @@ class ShellTools:
         Returns:
             Git status output
         """
-        return self.run_command("git status --short")
+        return self._run_command_sync("git status --short")
 
     @tool(description="Get git diff")
     def git_diff(self, path: str | None = None) -> str:
@@ -349,7 +391,7 @@ class ShellTools:
             Git diff output
         """
         cmd = f"git diff {path}" if path else "git diff"
-        return self.run_command(cmd)
+        return self._run_command_sync(cmd)
 
     @tool(description="Git commit changes")
     def git_commit(self, message: str, add_all: bool = False) -> str:
@@ -363,13 +405,13 @@ class ShellTools:
             Commit output
         """
         if add_all:
-            self.run_command("git add -A")
+            self._run_command_sync("git add -A")
 
         # Escape message for shell
         import shlex
 
         safe_message = shlex.quote(message)
-        return self.run_command(f"git commit -m {safe_message}")
+        return self._run_command_sync(f"git commit -m {safe_message}")
 
     @tool(description="Git push changes")
     def git_push(self, remote: str = "origin", branch: str | None = None) -> str:
@@ -383,9 +425,9 @@ class ShellTools:
             Push output
         """
         if branch:
-            return self.run_command(f"git push {remote} {branch}")
+            return self._run_command_sync(f"git push {remote} {branch}")
         else:
-            return self.run_command(f"git push {remote}")
+            return self._run_command_sync(f"git push {remote}")
 
     @tool(description="Create git branch")
     def git_branch(self, branch_name: str, checkout: bool = True) -> str:
@@ -399,9 +441,9 @@ class ShellTools:
             Command output
         """
         if checkout:
-            return self.run_command(f"git checkout -b {branch_name}")
+            return self._run_command_sync(f"git checkout -b {branch_name}")
         else:
-            return self.run_command(f"git branch {branch_name}")
+            return self._run_command_sync(f"git branch {branch_name}")
 
     @tool(description="Get git log")
     def git_log(self, limit: int = 10) -> str:
@@ -413,4 +455,4 @@ class ShellTools:
         Returns:
             Git log output
         """
-        return self.run_command(f"git log --oneline -n {limit}")
+        return self._run_command_sync(f"git log --oneline -n {limit}")

@@ -1,5 +1,6 @@
 """Tests for coding agent tools."""
 
+import asyncio
 import sys
 
 import pytest
@@ -149,7 +150,7 @@ def test_shell_tools_run_command():
     tools = ShellTools()
 
     # Run simple command
-    result = tools.run_command("echo 'Hello'")
+    result = asyncio.run(tools.run_command("echo 'Hello'"))
     assert "Hello" in result
 
 
@@ -157,7 +158,7 @@ def test_shell_tools_run_command_with_error():
     """Test running command that fails."""
     tools = ShellTools()
 
-    result = tools.run_command("exit 1")
+    result = asyncio.run(tools.run_command("exit 1"))
     # Should not raise, just return output
     assert isinstance(result, str)
 
@@ -167,7 +168,7 @@ def test_shell_tools_timeout():
     tools = ShellTools()
 
     # This should timeout
-    result = tools.run_command("sleep 100")
+    result = asyncio.run(tools.run_command("sleep 100"))
     assert "timed out" in result.lower() or "error" in result.lower()
 
 
@@ -180,7 +181,7 @@ def test_shell_tools_truncates_large_line_output_without_counting_trailing_newli
         """sys.stdout.write('X' * 300000 + '\\n')"""
         '"'
     )
-    result = tools.run_command(command)
+    result = asyncio.run(tools.run_command(command))
 
     assert "[Output truncated" in result
     assert "300001" not in result
@@ -196,7 +197,7 @@ def test_shell_tools_truncates_many_lines_without_extra_trailing_newline_line():
         """print(f'line-{i:04d}')"""
         '"'
     )
-    result = tools.run_command(command)
+    result = asyncio.run(tools.run_command(command))
 
     assert "[Showing lines 2001-4000 of 4000." in result
     assert "line-2001" in result
@@ -285,3 +286,57 @@ def test_file_tools_ls_detailed(temp_workspace):
     assert "file.txt" in result
     assert "subdir" in result
     assert "KB" in result or "<DIR>" in result
+
+
+def test_run_command_killed_when_turn_cancelled(tmp_path):
+    """Cancelling the turn mid-command kills the subprocess (registry cancel-race)."""
+    import json
+    from types import SimpleNamespace
+
+    from pig_agent_core.tools.registry import ToolRegistry
+
+    tools = ShellTools()
+    bound = tools.run_command  # descriptor returns a bound Tool
+    registry = ToolRegistry()
+    registry.register("run_command", bound.func, bound.to_openai_schema())
+
+    sentinel = tmp_path / "done.txt"
+    # Sleeps, then writes the sentinel. If the process is killed first, the
+    # sentinel never appears.
+    cmd = f'sleep 3 && touch "{sentinel}"'
+    tool_call = SimpleNamespace(
+        function=SimpleNamespace(name="run_command", arguments=json.dumps({"command": cmd}))
+    )
+
+    async def drive():
+        cancel = asyncio.Event()
+        task = asyncio.ensure_future(registry.execute(tool_call, "default", {}, cancel))
+        await asyncio.sleep(0.5)  # let the subprocess start
+        cancel.set()  # user pressed Esc
+        return await task
+
+    result = asyncio.run(drive())
+
+    assert result.ok is False
+    assert not sentinel.exists()  # the sleep was killed before it could touch the file
+
+
+def test_run_command_cancel_none_is_unaffected():
+    """With no cancel event the tool runs to completion (no-op cancel-race path)."""
+    import json
+    from types import SimpleNamespace
+
+    from pig_agent_core.tools.registry import ToolRegistry
+
+    tools = ShellTools()
+    bound = tools.run_command
+    registry = ToolRegistry()
+    registry.register("run_command", bound.func, bound.to_openai_schema())
+
+    tool_call = SimpleNamespace(
+        function=SimpleNamespace(name="run_command", arguments=json.dumps({"command": "echo hi"}))
+    )
+    result = asyncio.run(registry.execute(tool_call, "default", {}, None))
+
+    assert result.ok is True
+    assert "hi" in str(result.data)
