@@ -166,6 +166,34 @@ def test_repeated_session_compact_keeps_single_summary_and_same_tail() -> None:
     assert len(session.tree.entries) == entry_count_after_first
 
 
+def test_session_compact_save_load_preserves_recent_tail_after_reload(tmp_path) -> None:
+    session = Session(name="compact-reload", workspace=str(tmp_path), auto_save=False)
+    for i in range(10):
+        session.add_message("user", f"user {i}")
+        session.add_message("assistant", f"assistant {i}")
+
+    compacted_before_save = session.compact(max_tool_chars=200)
+    save_path = session.save()
+    reloaded = Session.load(save_path)
+
+    assert [(entry.role, entry.content) for entry in reloaded.get_current_conversation()] == [
+        (entry.role, entry.content) for entry in compacted_before_save
+    ]
+
+
+def test_session_compact_save_discards_old_entries_and_persists_single_root(tmp_path) -> None:
+    session = Session(name="compact-save", workspace=str(tmp_path), auto_save=False)
+    for i in range(12):
+        session.add_message("user", f"user {i}")
+
+    compacted = session.compact(max_tool_chars=200)
+    save_path = session.save()
+    persisted_entries = [json.loads(line) for line in save_path.read_text().splitlines()[1:]]
+
+    assert len(persisted_entries) == len(compacted)
+    assert sum(1 for entry in persisted_entries if entry.get("parent_id") is None) == 1
+
+
 def test_agent_before_tool_call_abort_skips_sibling_tools() -> None:
     executed: list[str] = []
 

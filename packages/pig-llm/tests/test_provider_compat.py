@@ -10,6 +10,7 @@ from pig_llm.compat import (
     ANTHROPIC_COMPAT,
     OPENAI_COMPAT,
     OPENROUTER_COMPAT,
+    apply_request_headers,
     apply_thinking_level,
     build_token_limit_param,
     classify_provider_error,
@@ -250,6 +251,20 @@ def test_openrouter_omits_prompt_cache_for_default_short_retention() -> None:
 
     assert "prompt_cache_key" not in create.call_args.kwargs
     assert "prompt_cache_retention" not in create.call_args.kwargs
+
+
+def test_apply_request_headers_strips_internal_cache_retention_marker() -> None:
+    kwargs = apply_request_headers(
+        {
+            "session_id": "session-abc",
+            "_resolved_cache_retention": "short",
+            "prompt_cache_key": "session-abc",
+        }
+    )
+
+    assert "_resolved_cache_retention" not in kwargs
+    assert kwargs["prompt_cache_key"] == "session-abc"
+    assert kwargs["extra_headers"]["session-id"] == "session-abc"
 
 
 def test_openrouter_reasoning_models_send_explicit_reasoning_off_payload() -> None:

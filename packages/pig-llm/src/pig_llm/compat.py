@@ -739,6 +739,7 @@ def apply_request_headers(kwargs: dict[str, Any]) -> dict[str, Any]:
     preserving any explicit custom headers provided by callers.
     """
     next_kwargs = dict(kwargs)
+    next_kwargs.pop("_resolved_cache_retention", None)
     headers = dict(next_kwargs.pop("headers", {}) or {})
     extra_headers = dict(next_kwargs.pop("extra_headers", {}) or {})
     session_id = next_kwargs.pop("session_id", None)

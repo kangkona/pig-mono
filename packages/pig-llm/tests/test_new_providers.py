@@ -429,6 +429,7 @@ def test_openai_compatible_providers_use_prompt_cache_for_long_retention(
 
     assert create.call_args.kwargs["prompt_cache_key"] == "session-42"
     assert create.call_args.kwargs["prompt_cache_retention"] == "24h"
+    assert "_resolved_cache_retention" not in create.call_args.kwargs
 
 
 @pytest.mark.parametrize(

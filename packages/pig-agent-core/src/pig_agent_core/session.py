@@ -176,8 +176,8 @@ class SessionTree:
         This avoids materializing large session files in memory before parsing.
         """
         tree = cls()
-
-        last_entry: SessionEntry | None = None
+        ordered_entries: list[SessionEntry] = []
+        parent_ids: set[str] = set()
         for line in lines:
             line = line.strip()
             if not line:
@@ -185,13 +185,33 @@ class SessionTree:
 
             entry = SessionEntry.model_validate_json(line)
             tree.entries[entry.id] = entry
-            last_entry = entry
+            ordered_entries.append(entry)
+            if entry.parent_id is not None:
+                parent_ids.add(entry.parent_id)
 
-            if entry.parent_id is None:
-                tree.root_id = entry.id
+        if ordered_entries:
+            leaf_candidates = [
+                (index, entry)
+                for index, entry in enumerate(ordered_entries)
+                if entry.id not in parent_ids
+            ]
+            _, current_entry = max(
+                leaf_candidates or list(enumerate(ordered_entries)),
+                key=lambda item: (item[1].timestamp, item[0]),
+            )
+            tree.current_id = current_entry.id
 
-        if last_entry is not None:
-            tree.current_id = last_entry.id
+            root_entry = current_entry
+            visited: set[str] = set()
+            while (
+                root_entry.parent_id is not None
+                and root_entry.parent_id in tree.entries
+                and root_entry.parent_id not in visited
+            ):
+                visited.add(root_entry.id)
+                root_entry = tree.entries[root_entry.parent_id]
+
+            tree.root_id = root_entry.id
 
         return tree
 
@@ -297,6 +317,8 @@ class Session:
 
         # Compact older messages without embedding full tool payloads.
         old = path[:-5]
+        old_ids = {entry.id for entry in old}
+        existing_entries = list(self.tree.entries.values())
 
         tool_summaries = []
         for entry in old:
@@ -322,11 +344,18 @@ class Session:
                 "original_count": len(old),
             },
         )
-        self.tree.entries[summary_entry.id] = summary_entry
+        new_entries: dict[str, SessionEntry] = {summary_entry.id: summary_entry}
+        for entry in existing_entries:
+            if entry.id in old_ids:
+                continue
+            if entry.parent_id is None or entry.parent_id in old_ids:
+                entry.parent_id = summary_entry.id
+            new_entries[entry.id] = entry
+
+        self.tree.entries = new_entries
         self.tree.root_id = summary_entry.id
 
         if recent:
-            recent[0].parent_id = summary_entry.id
             self.tree.current_id = recent[-1].id
         else:
             self.tree.current_id = summary_entry.id
