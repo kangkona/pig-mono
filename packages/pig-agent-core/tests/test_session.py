@@ -246,3 +246,22 @@ def test_session_save_uses_full_explicit_session_id_in_filename(tmp_path):
     path = session.save()
 
     assert path.name == "shared-name-manual-session-id.jsonl"
+
+
+def test_session_save_preserves_loaded_legacy_path(tmp_path):
+    legacy_path = tmp_path / ".sessions" / "legacy-name.jsonl"
+    legacy_path.parent.mkdir()
+
+    session = Session(name="legacy-name", workspace=str(tmp_path), auto_save=False)
+    session.add_message("user", "hello")
+    session.add_message("assistant", "world")
+    generated = session.save()
+    legacy_path.write_text(generated.read_text())
+    generated.unlink()
+
+    loaded = Session.load(legacy_path)
+    loaded.add_message("user", "again")
+    saved = loaded.save()
+
+    assert saved == legacy_path
+    assert legacy_path.exists()

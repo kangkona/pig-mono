@@ -5,6 +5,7 @@ from pig_tui.rendering import (
     normalize_markdown_for_terminal,
     normalize_terminal_output,
     safe_wrap,
+    strip_terminal_sequences,
     supports_osc8_hyperlinks,
     terminal_size,
     truncate_visible,
@@ -37,6 +38,19 @@ def test_safe_wrap_preserves_ansi_sequences_while_wrapping() -> None:
     assert stripped == "你好世界"
 
 
+def test_safe_wrap_reopens_osc8_hyperlinks_across_wrapped_lines() -> None:
+    start = "\033]8;;https://example.com/file.py\033\\"
+    end = "\033]8;;\033\\"
+    wrapped = safe_wrap(f"{start}file.py{end}", 4)
+
+    assert len(wrapped) == 2
+    assert wrapped[0].startswith(start)
+    assert wrapped[0].endswith(end)
+    assert wrapped[1].startswith(start)
+    assert wrapped[1].endswith(end)
+    assert "".join(segment.replace(start, "").replace(end, "") for segment in wrapped) == "file.py"
+
+
 def test_safe_wrap_keeps_combining_marks_with_base_character() -> None:
     wrapped = safe_wrap("e\u0301e\u0301e\u0301", 2)
 
@@ -47,14 +61,29 @@ def test_visible_truncate_counts_visible_text_not_ansi_sequences() -> None:
     text = "\x1b[31mhello world\x1b[0m"
 
     assert visible_length(text) == 11
-    assert truncate_visible(text, 6) == "hello…"
+    truncated = truncate_visible(text, 6)
+    assert strip_terminal_sequences(truncated) == "hello…"
+    assert truncated.startswith("\x1b[31m")
+    assert truncated.endswith("\x1b[0m…")
 
 
 def test_visible_truncate_ignores_osc8_hyperlink_sequences() -> None:
     text = "\033]8;;https://example.com/file.py\033\\file.py\033]8;;\033\\"
 
     assert visible_length(text) == len("file.py")
-    assert truncate_visible(text, 4) == "fil…"
+    assert strip_terminal_sequences(truncate_visible(text, 4)) == "fil…"
+
+
+def test_truncate_visible_preserves_osc8_hyperlink_controls_when_truncating() -> None:
+    start = "\033]8;;https://example.com/file.py\033\\"
+    end = "\033]8;;\033\\"
+    text = f"{start}file.py{end}"
+
+    truncated = truncate_visible(text, 4)
+
+    assert truncated.startswith(start)
+    assert truncated.endswith(end + "…")
+    assert visible_length(truncated) == 4
 
 
 def test_visible_length_counts_wide_unicode_cells() -> None:

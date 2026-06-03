@@ -994,6 +994,60 @@ async def test_respond_stream_terminate_tool_result_drains_followup_queued_from_
 
 
 @pytest.mark.asyncio
+async def test_respond_stream_terminate_ignores_stale_tool_outputs() -> None:
+    class ToolCallChunk:
+        def __init__(self, *, content: str = "", tool_calls=None):
+            self.choices = [
+                SimpleNamespace(
+                    delta=SimpleNamespace(content=content or None, tool_calls=tool_calls),
+                    finish_reason=None,
+                )
+            ]
+
+    class ToolCallDelta:
+        def __init__(self, index: int, *, call_id=None, name=None, arguments=None):
+            self.index = index
+            self.id = call_id
+            self.function = SimpleNamespace(name=name, arguments=arguments)
+
+    class FakeLLM:
+        config = SimpleNamespace(model="fake")
+
+        def achat_stream(self, messages, tools=None):
+            async def stream():
+                yield ToolCallChunk(
+                    tool_calls=[
+                        ToolCallDelta(0, call_id="call-new", name="terminate", arguments="{}")
+                    ]
+                )
+
+            return stream()
+
+    def terminate():
+        return ToolResult(ok=True, data="fresh-result", meta={"terminate": True})
+
+    agent = Agent(llm=FakeLLM(), tools=[], verbose=False)
+    agent.history.append(
+        SimpleNamespace(
+            role="tool",
+            content="stale-result",
+            metadata={"tool_call_id": "call-old", "name": "read_file"},
+        )
+    )
+    agent.registry.register(
+        "terminate",
+        terminate,
+        {"type": "function", "function": {"name": "terminate"}},
+    )
+
+    async for _ in agent.respond_stream("start"):
+        pass
+
+    assert agent.history[-1].content == "fresh-result"
+    assert "stale-result" not in agent.history[-1].content
+
+
+@pytest.mark.asyncio
 async def test_respond_stream_before_tool_call_abort_skips_sibling_tools() -> None:
     executed: list[str] = []
 

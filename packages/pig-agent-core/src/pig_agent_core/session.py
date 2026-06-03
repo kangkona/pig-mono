@@ -239,6 +239,7 @@ class Session:
         self.workspace = Path(workspace) if workspace else Path.cwd()
         self.auto_save = auto_save
         self.session_dir = Path(session_dir).expanduser().resolve() if session_dir else None
+        self._save_path: Path | None = None
 
         self.tree = SessionTree()
         self.created_at = datetime.utcnow()
@@ -402,12 +403,16 @@ class Session:
         Returns:
             Saved file path
         """
+        if path is None and self._save_path is not None:
+            path = self._save_path
         if path is None:
             # Auto-generate path
             session_dir = resolve_session_dir(self.workspace, self.session_dir)
             session_dir.mkdir(parents=True, exist_ok=True)
             file_id = self.id[:8] if _UUID_LIKE_ID_RE.fullmatch(self.id) else self.id
             path = session_dir / f"{self.name}-{file_id}.jsonl"
+        else:
+            path = Path(path)
 
         metadata = dict(self.metadata)
         metadata["entries"] = len(self.tree.entries)
@@ -428,6 +433,7 @@ class Session:
             for entry in self.tree.entries.values():
                 f.write(entry.model_dump_json() + "\n")
 
+        self._save_path = path.resolve()
         return path
 
     @classmethod
@@ -461,6 +467,7 @@ class Session:
         session.updated_at = datetime.fromisoformat(header["updated_at"])
         session.metadata = header["metadata"]
         session.tree = tree
+        session._save_path = path.resolve()
 
         return session
 

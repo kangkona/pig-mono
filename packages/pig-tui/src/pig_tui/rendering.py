@@ -17,6 +17,8 @@ ANSI_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 OSC_RE = re.compile(r"\x1b\][^\x1b\x07]*?(?:\x1b\\|\x07)")
 THAI_LAO_AM_REGEX = re.compile(r"[\u0e33\u0eb3]")
 THAI_LAO_AM_DECOMPOSED = {"\u0e4d\u0e32", "\u0ecd\u0eb2"}
+OSC8_END_TOKENS = {"\x1b]8;;\x1b\\", "\x1b]8;;\x07"}
+SGR_RESET_TOKENS = {"\x1b[0m", "\x1b[m"}
 
 
 def strip_terminal_sequences(text: str) -> str:
@@ -77,6 +79,58 @@ def _tokenize_terminal_text(text: str) -> list[tuple[str, str]]:
     return tokens
 
 
+def _update_control_state(
+    token: str,
+    active_sgr: list[str],
+    active_hyperlink: str | None,
+) -> tuple[list[str], str | None]:
+    """Track ANSI and OSC8 controls so wrapped/truncated segments stay well-formed."""
+    next_sgr = list(active_sgr)
+    next_hyperlink = active_hyperlink
+
+    if token in OSC8_END_TOKENS:
+        next_hyperlink = None
+        return next_sgr, next_hyperlink
+
+    if token.startswith("\x1b]8;;"):
+        next_hyperlink = token
+        return next_sgr, next_hyperlink
+
+    if token.endswith("m"):
+        if token in SGR_RESET_TOKENS:
+            next_sgr = []
+        else:
+            next_sgr.append(token)
+
+    return next_sgr, next_hyperlink
+
+
+def _preserve_control_token(token: str) -> bool:
+    """Return True when a control token should survive wrapping/truncation."""
+    if token in OSC8_END_TOKENS:
+        return True
+    if token.startswith("\x1b]8;;"):
+        return True
+    return bool(ANSI_RE.fullmatch(token))
+
+
+def _active_control_prefixes(active_sgr: list[str], active_hyperlink: str | None) -> list[str]:
+    prefixes: list[str] = []
+    if active_hyperlink is not None:
+        prefixes.append(active_hyperlink)
+    prefixes.extend(active_sgr)
+    return prefixes
+
+
+def _active_control_closers(active_sgr: list[str], active_hyperlink: str | None) -> list[str]:
+    closers: list[str] = []
+    if active_sgr:
+        closers.append("\x1b[0m")
+    if active_hyperlink is not None:
+        closers.append("\x1b]8;;\x1b\\")
+    return closers
+
+
 def terminal_size(default: tuple[int, int] = (80, 24)) -> tuple[int, int]:
     """Return terminal size with conservative environment fallback."""
     columns = os.environ.get("COLUMNS")
@@ -109,15 +163,23 @@ def safe_wrap(text: str, width: int, *, max_lines: int | None = None) -> list[st
             wrapped: list[str] = []
             current: list[str] = []
             current_width = 0
+            active_sgr: list[str] = []
+            active_hyperlink: str | None = None
             for token_type, token_value in _tokenize_terminal_text(raw_line):
                 if token_type == "control":
-                    current.append(token_value)
+                    if _preserve_control_token(token_value):
+                        current.append(token_value)
+                        active_sgr, active_hyperlink = _update_control_state(
+                            token_value, active_sgr, active_hyperlink
+                        )
                     continue
 
                 char_width = _display_width_char(token_value)
                 if current and current_width + char_width > width:
-                    wrapped.append("".join(current))
-                    current = []
+                    wrapped.append(
+                        "".join(current + _active_control_closers(active_sgr, active_hyperlink))
+                    )
+                    current = _active_control_prefixes(active_sgr, active_hyperlink)
                     current_width = 0
                 current.append(token_value)
                 current_width += char_width
@@ -133,24 +195,34 @@ def safe_wrap(text: str, width: int, *, max_lines: int | None = None) -> list[st
 
 
 def truncate_visible(text: str, width: int, *, suffix: str = "…") -> str:
-    """Truncate plain text by visible width."""
+    """Truncate text by visible width while preserving active terminal controls."""
     if visible_length(text) <= width:
         return text
     suffix_width = _display_width(suffix)
     if width <= suffix_width:
         return suffix if width == suffix_width else ""
 
-    plain = strip_terminal_sequences(text)
     budget = width - suffix_width
     out: list[str] = []
     used = 0
-    for char in plain:
-        char_width = _display_width_char(char)
+    active_sgr: list[str] = []
+    active_hyperlink: str | None = None
+    for token_type, token_value in _tokenize_terminal_text(text):
+        if token_type == "control":
+            if _preserve_control_token(token_value):
+                out.append(token_value)
+                active_sgr, active_hyperlink = _update_control_state(
+                    token_value, active_sgr, active_hyperlink
+                )
+            continue
+
+        char_width = _display_width_char(token_value)
         if used + char_width > budget:
             break
-        out.append(char)
+        out.append(token_value)
         used += char_width
-    return "".join(out) + suffix
+
+    return "".join(out + _active_control_closers(active_sgr, active_hyperlink)) + suffix
 
 
 def normalize_markdown_for_terminal(markdown: str) -> str:

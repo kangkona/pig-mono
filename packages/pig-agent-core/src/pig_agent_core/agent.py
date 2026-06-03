@@ -862,12 +862,15 @@ class Agent:
             )
 
             # Execute tool calls
+            tool_history_start = len(self.history)
             terminate_all = await self._execute_tool_calls_from_dict(assistant_tool_calls, cancel)
             if terminate_all:
+                current_tool_call_ids = {tool_call["id"] for tool_call in assistant_tool_calls}
                 final_content = "\n".join(
                     message.content
-                    for message in self.history
-                    if message.role == "tool" and message.metadata.get("tool_call_id")
+                    for message in self.history[tool_history_start:]
+                    if message.role == "tool"
+                    and message.metadata.get("tool_call_id") in current_tool_call_ids
                 )
                 self.history.append(Message(role="assistant", content=final_content))
                 self._emit_agent_end(success=True)
