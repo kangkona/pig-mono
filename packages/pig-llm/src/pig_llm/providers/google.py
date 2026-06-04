@@ -1,5 +1,6 @@
 """Google Gemini provider implementation (New SDK)."""
 
+import base64
 import json
 import time
 from collections.abc import AsyncIterator, Iterator
@@ -15,6 +16,26 @@ from ._base import Provider
 
 class GoogleProvider(Provider):
     """Google Gemini provider implementation using new google-genai SDK."""
+
+    @staticmethod
+    def _tool_call_dict(part, fc) -> dict:
+        """Build a canonical tool-call dict, preserving Gemini's thought_signature.
+
+        Gemini 3 requires the opaque per-call ``thought_signature`` (bytes, on the
+        Part) to be echoed back on the next turn or it rejects the request. Carry
+        it base64-encoded in metadata so it survives JSON session storage.
+        """
+        call_id = f"call_{abs(hash(f'{fc.name}_{time.time()}'))}"
+        sig = getattr(part, "thought_signature", None)
+        meta = {}
+        if sig:
+            meta["thought_signature"] = base64.b64encode(sig).decode("ascii")
+        return {
+            "id": call_id,
+            "type": "function",
+            "function": {"name": fc.name, "arguments": json.dumps(dict(fc.args))},
+            "metadata": meta,
+        }
 
     _MODEL_THINKING_LEVEL_MAPS = {
         "gemini-3-pro-preview": {"minimal": None, "low": "LOW", "medium": None, "high": "HIGH"},
@@ -71,16 +92,19 @@ class GoogleProvider(Provider):
                 if msg.content:
                     parts.append(types.Part(text=msg.content))
 
-                # Add function_call parts
+                # Add function_call parts. Gemini 3 requires the original
+                # thought_signature to be echoed back on the Part.
                 for tc in msg.metadata["tool_calls"]:
-                    parts.append(
-                        types.Part(
-                            function_call=types.FunctionCall(
-                                name=tc["function"]["name"],
-                                args=json.loads(tc["function"]["arguments"]),
-                            )
+                    part_kwargs = {
+                        "function_call": types.FunctionCall(
+                            name=tc["function"]["name"],
+                            args=json.loads(tc["function"]["arguments"]),
                         )
-                    )
+                    }
+                    sig_b64 = (tc.get("metadata") or {}).get("thought_signature")
+                    if sig_b64:
+                        part_kwargs["thought_signature"] = base64.b64decode(sig_b64)
+                    parts.append(types.Part(**part_kwargs))
 
                 contents.append(types.Content(role="model", parts=parts))
 
@@ -128,21 +152,7 @@ class GoogleProvider(Provider):
             for part in candidate.content.parts:
                 # Check if this part has a function_call
                 if hasattr(part, "function_call") and part.function_call:
-                    fc = part.function_call
-
-                    # Generate unique ID (Gemini doesn't provide one)
-                    call_id = f"call_{abs(hash(f'{fc.name}_{time.time()}'))}"
-
-                    tool_calls.append(
-                        {
-                            "id": call_id,
-                            "type": "function",
-                            "function": {
-                                "name": fc.name,
-                                "arguments": json.dumps(dict(fc.args)),
-                            },
-                        }
-                    )
+                    tool_calls.append(GoogleProvider._tool_call_dict(part, part.function_call))
 
         return tool_calls if tool_calls else None
 
@@ -402,17 +412,7 @@ class GoogleProvider(Provider):
                         yield StreamChunk(content=part.text, finish_reason=None)
                     fc = getattr(part, "function_call", None)
                     if fc:
-                        call_id = f"call_{abs(hash(f'{fc.name}_{time.time()}'))}"
-                        tool_calls.append(
-                            {
-                                "id": call_id,
-                                "type": "function",
-                                "function": {
-                                    "name": fc.name,
-                                    "arguments": json.dumps(dict(fc.args)),
-                                },
-                            }
-                        )
+                        tool_calls.append(self._tool_call_dict(part, fc))
             # Usage arrives on the final chunk's usage_metadata.
             meta = getattr(chunk, "usage_metadata", None)
             if meta:

@@ -235,3 +235,29 @@ def test_google_tool_result_carries_function_name() -> None:
         if getattr(part, "function_response", None)
     ]
     assert names == ["get_weather"]
+
+
+def test_google_preserves_thought_signature_round_trip() -> None:
+    """Gemini 3 requires echoing the function_call thought_signature back.
+
+    Regression: the signature (bytes on the Part) was dropped, so the next turn
+    failed with 400 "Function call is missing a thought_signature". It must be
+    carried (base64) through the tool_call dict and restored onto the rebuilt
+    Part.
+    """
+    import base64
+
+    provider = _provider_with_client(Mock(), AsyncMock())
+    sig = b"\x01\x02\xfftok"
+    part = SimpleNamespace(
+        function_call=SimpleNamespace(name="list_files", args={}), thought_signature=sig
+    )
+    tc = provider._tool_call_dict(part, part.function_call)
+    assert base64.b64decode(tc["metadata"]["thought_signature"]) == sig
+
+    rebuilt, _ = provider._convert_messages(
+        [Message(role="assistant", content="", metadata={"tool_calls": [tc]})]
+    )
+    fc_part = rebuilt[0].parts[0]
+    assert fc_part.thought_signature == sig
+    assert fc_part.function_call.name == "list_files"
