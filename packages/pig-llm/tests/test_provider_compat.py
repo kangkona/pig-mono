@@ -283,7 +283,7 @@ def test_openrouter_reasoning_models_send_explicit_reasoning_off_payload() -> No
         thinking_level="off",
     )
 
-    assert create.call_args.kwargs["reasoning"] == {"effort": "none"}
+    assert create.call_args.kwargs["extra_body"]["reasoning"] == {"effort": "none"}
 
 
 def test_openrouter_reasoning_models_use_nested_reasoning_payload_when_enabled() -> None:
@@ -302,7 +302,7 @@ def test_openrouter_reasoning_models_use_nested_reasoning_payload_when_enabled()
         thinking_level="high",
     )
 
-    assert create.call_args.kwargs["reasoning"] == {"effort": "high"}
+    assert create.call_args.kwargs["extra_body"]["reasoning"] == {"effort": "high"}
     assert "reasoning_effort" not in create.call_args.kwargs
 
 

@@ -518,7 +518,7 @@ def test_deepseek_provider_sends_explicit_thinking_disabled_payload() -> None:
         thinking_level="off",
     )
 
-    assert create.call_args.kwargs["thinking"] == {"type": "disabled"}
+    assert create.call_args.kwargs["extra_body"]["thinking"] == {"type": "disabled"}
     assert "reasoning_effort" not in create.call_args.kwargs
 
 
@@ -555,7 +555,7 @@ def test_deepseek_provider_sends_explicit_thinking_enabled_payload() -> None:
         thinking_level="high",
     )
 
-    assert create.call_args.kwargs["thinking"] == {"type": "enabled"}
+    assert create.call_args.kwargs["extra_body"]["thinking"] == {"type": "enabled"}
     assert "reasoning_effort" not in create.call_args.kwargs
 
 
@@ -629,7 +629,7 @@ def test_deepseek_v4_flash_sends_high_reasoning_effort() -> None:
         thinking_level="high",
     )
 
-    assert create.call_args.kwargs["thinking"] == {"type": "enabled"}
+    assert create.call_args.kwargs["extra_body"]["thinking"] == {"type": "enabled"}
     assert create.call_args.kwargs["reasoning_effort"] == "high"
 
 
@@ -666,7 +666,7 @@ def test_deepseek_v4_flash_maps_xhigh_reasoning_to_max() -> None:
         thinking_level="xhigh",
     )
 
-    assert create.call_args.kwargs["thinking"] == {"type": "enabled"}
+    assert create.call_args.kwargs["extra_body"]["thinking"] == {"type": "enabled"}
     assert create.call_args.kwargs["reasoning_effort"] == "max"
 
 
@@ -782,7 +782,7 @@ def test_together_provider_sends_explicit_reasoning_disabled_payload() -> None:
         thinking_level="off",
     )
 
-    assert create.call_args.kwargs["reasoning"] == {"enabled": False}
+    assert create.call_args.kwargs["extra_body"]["reasoning"] == {"enabled": False}
     assert "reasoning_effort" not in create.call_args.kwargs
 
 
@@ -857,7 +857,7 @@ def test_together_provider_sends_explicit_reasoning_enabled_payload() -> None:
         thinking_level="high",
     )
 
-    assert create.call_args.kwargs["reasoning"] == {"enabled": True}
+    assert create.call_args.kwargs["extra_body"]["reasoning"] == {"enabled": True}
     assert "reasoning_effort" not in create.call_args.kwargs
 
 
@@ -931,7 +931,7 @@ def test_together_deepseek_v4_pro_sends_reasoning_effort() -> None:
         thinking_level="high",
     )
 
-    assert create.call_args.kwargs["reasoning"] == {"enabled": True}
+    assert create.call_args.kwargs["extra_body"]["reasoning"] == {"enabled": True}
     assert create.call_args.kwargs["reasoning_effort"] == "high"
 
 
@@ -968,7 +968,7 @@ def test_together_deepseek_v4_pro_omits_reasoning_effort_for_unmapped_levels() -
         thinking_level="medium",
     )
 
-    assert create.call_args.kwargs["reasoning"] == {"enabled": True}
+    assert create.call_args.kwargs["extra_body"]["reasoning"] == {"enabled": True}
     assert "reasoning_effort" not in create.call_args.kwargs
 
 

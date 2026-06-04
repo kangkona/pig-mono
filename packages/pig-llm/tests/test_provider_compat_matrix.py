@@ -163,3 +163,19 @@ def test_astream_sends_prompt_cache_key_when_session_present(cls, model):
     # Providers that support OpenAI-style prompt caching attach the key; those
     # that don't simply omit it — but none should crash or leak the raw session.
     assert "session_id" not in capture.kwargs
+
+
+@pytest.mark.parametrize("cls,model", PROVIDERS, ids=[c.__name__ for c, _ in PROVIDERS])
+def test_astream_relocates_nonstandard_params_to_extra_body(cls, model):
+    """OpenRouter-style reasoning is sent via extra_body, never as a raw kwarg.
+
+    Regression: a top-level `reasoning` kwarg crashed the OpenAI SDK with
+    TypeError; non-standard params must be relocated into extra_body.
+    """
+    provider, capture = _make_provider(cls)
+    _drive(provider, model, max_tokens=128, thinking_level="high")
+
+    kwargs = capture.kwargs
+    # None of the non-standard thinking keys may appear as top-level kwargs.
+    for key in ("reasoning", "thinking", "enable_thinking", "chat_template_kwargs"):
+        assert key not in kwargs, f"{key} leaked as a top-level create() kwarg"

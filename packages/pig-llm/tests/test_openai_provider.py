@@ -367,7 +367,7 @@ def test_custom_qwen_base_url_uses_enable_thinking_toggle() -> None:
         thinking_level="high",
     )
 
-    assert sync_create.call_args.kwargs["enable_thinking"] is True
+    assert sync_create.call_args.kwargs["extra_body"]["enable_thinking"] is True
     assert "reasoning_effort" not in sync_create.call_args.kwargs
 
 
@@ -390,7 +390,7 @@ def test_explicit_qwen_chat_template_compat_uses_chat_template_kwargs() -> None:
         thinking_level="high",
     )
 
-    assert sync_create.call_args.kwargs["chat_template_kwargs"] == {
+    assert sync_create.call_args.kwargs["extra_body"]["chat_template_kwargs"] == {
         "enable_thinking": True,
         "preserve_thinking": True,
     }
@@ -416,7 +416,7 @@ def test_explicit_openrouter_compat_uses_nested_reasoning_payload() -> None:
         thinking_level="high",
     )
 
-    assert sync_create.call_args.kwargs["reasoning"] == {"effort": "high"}
+    assert sync_create.call_args.kwargs["extra_body"]["reasoning"] == {"effort": "high"}
     assert "reasoning_effort" not in sync_create.call_args.kwargs
 
 
@@ -443,7 +443,7 @@ def test_openrouter_base_url_auto_detects_openrouter_compat() -> None:
 
     messages = sync_create.call_args.kwargs["messages"]
     assert messages[0] == {"role": "system", "content": "rules"}
-    assert sync_create.call_args.kwargs["reasoning"] == {"effort": "high"}
+    assert sync_create.call_args.kwargs["extra_body"]["reasoning"] == {"effort": "high"}
     assert "reasoning_effort" not in sync_create.call_args.kwargs
 
 
@@ -512,7 +512,7 @@ def test_explicit_openrouter_compat_deepseek_v4_flash_keeps_xhigh_reasoning() ->
         thinking_level="xhigh",
     )
 
-    assert sync_create.call_args.kwargs["reasoning"] == {"effort": "xhigh"}
+    assert sync_create.call_args.kwargs["extra_body"]["reasoning"] == {"effort": "xhigh"}
     assert "reasoning_effort" not in sync_create.call_args.kwargs
 
 
@@ -583,7 +583,7 @@ def test_custom_zai_base_url_disables_thinking_when_off() -> None:
         thinking_level="off",
     )
 
-    assert sync_create.call_args.kwargs["enable_thinking"] is False
+    assert sync_create.call_args.kwargs["extra_body"]["enable_thinking"] is False
     assert "reasoning_effort" not in sync_create.call_args.kwargs
 
 
@@ -606,7 +606,7 @@ def test_explicit_deepseek_compat_uses_thinking_object() -> None:
         thinking_level="off",
     )
 
-    assert sync_create.call_args.kwargs["thinking"] == {"type": "disabled"}
+    assert sync_create.call_args.kwargs["extra_body"]["thinking"] == {"type": "disabled"}
     assert "reasoning_effort" not in sync_create.call_args.kwargs
 
 
@@ -675,7 +675,7 @@ def test_explicit_string_thinking_compat_uses_string_payload() -> None:
         thinking_level="off",
     )
 
-    assert sync_create.call_args.kwargs["thinking"] == "none"
+    assert sync_create.call_args.kwargs["extra_body"]["thinking"] == "none"
     assert "reasoning_effort" not in sync_create.call_args.kwargs
 
 
@@ -878,7 +878,7 @@ def test_explicit_together_compat_supports_deepseek_v4_reasoning_effort() -> Non
         thinking_level="high",
     )
 
-    assert sync_create.call_args.kwargs["reasoning"] == {"enabled": True}
+    assert sync_create.call_args.kwargs["extra_body"]["reasoning"] == {"enabled": True}
     assert sync_create.call_args.kwargs["reasoning_effort"] == "high"
 
 
@@ -900,7 +900,7 @@ def test_custom_opencode_go_kimi_uses_thinking_object_when_disabled() -> None:
         thinking_level="off",
     )
 
-    assert sync_create.call_args.kwargs["thinking"] == {"type": "disabled"}
+    assert sync_create.call_args.kwargs["extra_body"]["thinking"] == {"type": "disabled"}
     assert "reasoning_effort" not in sync_create.call_args.kwargs
 
 
@@ -922,7 +922,7 @@ def test_custom_opencode_go_kimi_uses_thinking_object_when_enabled() -> None:
         thinking_level="high",
     )
 
-    assert sync_create.call_args.kwargs["thinking"] == {"type": "enabled"}
+    assert sync_create.call_args.kwargs["extra_body"]["thinking"] == {"type": "enabled"}
     assert "reasoning_effort" not in sync_create.call_args.kwargs
 
 
@@ -1010,7 +1010,7 @@ def test_custom_opencode_go_qwen3_6_plus_uses_enable_thinking_toggle() -> None:
         thinking_level="high",
     )
 
-    assert sync_create.call_args.kwargs["enable_thinking"] is True
+    assert sync_create.call_args.kwargs["extra_body"]["enable_thinking"] is True
     assert "reasoning_effort" not in sync_create.call_args.kwargs
 
 
@@ -1053,7 +1053,7 @@ def test_custom_opencode_zen_kimi_uses_thinking_object_when_disabled() -> None:
         thinking_level="off",
     )
 
-    assert sync_create.call_args.kwargs["thinking"] == {"type": "disabled"}
+    assert sync_create.call_args.kwargs["extra_body"]["thinking"] == {"type": "disabled"}
     assert "reasoning_effort" not in sync_create.call_args.kwargs
 
 
@@ -1075,7 +1075,7 @@ def test_custom_opencode_zen_kimi_uses_thinking_object_when_enabled() -> None:
         thinking_level="high",
     )
 
-    assert sync_create.call_args.kwargs["thinking"] == {"type": "enabled"}
+    assert sync_create.call_args.kwargs["extra_body"]["thinking"] == {"type": "enabled"}
     assert "reasoning_effort" not in sync_create.call_args.kwargs
 
 
@@ -1141,7 +1141,7 @@ def test_custom_opencode_zen_deepseek_v4_flash_maps_xhigh_reasoning_to_max() -> 
         thinking_level="xhigh",
     )
 
-    assert sync_create.call_args.kwargs["thinking"] == {"type": "enabled"}
+    assert sync_create.call_args.kwargs["extra_body"]["thinking"] == {"type": "enabled"}
     assert sync_create.call_args.kwargs["reasoning_effort"] == "max"
 
 

@@ -737,7 +737,11 @@ def apply_request_headers(kwargs: dict[str, Any]) -> dict[str, Any]:
     """Merge compat headers into OpenAI-compatible request kwargs.
 
     `session_id` is normalized to the proxy-safe `session-id` header while
-    preserving any explicit custom headers provided by callers.
+    preserving any explicit custom headers provided by callers. Provider-specific
+    parameters the OpenAI SDK does not accept as named kwargs (e.g. OpenRouter's
+    nested ``reasoning``, Qwen/Z-AI ``enable_thinking``, ``chat_template_kwargs``)
+    are relocated into ``extra_body`` so the SDK forwards them on the wire instead
+    of raising ``TypeError``.
     """
     next_kwargs = dict(kwargs)
     next_kwargs.pop("_resolved_cache_retention", None)
@@ -751,6 +755,14 @@ def apply_request_headers(kwargs: dict[str, Any]) -> dict[str, Any]:
 
     if merged_headers:
         next_kwargs["extra_headers"] = merged_headers
+
+    # Non-standard params -> extra_body (the OpenAI SDK rejects them as kwargs).
+    extra_body = dict(next_kwargs.pop("extra_body", {}) or {})
+    for key in ("reasoning", "enable_thinking", "chat_template_kwargs", "thinking"):
+        if key in next_kwargs:
+            extra_body[key] = next_kwargs.pop(key)
+    if extra_body:
+        next_kwargs["extra_body"] = extra_body
 
     return next_kwargs
 
