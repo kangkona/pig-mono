@@ -1174,3 +1174,22 @@ def test_auto_compact_triggers_only_when_context_nearly_full(mock_llm, temp_work
     agent.agent.last_llm_usage = {"input_tokens": 120000, "output_tokens": 2000}
     agent._maybe_auto_compact()
     assert any("auto-compacting" in c.args[0] for c in agent.ui.system.call_args_list)
+
+
+def test_startup_session_id_resume_restores_llm_context(mock_llm, temp_workspace):
+    """pig-code --session-id at startup must replay the conversation into context."""
+    src = _agent(mock_llm, temp_workspace, session_name="ctx")
+    src.session.add_message("user", "the secret is 1234")
+    src.session.add_message("assistant", "noted: 1234")
+    sid = src.session.id
+    src.session.save()
+
+    resumed = _agent(mock_llm, temp_workspace, session_id=sid)
+    contents = [m.content for m in resumed.agent.history]
+    assert any("the secret is 1234" in c for c in contents)
+    assert any("noted: 1234" in c for c in contents)
+
+
+def test_startup_fresh_session_has_no_replayed_history(mock_llm, temp_workspace):
+    agent = _agent(mock_llm, temp_workspace, session_name="brand-new")
+    assert all(m.role == "system" for m in agent.agent.history)

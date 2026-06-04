@@ -180,6 +180,13 @@ class CodingAgent:
         self.agent.session = self.session
         self.agent.add_tool = self.add_tool
 
+        # When resuming/forking an existing session at startup, replay its
+        # conversation into the agent's LLM context so the model continues with
+        # the prior history (not just the persisted tree). No-op for a fresh
+        # session (empty conversation).
+        if self._session_start_reason in ("resume", "fork"):
+            self._rebuild_history_from_session()
+
         # Initialize extension manager
         self.extension_manager = None
         if enable_extensions:
