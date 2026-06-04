@@ -378,11 +378,38 @@ class GoogleProvider(Provider):
             model=model, contents=contents, config=config
         )
 
+        tool_calls: list[dict] = []
+        usage: dict[str, int] | None = None
         async for chunk in response_stream:
             if chunk.candidates and chunk.candidates[0].content.parts:
                 for part in chunk.candidates[0].content.parts:
-                    if hasattr(part, "text") and part.text:
-                        yield StreamChunk(
-                            content=part.text,
-                            finish_reason=None,
+                    if getattr(part, "text", None):
+                        yield StreamChunk(content=part.text, finish_reason=None)
+                    fc = getattr(part, "function_call", None)
+                    if fc:
+                        call_id = f"call_{abs(hash(f'{fc.name}_{time.time()}'))}"
+                        tool_calls.append(
+                            {
+                                "id": call_id,
+                                "type": "function",
+                                "function": {
+                                    "name": fc.name,
+                                    "arguments": json.dumps(dict(fc.args)),
+                                },
+                            }
                         )
+            # Usage arrives on the final chunk's usage_metadata.
+            meta = getattr(chunk, "usage_metadata", None)
+            if meta:
+                cached = getattr(meta, "cached_content_token_count", None)
+                usage = {
+                    "input_tokens": int(getattr(meta, "prompt_token_count", 0) or 0),
+                    "output_tokens": int(getattr(meta, "candidates_token_count", 0) or 0),
+                    "cached_tokens": int(cached or 0),
+                    "total_tokens": int(getattr(meta, "total_token_count", 0) or 0),
+                }
+
+        # Emit assembled tool calls and/or usage on a trailing chunk, matching
+        # the OpenAI-compatible streaming contract the agent loop consumes.
+        if tool_calls or usage:
+            yield StreamChunk(content="", tool_calls=tool_calls or None, usage=usage)

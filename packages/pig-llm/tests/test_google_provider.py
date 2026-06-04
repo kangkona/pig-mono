@@ -130,3 +130,71 @@ def test_google_provider_normalizes_explicit_developer_role_to_system_instructio
     assert config.system_instruction == "rules"
     assert len(call_kwargs["contents"]) == 1
     assert call_kwargs["contents"][0].role == "user"
+
+
+@pytest.mark.asyncio
+async def test_google_astream_emits_tool_calls_and_usage() -> None:
+    """Native Google streaming surfaces function_call tool calls + usage (Phase B)."""
+
+    class _Stream:
+        def __aiter__(self):
+            async def gen():
+                # text delta
+                yield SimpleNamespace(
+                    candidates=[
+                        SimpleNamespace(
+                            content=SimpleNamespace(
+                                parts=[SimpleNamespace(text="checking ", function_call=None)]
+                            )
+                        )
+                    ],
+                    usage_metadata=None,
+                )
+                # function_call part + usage on the final chunk
+                yield SimpleNamespace(
+                    candidates=[
+                        SimpleNamespace(
+                            content=SimpleNamespace(
+                                parts=[
+                                    SimpleNamespace(
+                                        text=None,
+                                        function_call=SimpleNamespace(
+                                            name="get_weather", args={"city": "Tokyo"}
+                                        ),
+                                    )
+                                ]
+                            )
+                        )
+                    ],
+                    usage_metadata=SimpleNamespace(
+                        prompt_token_count=120,
+                        candidates_token_count=18,
+                        total_token_count=138,
+                        cached_content_token_count=40,
+                    ),
+                )
+
+            return gen()
+
+    provider = _provider_with_client(Mock(), AsyncMock())
+    provider.client.aio.models.generate_content_stream = AsyncMock(return_value=_Stream())
+
+    chunks = []
+    async for chunk in provider.astream(
+        [Message(role="user", content="weather?")],
+        model="gemini-3.5-flash",
+        tools=[{"type": "function", "function": {"name": "get_weather", "parameters": {}}}],
+    ):
+        chunks.append(chunk)
+
+    text = "".join(c.content for c in chunks if c.content)
+    assert text == "checking "
+    tool_chunks = [c for c in chunks if c.tool_calls]
+    assert tool_chunks and tool_chunks[-1].tool_calls[0]["function"]["name"] == "get_weather"
+    usages = [c.usage for c in chunks if c.usage]
+    assert usages[-1] == {
+        "input_tokens": 120,
+        "output_tokens": 18,
+        "cached_tokens": 40,
+        "total_tokens": 138,
+    }
