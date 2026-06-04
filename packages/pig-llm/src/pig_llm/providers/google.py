@@ -85,11 +85,26 @@ class GoogleProvider(Provider):
                 contents.append(types.Content(role="model", parts=parts))
 
             elif msg.role == "tool" and msg.metadata:
-                # Convert tool result to function_response
-                function_name = msg.metadata.get("function_name")
+                # Convert tool result to function_response. The agent stores the
+                # function name under "name"; accept "function_name" too. Gemini
+                # rejects an empty name, so fall back to matching the call id
+                # against the preceding assistant tool_calls when absent.
+                function_name = msg.metadata.get("name") or msg.metadata.get("function_name")
+                if not function_name:
+                    tool_call_id = msg.metadata.get("tool_call_id")
+                    for prev in reversed(contents):
+                        for part in getattr(prev, "parts", []) or []:
+                            fc = getattr(part, "function_call", None)
+                            if fc and (
+                                tool_call_id is None or getattr(fc, "id", None) == tool_call_id
+                            ):
+                                function_name = fc.name
+                                break
+                        if function_name:
+                            break
                 parts = [
                     types.Part.from_function_response(
-                        name=function_name, response={"result": msg.content}
+                        name=function_name or "tool", response={"result": msg.content}
                     )
                 ]
                 contents.append(types.Content(role="user", parts=parts))

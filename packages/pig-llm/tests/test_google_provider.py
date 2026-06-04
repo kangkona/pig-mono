@@ -198,3 +198,40 @@ async def test_google_astream_emits_tool_calls_and_usage() -> None:
         "cached_tokens": 40,
         "total_tokens": 138,
     }
+
+
+def test_google_tool_result_carries_function_name() -> None:
+    """A tool result must convert to a function_response with a non-empty name.
+
+    Regression: the converter read metadata['function_name'] but the agent
+    stores it under 'name', so Gemini rejected the follow-up turn with
+    "Name cannot be empty" (400 INVALID_ARGUMENT).
+    """
+    provider = _provider_with_client(Mock(), AsyncMock())
+    messages = [
+        Message(role="user", content="weather?"),
+        Message(
+            role="assistant",
+            content="",
+            metadata={
+                "tool_calls": [
+                    {
+                        "id": "c1",
+                        "type": "function",
+                        "function": {"name": "get_weather", "arguments": "{}"},
+                    }
+                ]
+            },
+        ),
+        Message(
+            role="tool", content="sunny", metadata={"tool_call_id": "c1", "name": "get_weather"}
+        ),
+    ]
+    contents, _ = provider._convert_messages(messages)
+    names = [
+        part.function_response.name
+        for c in contents
+        for part in c.parts
+        if getattr(part, "function_response", None)
+    ]
+    assert names == ["get_weather"]
