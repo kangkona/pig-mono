@@ -433,8 +433,10 @@ When generating code, provide clean, well-documented, production-ready code.
         def on_steering(line: str) -> None:
             self.agent.message_queue.add_steering(line)
 
-        async with LiveInputListener(cancel, on_steering=on_steering):
-            with self.ui.assistant_stream() as writer, writer:
+        # echo=False: the Markdown Live owns the screen region (its cursor
+        # redraws would fight a manual echo of typed steering text).
+        async with LiveInputListener(cancel, on_steering=on_steering, echo=False):
+            with self.ui.assistant_stream_markdown() as writer:
                 async for chunk in self.agent.respond_stream(
                     user_input, cancel=cancel, max_iterations=0
                 ):

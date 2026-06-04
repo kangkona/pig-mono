@@ -962,10 +962,9 @@ def test_run_turn_streams_tokens_and_records_session(mock_llm, temp_workspace):
     agent.ui = Mock()
     writer = Mock()
     writer.write = lambda chunk: written.append(chunk)
-    agent.ui.assistant_stream.return_value.__enter__ = Mock(return_value=writer)
-    agent.ui.assistant_stream.return_value.__exit__ = Mock(return_value=False)
-    writer.__enter__ = Mock(return_value=writer)
-    writer.__exit__ = Mock(return_value=False)
+    cm = agent.ui.assistant_stream_markdown.return_value
+    cm.__enter__ = Mock(return_value=writer)
+    cm.__exit__ = Mock(return_value=False)
 
     asyncio.run(agent._run_turn("hi there"))
 
@@ -1007,10 +1006,9 @@ def test_run_turn_aborts_and_preserves_partial(mock_llm, temp_workspace):
     agent.agent.respond_stream = respond_stream
     agent.ui = Mock()
     writer = Mock()
-    agent.ui.assistant_stream.return_value.__enter__ = Mock(return_value=writer)
-    agent.ui.assistant_stream.return_value.__exit__ = Mock(return_value=False)
-    writer.__enter__ = Mock(return_value=writer)
-    writer.__exit__ = Mock(return_value=False)
+    cm = agent.ui.assistant_stream_markdown.return_value
+    cm.__enter__ = Mock(return_value=writer)
+    cm.__exit__ = Mock(return_value=False)
 
     asyncio.run(agent._run_turn("do something"))
 

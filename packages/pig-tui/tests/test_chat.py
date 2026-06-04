@@ -152,3 +152,22 @@ def test_chat_ui_clear(mock_console):
     chat.clear()
 
     chat.console.clear.assert_called_once()
+
+
+def test_assistant_stream_markdown_renders_accumulated_markdown():
+    """The markdown stream writer accumulates text and live-renders it."""
+    import io
+    import re
+
+    chat = ChatUI()
+    chat.console.file = io.StringIO()
+
+    with chat.assistant_stream_markdown(refresh_per_second=4) as writer:
+        writer.write("# Heading\n")
+        writer.write("- item one\n")
+        writer.write("- item two")
+
+    assert writer.text == "# Heading\n- item one\n- item two"
+    plain = re.sub(r"\x1b\[[0-9;?]*[A-Za-z]", "", chat.console.file.getvalue())
+    assert "Heading" in plain
+    assert "item one" in plain

@@ -6,6 +6,7 @@ from datetime import datetime
 from typing import Any
 
 from rich.console import Console
+from rich.live import Live
 from rich.markdown import Markdown
 from rich.panel import Panel
 
@@ -39,6 +40,25 @@ class StreamWriter:
     def __exit__(self, *args: Any) -> None:
         """Exit context."""
         self.console.print()  # New line
+
+
+class MarkdownStreamWriter:
+    """Accumulates streamed text and live-renders it as Markdown.
+
+    Re-rendering the whole Markdown on every token is what lets partial syntax
+    (an unterminated ``**bold**`` or a ``###`` heading) resolve as more text
+    arrives. Refreshes are throttled by the owning Live (a few times a second)
+    so long, scrolling responses don't flicker.
+    """
+
+    def __init__(self) -> None:
+        self.text = ""
+        self._live: Live | None = None
+
+    def write(self, text: str) -> None:
+        self.text += normalize_terminal_output(text)
+        if self._live is not None:
+            self._live.update(Markdown(self.text))
 
 
 class ChatUI:
@@ -121,6 +141,37 @@ class ChatUI:
 
         writer = StreamWriter(self.console, prefix, self.theme.assistant_color)
         yield writer
+
+    @contextmanager
+    def assistant_stream_markdown(self, refresh_per_second: int = 8) -> Any:
+        """Stream an assistant response, live-rendering it as Markdown.
+
+        Prints the ``Assistant:`` prefix, then drives a throttled Rich ``Live``
+        that re-renders the accumulated Markdown as tokens arrive. Yields a
+        MarkdownStreamWriter; the rendered text remains on screen on exit.
+
+        Yields:
+            MarkdownStreamWriter for writing chunks
+        """
+        timestamp = self._format_timestamp()
+        self.console.print(f"{timestamp}[bold {self.theme.assistant_color}]Assistant:[/]")
+
+        writer = MarkdownStreamWriter()
+        live = Live(
+            Markdown(""),
+            console=self.console,
+            refresh_per_second=refresh_per_second,
+            vertical_overflow="visible",
+        )
+        writer._live = live
+        live.start()
+        try:
+            yield writer
+        finally:
+            # Render the final, complete Markdown before tearing down Live.
+            live.update(Markdown(writer.text))
+            live.refresh()
+            live.stop()
 
     def system(self, message: str) -> None:
         """Display system message.
