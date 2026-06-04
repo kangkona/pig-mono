@@ -405,7 +405,12 @@ class Agent:
         self._emit_agent_end(success=False, error=final_response.content)
         return final_response
 
-    async def arun(self, message: str, check_queue: bool = True) -> Response:
+    async def arun(
+        self,
+        message: str,
+        check_queue: bool = True,
+        cancel: asyncio.Event | None = None,
+    ) -> Response:
         """Async run agent with a user message using enhanced subsystems.
 
         Uses resilient_streaming_call for LLM calls with retry and fallback.
@@ -414,6 +419,8 @@ class Agent:
         Args:
             message: User message
             check_queue: Check message queue for interrupts
+            cancel: Optional cancellation event (abort between rounds, mid-stream,
+                and during tool execution)
 
         Returns:
             Agent response
@@ -441,12 +448,18 @@ class Agent:
             iterations += 1
             self._log(f"Iteration {iterations}")
 
+            # Abort between rounds.
+            if cancel and cancel.is_set():
+                self._emit_agent_end(success=False, error="aborted")
+                return Response(content="", model=self.llm.config.model)
+
             # Get tool schemas
             tools_schema = self.registry.get_schemas() if len(self.registry) > 0 else None
 
             # Use resilient_streaming_call for LLM call
             response_content = ""
             response_tool_calls = None
+            aborted = False
 
             try:
                 async for chunk in resilient_streaming_call(
@@ -457,6 +470,9 @@ class Agent:
                     event_callback=self.event_callback,
                     tools=tools_schema,
                 ):
+                    if cancel and cancel.is_set():
+                        aborted = True
+                        break
                     if chunk.content:
                         response_content += chunk.content
                     if hasattr(chunk, "tool_calls") and chunk.tool_calls:
@@ -475,6 +491,13 @@ class Agent:
                 self._emit_agent_end(success=False, error=str(e))
                 raise
 
+            # Aborted mid-stream: record partial text and stop cleanly.
+            if aborted or (cancel and cancel.is_set()):
+                if response_content:
+                    self.history.append(Message(role="assistant", content=response_content))
+                self._emit_agent_end(success=False, error="aborted")
+                return Response(content=response_content, model=self.llm.config.model)
+
             # Check if tool calls are needed
             if response_tool_calls:
                 self._log(f"Tool calls requested: {len(response_tool_calls)}")
@@ -487,7 +510,7 @@ class Agent:
 
                 if self._can_use_async_batch_execution():
                     tool_results, terminate_all = await self._execute_async_batch_tool_calls(
-                        response_tool_calls
+                        response_tool_calls, cancel
                     )
                 else:
                     terminate_all = False
@@ -540,6 +563,7 @@ class Agent:
                                     tool_call=tool_call_obj,
                                     user_id="default",  # TODO: Make configurable
                                     meta={},
+                                    cancel=cancel,
                                 )
                             else:
                                 result = self.registry.execute_sync(tool_name, tool_args)

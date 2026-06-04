@@ -1477,3 +1477,38 @@ async def test_master_loop_streams_tokens_then_executes_tool_call() -> None:
     # The tool result is in history.
     tool_messages = [m for m in agent.history if m.role == "tool"]
     assert tool_messages[0].content == "found"
+
+
+@pytest.mark.asyncio
+async def test_arun_cancel_mid_stream_aborts_and_preserves_partial() -> None:
+    """arun(cancel) stops mid-stream, records partial text, and emits 'aborted'."""
+    cancel = asyncio.Event()
+
+    class FakeChunk:
+        def __init__(self, *, content="", tool_calls=None):
+            self.content = content
+            self.tool_calls = tool_calls
+            self.usage = {}
+
+    class FakeLLM:
+        config = SimpleNamespace(model="fake")
+
+        async def astream(self, messages, **kwargs):
+            yield FakeChunk(content="partial ")
+            cancel.set()
+            yield FakeChunk(content="dropped")
+
+    events = []
+    agent = Agent(
+        llm=FakeLLM(),
+        tools=[],
+        verbose=False,
+        event_callback=lambda e: events.append(e) if e.type.value == "agent_end" else None,
+    )
+
+    response = await agent.arun("go", cancel=cancel)
+
+    assert response.content == "partial "
+    assert agent.history[-1].role == "assistant"
+    assert agent.history[-1].content == "partial "
+    assert events[0].data["error"] == "aborted"
