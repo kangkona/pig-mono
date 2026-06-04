@@ -1234,3 +1234,37 @@ def test_auto_compact_respects_config(mock_llm, temp_workspace):
     agent.ui.reset_mock()
     agent._maybe_auto_compact()
     assert any("auto-compacting" in c.args[0] for c in agent.ui.system.call_args_list)
+
+
+def test_run_interactive_reuses_one_event_loop_across_turns(mock_llm, temp_workspace):
+    """Multiple turns must share one event loop (provider SDKs cache per-loop
+    clients; a per-turn asyncio.run() caused 'Event loop is closed')."""
+    import asyncio
+    from unittest.mock import patch
+
+    from pig_llm import StreamChunk
+
+    loops = []
+
+    def achat_stream(messages, tools=None):
+        async def stream():
+            loops.append(id(asyncio.get_event_loop()))
+            yield StreamChunk(content="ok")
+
+        return stream()
+
+    mock_llm.achat_stream = achat_stream
+    agent = _agent(mock_llm, temp_workspace)
+    agent.ui = Mock()
+    writer = Mock()
+    cm = agent.ui.assistant_stream_markdown.return_value
+    cm.__enter__ = Mock(return_value=writer)
+    cm.__exit__ = Mock(return_value=False)
+
+    prompt = Mock()
+    prompt.ask.side_effect = ["first", "second", EOFError()]
+    with patch("pig_coding_agent.agent.InteractivePrompt", return_value=prompt):
+        agent.run_interactive()
+
+    assert len(loops) == 2  # both turns ran
+    assert len(set(loops)) == 1  # on the same loop

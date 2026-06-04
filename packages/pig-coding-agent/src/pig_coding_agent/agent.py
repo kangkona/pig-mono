@@ -328,6 +328,13 @@ When generating code, provide clean, well-documented, production-ready code.
         self.ui.separator()
         shutdown_reason = "normal"
 
+        # One event loop for the whole session. Per-turn asyncio.run() would
+        # create+close a loop each turn, but some provider SDKs (e.g. google
+        # genai) cache an httpx client bound to the first loop and then fail
+        # with "Event loop is closed" on the next turn.
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
         # Set up interactive prompt with completion and history
         history_file = str(self.sessions_dir / ".input_history")
         prompt = InteractivePrompt(
@@ -402,7 +409,7 @@ When generating code, provide clean, well-documented, production-ready code.
                 # that turn and returns to the prompt, preserving the session.
                 cost_before = self._total_cost()
                 try:
-                    asyncio.run(self._run_turn(user_input))
+                    loop.run_until_complete(self._run_turn(user_input))
                 except KeyboardInterrupt:
                     self.ui.system("[aborted]")
                     continue
@@ -440,6 +447,15 @@ When generating code, provide clean, well-documented, production-ready code.
                 )
                 self.ui.system("(or pig-code --continue to resume the most recent session)")
             self.ui.system("Goodbye!")
+
+            # Tear down the session event loop (and any provider clients bound
+            # to it) cleanly.
+            try:
+                loop.run_until_complete(loop.shutdown_asyncgens())
+            except Exception:
+                pass
+            asyncio.set_event_loop(None)
+            loop.close()
 
     async def _run_turn(self, user_input: str) -> None:
         """Stream one agent turn: live tokens, Esc-abort, type-to-steer.
