@@ -72,3 +72,36 @@ async def test_blank_line_does_not_fire_steering():
     await asyncio.sleep(0.01)
 
     assert received == []
+
+
+@pytest.mark.asyncio
+async def test_on_change_emits_live_buffer():
+    """Typing fires on_change with the current buffer (for live echo in the UI)."""
+    seen: list[str] = []
+    listener = LiveInputListener(asyncio.Event(), on_change=seen.append, echo=False)
+    listener._loop = asyncio.get_running_loop()
+
+    for ch in b"hey":
+        listener._handle_byte(bytes([ch]))
+    listener._handle_byte(b"\x7f")  # backspace
+    await asyncio.sleep(0.01)
+
+    assert seen[-1] == "he"
+
+
+@pytest.mark.asyncio
+async def test_enter_clears_buffer_via_on_change():
+    received: list[str] = []
+    changes: list[str] = []
+    listener = LiveInputListener(
+        asyncio.Event(), on_steering=received.append, on_change=changes.append, echo=False
+    )
+    listener._loop = asyncio.get_running_loop()
+
+    for ch in b"go":
+        listener._handle_byte(bytes([ch]))
+    listener._handle_byte(b"\r")
+    await asyncio.sleep(0.01)
+
+    assert received == ["go"]
+    assert changes[-1] == ""  # buffer cleared after submit

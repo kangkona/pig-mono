@@ -46,10 +46,12 @@ class LiveInputListener:
         cancel_event: asyncio.Event,
         on_steering: Callable[[str], None] | None = None,
         *,
+        on_change: Callable[[str], None] | None = None,
         echo: bool = True,
     ) -> None:
         self._cancel = cancel_event
         self._on_steering = on_steering
+        self._on_change = on_change
         self._echo = echo
         self._loop: asyncio.AbstractEventLoop | None = None
         self._thread = None
@@ -191,6 +193,7 @@ class LiveInputListener:
                 sys.stdout.flush()
             if line and self._on_steering is not None:
                 self._fire_steering(line)
+            self._fire_change()
             return
         if ch in _BACKSPACE:
             if self._line:
@@ -198,6 +201,7 @@ class LiveInputListener:
                 if self._echo:
                     sys.stdout.write("\b \b")
                     sys.stdout.flush()
+                self._fire_change()
             return
         try:
             text = ch.decode("utf-8")
@@ -209,6 +213,7 @@ class LiveInputListener:
         if self._echo:
             sys.stdout.write(text)
             sys.stdout.flush()
+        self._fire_change()
 
     def _fire_abort(self) -> None:
         if self._loop is not None:
@@ -217,3 +222,8 @@ class LiveInputListener:
     def _fire_steering(self, line: str) -> None:
         if self._loop is not None and self._on_steering is not None:
             self._loop.call_soon_threadsafe(self._on_steering, line)
+
+    def _fire_change(self) -> None:
+        if self._loop is not None and self._on_change is not None:
+            current = "".join(self._line)
+            self._loop.call_soon_threadsafe(self._on_change, current)

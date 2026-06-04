@@ -196,3 +196,23 @@ def test_markdown_stream_writer_shows_then_drops_status_spinner():
     writer.finalize()
     final = render(writer._renderable())
     assert "Hi" in final and "working" not in final
+
+
+def test_markdown_stream_writer_shows_input_affordance():
+    """A 'You ›' input line shows the in-progress steering text during a turn."""
+    import io
+    import re
+
+    from rich.console import Console
+
+    def render(r):
+        buf = io.StringIO()
+        Console(file=buf, force_terminal=True, width=50).print(r)
+        return re.sub(r"\x1b\[[0-9;?]*[A-Za-z]", "", buf.getvalue())
+
+    writer = MarkdownStreamWriter()
+    assert "You ›" in render(writer._renderable())
+    writer.set_input("add an AI mode")
+    assert "add an AI mode" in render(writer._renderable())
+    writer.finalize()
+    assert "You ›" not in render(writer._renderable())

@@ -64,6 +64,7 @@ class MarkdownStreamWriter:
         self._started = time.monotonic()
         self._frame = 0
         self._done = False
+        self._input = ""
 
     def _renderable(self) -> Any:
         from rich.console import Group
@@ -75,7 +76,15 @@ class MarkdownStreamWriter:
         spin = self._FRAMES[self._frame % len(self._FRAMES)]
         elapsed = int(time.monotonic() - self._started)
         status = Text(f"{spin} working… {elapsed}s", style="dim")
-        return Group(body, status) if self.text else status
+        # A persistent input affordance: the user can type to steer at any time;
+        # echo it here (rendered inside Live) instead of to raw stdout.
+        input_line = Text.assemble(
+            ("You › ", "bold cyan"),
+            (self._input, "default"),
+            ("▌", "dim"),
+        )
+        parts = [p for p in (body if self.text else None, status, input_line) if p is not None]
+        return Group(*parts)
 
     def _refresh(self) -> None:
         if self._live is not None:
@@ -85,13 +94,18 @@ class MarkdownStreamWriter:
         self.text += normalize_terminal_output(text)
         self._refresh()
 
+    def set_input(self, text: str) -> None:
+        """Update the live input affordance with the user's in-progress steering text."""
+        self._input = text
+        self._refresh()
+
     def tick(self) -> None:
         """Advance the spinner / elapsed timer (called on a timer while busy)."""
         self._frame += 1
         self._refresh()
 
     def finalize(self) -> None:
-        """Drop the status line, leaving only the rendered content."""
+        """Drop the status / input lines, leaving only the rendered content."""
         self._done = True
         self._refresh()
 

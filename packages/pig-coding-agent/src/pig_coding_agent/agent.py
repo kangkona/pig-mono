@@ -436,10 +436,16 @@ When generating code, provide clean, well-documented, production-ready code.
         def on_steering(line: str) -> None:
             self.agent.message_queue.add_steering(line)
 
-        # echo=False: the Markdown Live owns the screen region (its cursor
-        # redraws would fight a manual echo of typed steering text).
-        async with LiveInputListener(cancel, on_steering=on_steering, echo=False):
-            with self.ui.assistant_stream_markdown() as writer:
+        # The Markdown Live owns the screen; render the typed steering buffer
+        # inside it (echo=False) so there's always a visible "You ›" input line
+        # and the user's keystrokes show without fighting the Live cursor.
+        with self.ui.assistant_stream_markdown() as writer:
+            async with LiveInputListener(
+                cancel,
+                on_steering=on_steering,
+                on_change=writer.set_input,
+                echo=False,
+            ):
                 # Animate the spinner / elapsed timer while the turn runs so a
                 # long LLM or tool wait with no output still looks alive.
                 async def _tick() -> None:
