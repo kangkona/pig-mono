@@ -1,6 +1,7 @@
 """Chat interface components."""
 
 import sys
+import time
 from contextlib import contextmanager
 from datetime import datetime
 from typing import Any
@@ -49,16 +50,50 @@ class MarkdownStreamWriter:
     (an unterminated ``**bold**`` or a ``###`` heading) resolve as more text
     arrives. Refreshes are throttled by the owning Live (a few times a second)
     so long, scrolling responses don't flicker.
+
+    A spinner + elapsed-time status line sits below the content while the turn
+    is in progress, so a long LLM/tool wait with no visible output still shows
+    the agent is alive (call :meth:`tick` periodically to animate it).
     """
+
+    _FRAMES = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
 
     def __init__(self) -> None:
         self.text = ""
         self._live: Live | None = None
+        self._started = time.monotonic()
+        self._frame = 0
+        self._done = False
+
+    def _renderable(self) -> Any:
+        from rich.console import Group
+        from rich.text import Text
+
+        body = Markdown(self.text) if self.text else Text("")
+        if self._done:
+            return body
+        spin = self._FRAMES[self._frame % len(self._FRAMES)]
+        elapsed = int(time.monotonic() - self._started)
+        status = Text(f"{spin} working… {elapsed}s", style="dim")
+        return Group(body, status) if self.text else status
+
+    def _refresh(self) -> None:
+        if self._live is not None:
+            self._live.update(self._renderable())
 
     def write(self, text: str) -> None:
         self.text += normalize_terminal_output(text)
-        if self._live is not None:
-            self._live.update(Markdown(self.text))
+        self._refresh()
+
+    def tick(self) -> None:
+        """Advance the spinner / elapsed timer (called on a timer while busy)."""
+        self._frame += 1
+        self._refresh()
+
+    def finalize(self) -> None:
+        """Drop the status line, leaving only the rendered content."""
+        self._done = True
+        self._refresh()
 
 
 class ChatUI:
@@ -158,7 +193,7 @@ class ChatUI:
 
         writer = MarkdownStreamWriter()
         live = Live(
-            Markdown(""),
+            writer._renderable(),
             console=self.console,
             refresh_per_second=refresh_per_second,
             vertical_overflow="visible",
@@ -168,8 +203,8 @@ class ChatUI:
         try:
             yield writer
         finally:
-            # Render the final, complete Markdown before tearing down Live.
-            live.update(Markdown(writer.text))
+            # Drop the status line and render the final, complete Markdown.
+            writer.finalize()
             live.refresh()
             live.stop()
 

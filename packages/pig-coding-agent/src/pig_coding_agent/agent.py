@@ -437,11 +437,22 @@ When generating code, provide clean, well-documented, production-ready code.
         # redraws would fight a manual echo of typed steering text).
         async with LiveInputListener(cancel, on_steering=on_steering, echo=False):
             with self.ui.assistant_stream_markdown() as writer:
-                async for chunk in self.agent.respond_stream(
-                    user_input, cancel=cancel, max_iterations=0
-                ):
-                    parts.append(chunk)
-                    writer.write(chunk)
+                # Animate the spinner / elapsed timer while the turn runs so a
+                # long LLM or tool wait with no output still looks alive.
+                async def _tick() -> None:
+                    while True:
+                        await asyncio.sleep(0.4)
+                        writer.tick()
+
+                ticker = asyncio.create_task(_tick())
+                try:
+                    async for chunk in self.agent.respond_stream(
+                        user_input, cancel=cancel, max_iterations=0
+                    ):
+                        parts.append(chunk)
+                        writer.write(chunk)
+                finally:
+                    ticker.cancel()
 
         if cancel.is_set():
             self.ui.system("[aborted]")

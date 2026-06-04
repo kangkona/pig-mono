@@ -2,7 +2,7 @@
 
 from unittest.mock import patch
 
-from pig_tui.chat import ChatUI
+from pig_tui.chat import ChatUI, MarkdownStreamWriter
 from pig_tui.rendering import normalize_markdown_for_terminal
 from pig_tui.theme import Theme
 
@@ -171,3 +171,28 @@ def test_assistant_stream_markdown_renders_accumulated_markdown():
     plain = re.sub(r"\x1b\[[0-9;?]*[A-Za-z]", "", chat.console.file.getvalue())
     assert "Heading" in plain
     assert "item one" in plain
+
+
+def test_markdown_stream_writer_shows_then_drops_status_spinner():
+    """A spinner + elapsed status shows while busy and is dropped on finalize."""
+    import io
+    import re
+
+    from rich.console import Console
+
+    def render(renderable):
+        buf = io.StringIO()
+        Console(file=buf, force_terminal=True, width=40).print(renderable)
+        return re.sub(r"\x1b\[[0-9;?]*[A-Za-z]", "", buf.getvalue())
+
+    writer = MarkdownStreamWriter()
+    # Busy with no content yet -> status line only.
+    assert "working" in render(writer._renderable())
+    # Busy with content -> content + status.
+    writer.write("# Hi")
+    out = render(writer._renderable())
+    assert "Hi" in out and "working" in out
+    # Finalized -> status dropped.
+    writer.finalize()
+    final = render(writer._renderable())
+    assert "Hi" in final and "working" not in final
