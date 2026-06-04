@@ -435,6 +435,9 @@ When generating code, provide clean, well-documented, production-ready code.
 
         def on_steering(line: str) -> None:
             self.agent.message_queue.add_steering(line)
+            # Immediate confirmation (prints above the live region) so the
+            # submitted line doesn't just vanish from the input affordance.
+            self.ui.system(f"⚡ Steering queued: {line}")
 
         # The Markdown Live owns the screen; render the typed steering buffer
         # inside it (echo=False) so there's always a visible "You ›" input line

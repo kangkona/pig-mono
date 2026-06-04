@@ -890,11 +890,20 @@ class Agent:
                 self._emit_agent_end(success=False, error="aborted")
                 return
 
-            # No tool calls: the final text already streamed; record + finish.
+            # No tool calls: the final text already streamed; record it.
             if not streamed_tool_calls:
                 final_content = "".join(content_parts)
                 self.history.append(Message(role="assistant", content=final_content))
                 self._log_turn(f"Agent: {final_content}")
+
+                # If the user steered while we were answering, keep going so the
+                # steering is acted on in this same turn instead of being stranded.
+                if self.message_queue.has_steering():
+                    for msg in self.message_queue.get_steering_messages():
+                        self._log(f"⚡ Steering: {msg.content}", style="yellow")
+                        self.history.append(Message(role="user", content=msg.content))
+                    continue
+
                 self._emit_agent_end(success=True)
                 if self.message_queue.has_followup():
                     followup = self.message_queue.get_followup_messages()

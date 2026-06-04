@@ -1512,3 +1512,39 @@ async def test_arun_cancel_mid_stream_aborts_and_preserves_partial() -> None:
     assert agent.history[-1].role == "assistant"
     assert agent.history[-1].content == "partial "
     assert events[0].data["error"] == "aborted"
+
+
+@pytest.mark.asyncio
+async def test_master_loop_steering_during_final_answer_is_consumed() -> None:
+    """Steering queued while the agent gives a no-tool answer drives another round."""
+
+    class FakeLLM:
+        config = SimpleNamespace(model="fake")
+
+        def __init__(self):
+            self.calls = 0
+            self.seen: list[list[str]] = []
+
+        def achat_stream(self, messages, tools=None):
+            self.calls += 1
+            self.seen.append([m.content for m in messages])
+            calls = self.calls
+
+            async def stream():
+                yield _StreamChunk(content=f"answer-{calls}")
+
+            return stream()
+
+    llm = FakeLLM()
+    agent = Agent(llm=llm, tools=[], verbose=False)
+    # Queue a steering message before the run; the first (no-tool) round should
+    # consume it and loop again instead of returning.
+    agent.message_queue.add_steering("actually do X")
+
+    chunks = []
+    async for chunk in agent.respond_stream("go"):
+        chunks.append(chunk)
+
+    assert llm.calls == 2  # looped for the steering instead of ending after round 1
+    assert any("actually do X" in m for m in llm.seen[1])
+    assert "".join(chunks) == "answer-1answer-2"
