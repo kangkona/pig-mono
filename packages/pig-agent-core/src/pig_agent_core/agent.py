@@ -244,6 +244,28 @@ class Agent:
             response = self.run(message.content, check_queue=True)
         return response
 
+    def _record_llm_billing(self, content_parts: list[str]) -> None:
+        """Report an LLM round to the billing hook, estimating tokens locally.
+
+        The streaming path receives no provider usage, so input tokens are
+        estimated from the messages sent (current history) and output tokens
+        from the streamed text.
+        """
+        try:
+            from .token_counter import count_message_tokens, count_tokens
+
+            model = self.llm.config.model
+            messages = [{"role": m.role, "content": m.content} for m in self.history]
+            input_tokens = count_message_tokens(messages, model)
+            output_tokens = count_tokens("".join(content_parts), model)
+            self.billing_hook.on_llm_call(
+                model=model,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+            )
+        except Exception:
+            pass
+
     def _emit_agent_end(self, *, success: bool, error: str | None = None) -> None:
         """Emit a terminal agent_end event for the current run."""
         emit_agent_end(
@@ -881,6 +903,11 @@ class Agent:
                 if getattr(chunk, "tool_calls", None):
                     streamed_tool_calls = chunk.tool_calls
 
+            # Record this LLM round for cost/usage tracking (the streaming path
+            # has no provider usage, so estimate tokens locally).
+            if self.billing_hook:
+                self._record_llm_billing(content_parts)
+
             # Aborted mid-stream: the partial text already streamed; record it so the
             # session reflects it, then stop cleanly (no dangling tool message).
             if aborted or (cancel and cancel.is_set()):
@@ -1007,6 +1034,9 @@ class Agent:
             self._log(
                 f"→ Calling tool: {tool_name}({self._format_tool_args(tool_args)})", style="cyan"
             )
+
+            if self.billing_hook:
+                self.billing_hook.on_tool_call(tool_name=tool_name)
 
             if self.before_tool_call:
                 preflight = self.before_tool_call(tool_name, tool_args)

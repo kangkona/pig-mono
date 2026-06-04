@@ -1548,3 +1548,53 @@ async def test_master_loop_steering_during_final_answer_is_consumed() -> None:
     assert llm.calls == 2  # looped for the steering instead of ending after round 1
     assert any("actually do X" in m for m in llm.seen[1])
     assert "".join(chunks) == "answer-1answer-2"
+
+
+@pytest.mark.asyncio
+async def test_master_loop_records_billing_for_llm_and_tool_calls() -> None:
+    """The streaming path reports LLM rounds + tool calls to the billing hook."""
+
+    class Hook:
+        def __init__(self):
+            self.llm = []
+            self.tools = []
+
+        def on_llm_call(self, model, input_tokens, output_tokens):
+            self.llm.append((model, input_tokens, output_tokens))
+
+        def on_tool_call(self, tool_name):
+            self.tools.append(tool_name)
+
+    class FakeLLM:
+        config = SimpleNamespace(model="gpt-4o-mini")
+
+        def __init__(self):
+            self.n = 0
+
+        def achat_stream(self, messages, tools=None):
+            self.n += 1
+            n = self.n
+
+            async def stream():
+                if n == 1:
+                    yield _StreamChunk(content="checking")
+                    yield _StreamChunk(
+                        tool_calls=[_ToolDelta(0, call_id="c1", name="shell", arguments="{}")]
+                    )
+                else:
+                    yield _StreamChunk(content="done with a longer answer")
+
+            return stream()
+
+    hook = Hook()
+    agent = Agent(llm=FakeLLM(), tools=[], verbose=False, billing_hook=hook)
+    agent.registry.register(
+        "shell", lambda: "ran", {"type": "function", "function": {"name": "shell"}}
+    )
+
+    async for _ in agent.respond_stream("go"):
+        pass
+
+    assert len(hook.llm) == 2  # two LLM rounds recorded
+    assert hook.tools == ["shell"]  # the tool call recorded
+    assert all(inp > 0 for _, inp, _ in hook.llm)  # token estimates are non-zero
