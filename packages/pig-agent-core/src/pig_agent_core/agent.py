@@ -124,7 +124,7 @@ class Agent:
         tool_name = tool_call.get("function", {}).get("name")
         tool_args = json.loads(tool_call.get("function", {}).get("arguments", "{}"))
 
-        self._log(f"→ Calling tool: {tool_name}({tool_args})", style="cyan")
+        self._log(f"→ Calling tool: {tool_name}({self._format_tool_args(tool_args)})", style="cyan")
 
         if self.before_tool_call:
             preflight = self.before_tool_call(tool_name, tool_args)
@@ -200,6 +200,26 @@ class Agent:
             console.print(message, style=style or None, markup=False, highlight=False)
         else:
             print(message)
+
+    @staticmethod
+    def _format_tool_args(args: Any, max_len: int = 80) -> str:
+        """Compactly format tool-call arguments for logging.
+
+        Long string values (e.g. a whole file passed to write_file) are
+        truncated to a short preview plus a char count, so they don't flood
+        the terminal.
+        """
+        if not isinstance(args, dict):
+            text = str(args)
+            return text if len(text) <= max_len else f"{text[:max_len]}… ({len(text)} chars)"
+        parts = []
+        for key, value in args.items():
+            if isinstance(value, str) and len(value) > max_len:
+                preview = value[:max_len].replace("\n", "\\n")
+                parts.append(f"{key}='{preview}… ({len(value)} chars)'")
+            else:
+                parts.append(f"{key}={value!r}")
+        return ", ".join(parts)
 
     def _log_turn(self, message: str) -> None:
         """Echo a conversational turn (User/Agent).
@@ -523,7 +543,9 @@ class Agent:
                         tool_args_str = tool_call.get("function", {}).get("arguments", "{}")
                         tool_args = json.loads(tool_args_str)
 
-                        self._log(f"→ Calling tool: {tool_name}({tool_args})")
+                        self._log(
+                            f"→ Calling tool: {tool_name}({self._format_tool_args(tool_args)})"
+                        )
 
                         if self.before_tool_call:
                             preflight = self.before_tool_call(tool_name, tool_args)
@@ -973,7 +995,9 @@ class Agent:
             except json.JSONDecodeError:
                 tool_args = {}
 
-            self._log(f"→ Calling tool: {tool_name}({tool_args})", style="cyan")
+            self._log(
+                f"→ Calling tool: {tool_name}({self._format_tool_args(tool_args)})", style="cyan"
+            )
 
             if self.before_tool_call:
                 preflight = self.before_tool_call(tool_name, tool_args)

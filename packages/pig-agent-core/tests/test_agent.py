@@ -300,3 +300,16 @@ def test_verbose_log_falls_back_to_print_without_ui():
     assert "User:" in text
     assert "Agent:" in text
     assert "Iteration" in text
+
+
+def test_format_tool_args_truncates_long_values():
+    """Long tool-call argument values are previewed + char-counted, not dumped."""
+    out = Agent._format_tool_args({"content": "A" * 5000, "path": "index.html"})
+    assert "(5000 chars)" in out
+    assert out.count("A") < 200  # preview only, not the whole 5000
+    assert "path='index.html'" in out
+
+
+def test_format_tool_args_keeps_short_values():
+    out = Agent._format_tool_args({"pattern": "foo", "path": "."})
+    assert out == "pattern='foo', path='.'"
