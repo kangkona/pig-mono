@@ -1137,3 +1137,40 @@ def test_command_settings_shows_panel(mock_llm, temp_workspace):
     agent.ui.panel.assert_called_once()
     body = agent.ui.panel.call_args.args[0]
     assert "Settings" in body and "Model:" in body
+
+
+def test_context_window_lookup_matches_model(mock_llm, temp_workspace):
+    agent = _agent(mock_llm, temp_workspace)
+    agent.agent.llm.config.model = "google/gemini-3.5-flash"
+    assert agent._context_window() == 1_000_000
+    agent.agent.llm.config.model = "gpt-4o-mini"
+    assert agent._context_window() == 128_000
+    agent.agent.llm.config.model = "some-unknown-model"
+    assert agent._context_window() == agent._DEFAULT_CONTEXT_WINDOW
+
+
+def test_show_turn_status_reports_context_and_cost(mock_llm, temp_workspace):
+    agent = _agent(mock_llm, temp_workspace)
+    agent.agent.llm.config.model = "gpt-4o-mini"
+    agent.ui = Mock()
+    agent.agent.last_llm_usage = {"input_tokens": 34000, "output_tokens": 1500}
+    agent._show_turn_status(cost_before=0.0)
+    line = agent.ui.system.call_args_list[0].args[0]
+    assert "context" in line and "%" in line
+
+
+def test_auto_compact_triggers_only_when_context_nearly_full(mock_llm, temp_workspace):
+    agent = _agent(mock_llm, temp_workspace)
+    agent.agent.llm.config.model = "gpt-4o-mini"  # 128k window
+    agent.ui = Mock()
+
+    # Well under threshold -> no compaction.
+    agent.agent.last_llm_usage = {"input_tokens": 10000, "output_tokens": 500}
+    agent._maybe_auto_compact()
+    assert not any("auto-compacting" in c.args[0] for c in agent.ui.system.call_args_list)
+
+    # Over 85% -> compaction announced.
+    agent.ui.reset_mock()
+    agent.agent.last_llm_usage = {"input_tokens": 120000, "output_tokens": 2000}
+    agent._maybe_auto_compact()
+    assert any("auto-compacting" in c.args[0] for c in agent.ui.system.call_args_list)

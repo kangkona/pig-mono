@@ -105,6 +105,7 @@ class Agent:
             self.history.append(Message(role="system", content=system_prompt))
 
         self.message_queue = MessageQueue()
+        self.last_llm_usage: dict[str, int] | None = None  # last round's token usage
         self._plan_used = False  # Track if plan tool has been used
         self._rounds_since_plan = 0  # Track rounds since plan tool
 
@@ -244,14 +245,14 @@ class Agent:
             response = self.run(message.content, check_queue=True)
         return response
 
-    def _record_llm_billing(
+    def _record_llm_usage(
         self, content_parts: list[str], usage: dict[str, int] | None = None
     ) -> None:
-        """Report an LLM round to the billing hook.
+        """Record an LLM round's token usage (and bill it if a hook is set).
 
-        Prefers real provider ``usage`` (input/output tokens); when the provider
-        did not report it, estimates locally from the messages sent and the
-        streamed text.
+        Prefers real provider ``usage``; otherwise estimates locally. The result
+        is stored on ``self.last_llm_usage`` so callers can show a context-window
+        indicator regardless of whether billing is enabled.
         """
         try:
             model = self.llm.config.model
@@ -264,11 +265,13 @@ class Agent:
                 messages = [{"role": m.role, "content": m.content} for m in self.history]
                 input_tokens = count_message_tokens(messages, model)
                 output_tokens = count_tokens("".join(content_parts), model)
-            self.billing_hook.on_llm_call(
-                model=model,
-                input_tokens=input_tokens,
-                output_tokens=output_tokens,
-            )
+            self.last_llm_usage = {"input_tokens": input_tokens, "output_tokens": output_tokens}
+            if self.billing_hook:
+                self.billing_hook.on_llm_call(
+                    model=model,
+                    input_tokens=input_tokens,
+                    output_tokens=output_tokens,
+                )
         except Exception:
             pass
 
@@ -529,9 +532,8 @@ class Agent:
                     if getattr(chunk, "usage", None):
                         response_usage = chunk.usage
 
-                # Track billing — prefer real provider usage, else estimate.
-                if self.billing_hook:
-                    self._record_llm_billing([response_content], response_usage)
+                # Record usage — prefer real provider usage, else estimate.
+                self._record_llm_usage([response_content], response_usage)
 
             except Exception as e:
                 self._log(f"LLM call failed: {e}")
@@ -911,10 +913,8 @@ class Agent:
                 if getattr(chunk, "usage", None):
                     streamed_usage = chunk.usage
 
-            # Record this LLM round for cost/usage tracking — prefer real provider
-            # usage, falling back to a local token estimate when unavailable.
-            if self.billing_hook:
-                self._record_llm_billing(content_parts, streamed_usage)
+            # Record this LLM round's usage (for the context indicator + billing).
+            self._record_llm_usage(content_parts, streamed_usage)
 
             # Aborted mid-stream: the partial text already streamed; record it so the
             # session reflects it, then stop cleanly (no dangling tool message).

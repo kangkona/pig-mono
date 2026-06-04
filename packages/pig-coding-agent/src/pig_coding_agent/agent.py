@@ -392,11 +392,17 @@ When generating code, provide clean, well-documented, production-ready code.
                 # Run the turn as a cancellable streaming task (uncapped, live
                 # tokens, Esc to abort, type-to-steer). Ctrl-C during a turn aborts
                 # that turn and returns to the prompt, preserving the session.
+                cost_before = self._total_cost()
                 try:
                     asyncio.run(self._run_turn(user_input))
                 except KeyboardInterrupt:
                     self.ui.system("[aborted]")
                     continue
+
+                # Show context-window usage + cost for the turn, and auto-compact
+                # before the context fills up.
+                self._show_turn_status(cost_before)
+                self._maybe_auto_compact()
 
         except SessionExitRequested:
             shutdown_reason = "normal"
@@ -892,6 +898,88 @@ Tools: {len(self.agent.registry)}
             "Quick changes: /model <provider/model>, /login, /logout, /name <name>",
         ]
         self.ui.panel("\n".join(lines), title="Settings")
+
+    # Approximate context-window sizes by model-name substring (longest match wins).
+    _CONTEXT_WINDOWS = {
+        "gpt-4.1": 1_000_000,
+        "gpt-4o": 128_000,
+        "o1": 200_000,
+        "o3": 200_000,
+        "o4": 200_000,
+        "claude": 200_000,
+        "gemini-1.5": 1_000_000,
+        "gemini-2": 1_000_000,
+        "gemini-3": 1_000_000,
+        "deepseek": 128_000,
+        "llama": 128_000,
+        "mixtral": 32_000,
+        "qwen": 128_000,
+        "grok": 128_000,
+    }
+    _DEFAULT_CONTEXT_WINDOW = 128_000
+    _AUTO_COMPACT_FRACTION = 0.85
+
+    def _context_window(self) -> int:
+        model = (self.agent.llm.config.model or "").lower()
+        best = None
+        for key, window in self._CONTEXT_WINDOWS.items():
+            if key in model and (best is None or len(key) > len(best[0])):
+                best = (key, window)
+        return best[1] if best else self._DEFAULT_CONTEXT_WINDOW
+
+    def _context_tokens(self) -> int | None:
+        usage = self.agent.last_llm_usage
+        if not usage:
+            return None
+        return int(usage.get("input_tokens", 0)) + int(usage.get("output_tokens", 0))
+
+    @staticmethod
+    def _fmt_k(n: int) -> str:
+        return f"{n / 1000:.0f}k" if n >= 1000 else str(n)
+
+    def _total_cost(self) -> float:
+        if not self.cost_tracker:
+            return 0.0
+        try:
+            return float(self.cost_tracker.get_usage_summary().get("total_cost", 0.0))
+        except Exception:
+            return 0.0
+
+    def _show_turn_status(self, cost_before: float) -> None:
+        """After a turn, show context-window usage and cost (delta + total)."""
+        parts: list[str] = []
+        ctx = self._context_tokens()
+        if ctx is not None:
+            window = self._context_window()
+            pct = (ctx / window * 100) if window else 0
+            parts.append(f"context {self._fmt_k(ctx)}/{self._fmt_k(window)} ({pct:.0f}%)")
+        if self.cost_tracker:
+            total = self._total_cost()
+            delta = total - cost_before
+            parts.append(f"+${delta:.4f} (total ${total:.4f})")
+        if parts:
+            self.ui.system(" · ".join(parts))
+
+    def _maybe_auto_compact(self) -> None:
+        """Auto-compact when the context window is nearly full (pi-mono parity)."""
+        ctx = self._context_tokens()
+        if ctx is None:
+            return
+        window = self._context_window()
+        if ctx <= int(window * self._AUTO_COMPACT_FRACTION):
+            return
+        self.ui.system(
+            f"⚠ Context {self._fmt_k(ctx)}/{self._fmt_k(window)} — auto-compacting to free space…"
+        )
+        try:
+            self._compact_session(None)
+            # Rebuild the agent's context from the compacted session so the next
+            # turn actually sends a smaller prompt (sheds old tool-output bloat).
+            self._rebuild_history_from_session()
+            # Reset the stale usage estimate so the indicator reflects the compaction.
+            self.agent.last_llm_usage = None
+        except Exception as e:
+            self.ui.error(f"Auto-compaction failed: {e}")
 
     def _compact_session(self, instructions: str | None):
         """Compact session messages."""
