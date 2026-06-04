@@ -10,6 +10,7 @@ import pytest
 from pig_agent_core.agent import Agent
 from pig_agent_core.session import Session, SessionTree, serialize_compaction_tool_result
 from pig_agent_core.tools import ToolResult
+from pig_llm import StreamChunk
 
 
 def test_session_tree_loads_large_jsonl_incrementally(tmp_path) -> None:
@@ -711,22 +712,13 @@ def test_agent_llm_failure_emits_agent_end_failure_event() -> None:
 
 @pytest.mark.asyncio
 async def test_respond_stream_emits_agent_end_success_event() -> None:
-    class FakeChunk:
-        def __init__(self, content: str):
-            self.choices = [
-                SimpleNamespace(
-                    delta=SimpleNamespace(content=content, tool_calls=None),
-                    finish_reason=None,
-                )
-            ]
-
     class FakeLLM:
         config = SimpleNamespace(model="fake")
 
         def achat_stream(self, messages, tools=None):
             async def stream():
-                yield FakeChunk("hello")
-                yield FakeChunk(" world")
+                yield StreamChunk(content="hello")
+                yield StreamChunk(content=" world")
 
             return stream()
 
@@ -749,15 +741,6 @@ async def test_respond_stream_emits_agent_end_success_event() -> None:
 
 @pytest.mark.asyncio
 async def test_respond_stream_success_drains_followup_queued_from_agent_end() -> None:
-    class FakeChunk:
-        def __init__(self, content: str):
-            self.choices = [
-                SimpleNamespace(
-                    delta=SimpleNamespace(content=content, tool_calls=None),
-                    finish_reason=None,
-                )
-            ]
-
     class FakeLLM:
         config = SimpleNamespace(model="fake")
 
@@ -769,7 +752,7 @@ async def test_respond_stream_success_drains_followup_queued_from_agent_end() ->
             self.messages.append(latest)
 
             async def stream():
-                yield FakeChunk(f"reply:{latest}")
+                yield StreamChunk(content=f"reply:{latest}")
 
             return stream()
 
@@ -804,14 +787,7 @@ async def test_respond_stream_cancellation_emits_agent_end_failure_event() -> No
 
         def achat_stream(self, messages, tools=None):
             async def stream():
-                yield SimpleNamespace(
-                    choices=[
-                        SimpleNamespace(
-                            delta=SimpleNamespace(content="ignored", tool_calls=None),
-                            finish_reason=None,
-                        )
-                    ]
-                )
+                yield StreamChunk(content="ignored")
 
             return stream()
 
@@ -863,21 +839,6 @@ async def test_respond_stream_llm_failure_emits_agent_end_failure_event() -> Non
 
 @pytest.mark.asyncio
 async def test_respond_stream_terminate_tool_result_skips_followup_llm_call() -> None:
-    class ToolCallChunk:
-        def __init__(self, *, content: str = "", tool_calls=None):
-            self.choices = [
-                SimpleNamespace(
-                    delta=SimpleNamespace(content=content or None, tool_calls=tool_calls),
-                    finish_reason=None,
-                )
-            ]
-
-    class ToolCallDelta:
-        def __init__(self, index: int, *, call_id=None, name=None, arguments=None):
-            self.index = index
-            self.id = call_id
-            self.function = SimpleNamespace(name=name, arguments=arguments)
-
     class FakeLLM:
         config = SimpleNamespace(model="fake")
 
@@ -889,13 +850,18 @@ async def test_respond_stream_terminate_tool_result_skips_followup_llm_call() ->
 
             async def stream():
                 if self.calls == 1:
-                    yield ToolCallChunk(
+                    yield StreamChunk(
+                        content="",
                         tool_calls=[
-                            ToolCallDelta(0, call_id="call-1", name="terminate", arguments="{}")
-                        ]
+                            {
+                                "id": "call-1",
+                                "type": "function",
+                                "function": {"name": "terminate", "arguments": "{}"},
+                            }
+                        ],
                     )
                 else:
-                    yield ToolCallChunk(content="should not happen")
+                    yield StreamChunk(content="should not happen")
 
             return stream()
 
@@ -921,21 +887,6 @@ async def test_respond_stream_terminate_tool_result_skips_followup_llm_call() ->
 
 @pytest.mark.asyncio
 async def test_respond_stream_terminate_tool_result_drains_followup_queued_from_agent_end() -> None:
-    class ToolCallChunk:
-        def __init__(self, *, content: str = "", tool_calls=None):
-            self.choices = [
-                SimpleNamespace(
-                    delta=SimpleNamespace(content=content or None, tool_calls=tool_calls),
-                    finish_reason=None,
-                )
-            ]
-
-    class ToolCallDelta:
-        def __init__(self, index: int, *, call_id=None, name=None, arguments=None):
-            self.index = index
-            self.id = call_id
-            self.function = SimpleNamespace(name=name, arguments=arguments)
-
     class FakeLLM:
         config = SimpleNamespace(model="fake")
 
@@ -950,13 +901,18 @@ async def test_respond_stream_terminate_tool_result_drains_followup_queued_from_
 
             async def stream():
                 if self.calls == 1:
-                    yield ToolCallChunk(
+                    yield StreamChunk(
+                        content="",
                         tool_calls=[
-                            ToolCallDelta(0, call_id="call-1", name="terminate", arguments="{}")
-                        ]
+                            {
+                                "id": "call-1",
+                                "type": "function",
+                                "function": {"name": "terminate", "arguments": "{}"},
+                            }
+                        ],
                     )
                 else:
-                    yield ToolCallChunk(content=f"reply:{latest}")
+                    yield StreamChunk(content=f"reply:{latest}")
 
             return stream()
 
@@ -995,30 +951,20 @@ async def test_respond_stream_terminate_tool_result_drains_followup_queued_from_
 
 @pytest.mark.asyncio
 async def test_respond_stream_terminate_ignores_stale_tool_outputs() -> None:
-    class ToolCallChunk:
-        def __init__(self, *, content: str = "", tool_calls=None):
-            self.choices = [
-                SimpleNamespace(
-                    delta=SimpleNamespace(content=content or None, tool_calls=tool_calls),
-                    finish_reason=None,
-                )
-            ]
-
-    class ToolCallDelta:
-        def __init__(self, index: int, *, call_id=None, name=None, arguments=None):
-            self.index = index
-            self.id = call_id
-            self.function = SimpleNamespace(name=name, arguments=arguments)
-
     class FakeLLM:
         config = SimpleNamespace(model="fake")
 
         def achat_stream(self, messages, tools=None):
             async def stream():
-                yield ToolCallChunk(
+                yield StreamChunk(
+                    content="",
                     tool_calls=[
-                        ToolCallDelta(0, call_id="call-new", name="terminate", arguments="{}")
-                    ]
+                        {
+                            "id": "call-new",
+                            "type": "function",
+                            "function": {"name": "terminate", "arguments": "{}"},
+                        }
+                    ],
                 )
 
             return stream()
@@ -1051,21 +997,6 @@ async def test_respond_stream_terminate_ignores_stale_tool_outputs() -> None:
 async def test_respond_stream_before_tool_call_abort_skips_sibling_tools() -> None:
     executed: list[str] = []
 
-    class ToolCallChunk:
-        def __init__(self, *, content: str = "", tool_calls=None):
-            self.choices = [
-                SimpleNamespace(
-                    delta=SimpleNamespace(content=content or None, tool_calls=tool_calls),
-                    finish_reason=None,
-                )
-            ]
-
-    class ToolCallDelta:
-        def __init__(self, index: int, *, call_id=None, name=None, arguments=None):
-            self.index = index
-            self.id = call_id
-            self.function = SimpleNamespace(name=name, arguments=arguments)
-
     class FakeLLM:
         config = SimpleNamespace(model="fake")
 
@@ -1077,14 +1008,23 @@ async def test_respond_stream_before_tool_call_abort_skips_sibling_tools() -> No
 
             async def stream():
                 if self.calls == 1:
-                    yield ToolCallChunk(
+                    yield StreamChunk(
+                        content="",
                         tool_calls=[
-                            ToolCallDelta(0, call_id="call-1", name="first", arguments="{}"),
-                            ToolCallDelta(1, call_id="call-2", name="second", arguments="{}"),
-                        ]
+                            {
+                                "id": "call-1",
+                                "type": "function",
+                                "function": {"name": "first", "arguments": "{}"},
+                            },
+                            {
+                                "id": "call-2",
+                                "type": "function",
+                                "function": {"name": "second", "arguments": "{}"},
+                            },
+                        ],
                     )
                 else:
-                    yield ToolCallChunk(content="done")
+                    yield StreamChunk(content="done")
 
             return stream()
 
@@ -1123,21 +1063,6 @@ async def test_respond_stream_before_tool_call_abort_skips_sibling_tools() -> No
 
 @pytest.mark.asyncio
 async def test_respond_stream_after_tool_call_exception_becomes_error_tool_result() -> None:
-    class ToolCallChunk:
-        def __init__(self, *, content: str = "", tool_calls=None):
-            self.choices = [
-                SimpleNamespace(
-                    delta=SimpleNamespace(content=content or None, tool_calls=tool_calls),
-                    finish_reason=None,
-                )
-            ]
-
-    class ToolCallDelta:
-        def __init__(self, index: int, *, call_id=None, name=None, arguments=None):
-            self.index = index
-            self.id = call_id
-            self.function = SimpleNamespace(name=name, arguments=arguments)
-
     class FakeLLM:
         config = SimpleNamespace(model="fake")
 
@@ -1149,13 +1074,18 @@ async def test_respond_stream_after_tool_call_exception_becomes_error_tool_resul
 
             async def stream():
                 if self.calls == 1:
-                    yield ToolCallChunk(
+                    yield StreamChunk(
+                        content="",
                         tool_calls=[
-                            ToolCallDelta(0, call_id="call-1", name="ok_tool", arguments="{}")
-                        ]
+                            {
+                                "id": "call-1",
+                                "type": "function",
+                                "function": {"name": "ok_tool", "arguments": "{}"},
+                            }
+                        ],
                     )
                 else:
-                    yield ToolCallChunk(content="done")
+                    yield StreamChunk(content="done")
 
             return stream()
 
@@ -1186,21 +1116,6 @@ async def test_respond_stream_after_tool_call_exception_becomes_error_tool_resul
 
 @pytest.mark.asyncio
 async def test_respond_stream_awaits_async_tool_handlers_from_registry() -> None:
-    class ToolCallChunk:
-        def __init__(self, *, content: str = "", tool_calls=None):
-            self.choices = [
-                SimpleNamespace(
-                    delta=SimpleNamespace(content=content or None, tool_calls=tool_calls),
-                    finish_reason=None,
-                )
-            ]
-
-    class ToolCallDelta:
-        def __init__(self, index: int, *, call_id=None, name=None, arguments=None):
-            self.index = index
-            self.id = call_id
-            self.function = SimpleNamespace(name=name, arguments=arguments)
-
     class FakeLLM:
         config = SimpleNamespace(model="fake")
 
@@ -1212,13 +1127,18 @@ async def test_respond_stream_awaits_async_tool_handlers_from_registry() -> None
 
             async def stream():
                 if self.calls == 1:
-                    yield ToolCallChunk(
+                    yield StreamChunk(
+                        content="",
                         tool_calls=[
-                            ToolCallDelta(0, call_id="call-1", name="async_tool", arguments="{}")
-                        ]
+                            {
+                                "id": "call-1",
+                                "type": "function",
+                                "function": {"name": "async_tool", "arguments": "{}"},
+                            }
+                        ],
                     )
                 else:
-                    yield ToolCallChunk(content="done")
+                    yield StreamChunk(content="done")
 
             return stream()
 
@@ -1247,21 +1167,6 @@ async def test_respond_stream_awaits_async_tool_handlers_from_registry() -> None
 async def test_respond_stream_executes_parallel_safe_async_tools_concurrently() -> None:
     started: list[str] = []
 
-    class ToolCallChunk:
-        def __init__(self, *, content: str = "", tool_calls=None):
-            self.choices = [
-                SimpleNamespace(
-                    delta=SimpleNamespace(content=content or None, tool_calls=tool_calls),
-                    finish_reason=None,
-                )
-            ]
-
-    class ToolCallDelta:
-        def __init__(self, index: int, *, call_id=None, name=None, arguments=None):
-            self.index = index
-            self.id = call_id
-            self.function = SimpleNamespace(name=name, arguments=arguments)
-
     class FakeLLM:
         config = SimpleNamespace(model="fake")
 
@@ -1273,16 +1178,23 @@ async def test_respond_stream_executes_parallel_safe_async_tools_concurrently() 
 
             async def stream():
                 if self.calls == 1:
-                    yield ToolCallChunk(
+                    yield StreamChunk(
+                        content="",
                         tool_calls=[
-                            ToolCallDelta(0, call_id="call-1", name="think", arguments="{}"),
-                            ToolCallDelta(
-                                1, call_id="call-2", name="get_current_time", arguments="{}"
-                            ),
-                        ]
+                            {
+                                "id": "call-1",
+                                "type": "function",
+                                "function": {"name": "think", "arguments": "{}"},
+                            },
+                            {
+                                "id": "call-2",
+                                "type": "function",
+                                "function": {"name": "get_current_time", "arguments": "{}"},
+                            },
+                        ],
                     )
                 else:
-                    yield ToolCallChunk(content="done")
+                    yield StreamChunk(content="done")
 
             return stream()
 
@@ -1320,23 +1232,18 @@ async def test_respond_stream_executes_parallel_safe_async_tools_concurrently() 
     assert tool_messages[1].content == "time-parallel:True"
 
 
-class _StreamChunk:
-    """Minimal OpenAI-style streaming chunk for tests."""
-
-    def __init__(self, *, content: str = "", tool_calls=None):
-        self.choices = [
-            SimpleNamespace(
-                delta=SimpleNamespace(content=content or None, tool_calls=tool_calls),
-                finish_reason=None,
-            )
-        ]
+def _StreamChunk(*, content: str = "", tool_calls=None) -> StreamChunk:
+    """Build a StreamChunk fake (text and/or assembled tool calls)."""
+    return StreamChunk(content=content, tool_calls=tool_calls)
 
 
-class _ToolDelta:
-    def __init__(self, index: int, *, call_id=None, name=None, arguments=None):
-        self.index = index
-        self.id = call_id
-        self.function = SimpleNamespace(name=name, arguments=arguments)
+def _ToolDelta(index: int, *, call_id=None, name=None, arguments="{}") -> dict:
+    """Build a canonical tool-call dict (the shape providers assemble)."""
+    return {
+        "id": call_id,
+        "type": "function",
+        "function": {"name": name, "arguments": arguments},
+    }
 
 
 @pytest.mark.asyncio
@@ -1519,3 +1426,54 @@ async def test_master_loop_injects_steering_between_rounds() -> None:
     assert "".join(chunks) == "done"
     # The second LLM call must have seen the injected steering message.
     assert any("actually do X instead" in m for m in llm.seen_messages[1])
+
+
+@pytest.mark.asyncio
+async def test_master_loop_streams_tokens_then_executes_tool_call() -> None:
+    """respond_stream yields text tokens live, runs a streamed tool call, continues."""
+
+    class FakeLLM:
+        config = SimpleNamespace(model="fake")
+
+        def __init__(self):
+            self.calls = 0
+
+        def achat_stream(self, messages, tools=None):
+            self.calls += 1
+            calls = self.calls
+
+            async def stream():
+                if calls == 1:
+                    # text streamed live, then a chunk carrying the assembled tool call
+                    yield _StreamChunk(content="let me ")
+                    yield _StreamChunk(content="check ")
+                    yield _StreamChunk(
+                        tool_calls=[_ToolDelta(0, call_id="c1", name="look", arguments="{}")]
+                    )
+                else:
+                    yield _StreamChunk(content="the answer ")
+                    yield _StreamChunk(content="is 42")
+
+            return stream()
+
+    seen_args = []
+
+    def look():
+        seen_args.append("look")
+        return "found"
+
+    llm = FakeLLM()
+    agent = Agent(llm=llm, tools=[], verbose=False)
+    agent.registry.register("look", look, {"type": "function", "function": {"name": "look"}})
+
+    chunks = []
+    async for chunk in agent.respond_stream("go"):
+        chunks.append(chunk)
+
+    assert llm.calls == 2
+    assert seen_args == ["look"]  # the streamed tool call executed
+    # Tokens from both rounds streamed live, in order.
+    assert "".join(chunks) == "let me check the answer is 42"
+    # The tool result is in history.
+    tool_messages = [m for m in agent.history if m.role == "tool"]
+    assert tool_messages[0].content == "found"

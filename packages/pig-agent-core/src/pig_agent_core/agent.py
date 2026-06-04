@@ -803,9 +803,9 @@ class Agent:
             # Get tool schemas
             tools_schema = self.registry.get_schemas() if len(self.registry) > 0 else None
 
-            # Call LLM with streaming
-            # achat_stream may be an async generator function (returns generator directly)
-            # or an AsyncMock in tests (returns a coroutine that must be awaited first)
+            # Call LLM with streaming. achat_stream yields StreamChunks: text
+            # deltas (content) and, on completion, a chunk carrying the fully
+            # assembled tool_calls.
             stream_call = self.llm.achat_stream(
                 messages=self.history,
                 tools=tools_schema,
@@ -820,68 +820,35 @@ class Agent:
                 self._emit_agent_end(success=False, error=str(e))
                 raise
 
-            # Accumulate streaming response
-            content_parts = []
-            tool_calls_acc: dict[int, dict[str, str]] = {}
-            has_tool_calls = False
-            buffered = []
+            # Consume the stream: yield text tokens live, capture tool calls.
+            content_parts: list[str] = []
+            streamed_tool_calls: list[dict[str, Any]] | None = None
+            aborted = False
 
             async for chunk in response_stream:
                 if cancel and cancel.is_set():
+                    aborted = True
                     break
+                if chunk.content:
+                    content_parts.append(chunk.content)
+                    yield chunk.content
+                if getattr(chunk, "tool_calls", None):
+                    streamed_tool_calls = chunk.tool_calls
 
-                if not hasattr(chunk, "choices") or not chunk.choices:
-                    continue
-
-                delta = chunk.choices[0].delta
-
-                # Accumulate content
-                if hasattr(delta, "content") and delta.content:
-                    content_parts.append(delta.content)
-                    if not has_tool_calls:
-                        buffered.append(delta.content)
-
-                # Accumulate tool calls
-                if hasattr(delta, "tool_calls") and delta.tool_calls:
-                    if not has_tool_calls:
-                        has_tool_calls = True
-                        buffered.clear()
-
-                    for tc_delta in delta.tool_calls:
-                        idx = tc_delta.index if hasattr(tc_delta, "index") else 0
-                        if idx not in tool_calls_acc:
-                            tool_calls_acc[idx] = {"id": "", "name": "", "arguments": ""}
-
-                        if hasattr(tc_delta, "id") and tc_delta.id:
-                            tool_calls_acc[idx]["id"] = tc_delta.id
-
-                        if hasattr(tc_delta, "function") and tc_delta.function:
-                            if hasattr(tc_delta.function, "name") and tc_delta.function.name:
-                                tool_calls_acc[idx]["name"] = tc_delta.function.name
-                            if (
-                                hasattr(tc_delta.function, "arguments")
-                                and tc_delta.function.arguments
-                            ):
-                                tool_calls_acc[idx]["arguments"] += tc_delta.function.arguments
-
-            # Aborted mid-stream (or right after): preserve whatever streamed so the
-            # session reflects it, surface it to the caller, and stop cleanly without
-            # leaving a dangling assistant-with-tool_calls message in history.
-            if cancel and cancel.is_set():
+            # Aborted mid-stream: the partial text already streamed; record it so the
+            # session reflects it, then stop cleanly (no dangling tool message).
+            if aborted or (cancel and cancel.is_set()):
                 partial = "".join(content_parts)
                 if partial:
                     self.history.append(Message(role="assistant", content=partial))
-                    yield partial
                 self._emit_agent_end(success=False, error="aborted")
                 return
 
-            # If no tool calls, yield buffered content and return
-            if not tool_calls_acc:
-                final_content = "".join(buffered)
+            # No tool calls: the final text already streamed; record + finish.
+            if not streamed_tool_calls:
+                final_content = "".join(content_parts)
                 self.history.append(Message(role="assistant", content=final_content))
                 self._log_turn(f"Agent: {final_content}")
-                for part in buffered:
-                    yield part
                 self._emit_agent_end(success=True)
                 if self.message_queue.has_followup():
                     followup = self.message_queue.get_followup_messages()
@@ -890,20 +857,9 @@ class Agent:
                             yield chunk
                 return
 
-            # Process tool calls
+            # Tool calls: record the assistant turn (with tool_calls) and execute.
             assistant_content = "".join(content_parts) or None
-            assistant_tool_calls = []
-            for idx in sorted(tool_calls_acc):
-                tc = tool_calls_acc[idx]
-                assistant_tool_calls.append(
-                    {
-                        "id": tc["id"],
-                        "type": "function",
-                        "function": {"name": tc["name"], "arguments": tc["arguments"]},
-                    }
-                )
-
-            # Add assistant message with tool calls to history
+            assistant_tool_calls = streamed_tool_calls
             self.history.append(
                 Message(
                     role="assistant",

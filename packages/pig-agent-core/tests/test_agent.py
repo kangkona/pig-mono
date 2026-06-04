@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, Mock
 import pytest
 from pig_agent_core import Agent, tool
 from pig_agent_core.models import AgentState
+from pig_llm import StreamChunk
 
 
 @pytest.fixture
@@ -142,23 +143,10 @@ async def test_agent_respond_stream_basic():
     mock_llm = Mock()
     mock_llm.config = Mock(model="test-model")
 
-    # Mock streaming response
+    # Mock streaming response (StreamChunk shape: text deltas as .content)
     async def mock_stream():
-        # Simulate streaming chunks
-        chunk1 = Mock()
-        chunk1.choices = [Mock()]
-        chunk1.choices[0].delta = Mock()
-        chunk1.choices[0].delta.content = "Hello"
-        chunk1.choices[0].delta.tool_calls = None
-
-        chunk2 = Mock()
-        chunk2.choices = [Mock()]
-        chunk2.choices[0].delta = Mock()
-        chunk2.choices[0].delta.content = " world"
-        chunk2.choices[0].delta.tool_calls = None
-
-        yield chunk1
-        yield chunk2
+        yield StreamChunk(content="Hello")
+        yield StreamChunk(content=" world")
 
     mock_llm.achat_stream = AsyncMock(return_value=mock_stream())
 
@@ -180,22 +168,10 @@ async def test_agent_respond_non_streaming():
     mock_llm = Mock()
     mock_llm.config = Mock(model="test-model")
 
-    # Mock streaming response
+    # Mock streaming response (StreamChunk shape)
     async def mock_stream():
-        chunk1 = Mock()
-        chunk1.choices = [Mock()]
-        chunk1.choices[0].delta = Mock()
-        chunk1.choices[0].delta.content = "Complete"
-        chunk1.choices[0].delta.tool_calls = None
-
-        chunk2 = Mock()
-        chunk2.choices = [Mock()]
-        chunk2.choices[0].delta = Mock()
-        chunk2.choices[0].delta.content = " response"
-        chunk2.choices[0].delta.tool_calls = None
-
-        yield chunk1
-        yield chunk2
+        yield StreamChunk(content="Complete")
+        yield StreamChunk(content=" response")
 
     mock_llm.achat_stream = AsyncMock(return_value=mock_stream())
 
