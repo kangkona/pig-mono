@@ -1193,3 +1193,44 @@ def test_startup_session_id_resume_restores_llm_context(mock_llm, temp_workspace
 def test_startup_fresh_session_has_no_replayed_history(mock_llm, temp_workspace):
     agent = _agent(mock_llm, temp_workspace, session_name="brand-new")
     assert all(m.role == "system" for m in agent.agent.history)
+
+
+def test_settings_set_and_read_back(mock_llm, temp_workspace):
+    agent = _agent(mock_llm, temp_workspace)
+    agent.ui = Mock()
+    agent._handle_command("/settings auto_compact_threshold 0.5")
+    agent._handle_command("/settings auto_compact false")
+    cfg = agent.config_manager.load_config()
+    assert cfg.auto_compact_threshold == 0.5
+    assert cfg.auto_compact is False
+
+
+def test_settings_validation_rejects_bad_values(mock_llm, temp_workspace):
+    agent = _agent(mock_llm, temp_workspace)
+    agent.ui = Mock()
+    agent._handle_command("/settings auto_compact_threshold 2.0")  # out of range
+    agent._handle_command("/settings provider hacked")  # read-only key
+    errors = " ".join(c.args[0] for c in agent.ui.error.call_args_list)
+    assert "between 0.0 and 1.0" in errors
+    assert "read-only" in errors or "Unknown" in errors
+
+
+def test_auto_compact_respects_config(mock_llm, temp_workspace):
+    agent = _agent(mock_llm, temp_workspace)
+    agent.agent.llm.config.model = "gpt-4o-mini"  # 128k
+    agent.ui = Mock()
+
+    # Disabled -> no compaction even when near full.
+    agent._handle_command("/settings auto_compact false")
+    agent.agent.last_llm_usage = {"input_tokens": 127000, "output_tokens": 0}
+    agent.ui.reset_mock()
+    agent._maybe_auto_compact()
+    assert not any("auto-compacting" in c.args[0] for c in agent.ui.system.call_args_list)
+
+    # Re-enabled with a low threshold -> triggers earlier.
+    agent._handle_command("/settings auto_compact true")
+    agent._handle_command("/settings auto_compact_threshold 0.5")
+    agent.agent.last_llm_usage = {"input_tokens": 70000, "output_tokens": 0}
+    agent.ui.reset_mock()
+    agent._maybe_auto_compact()
+    assert any("auto-compacting" in c.args[0] for c in agent.ui.system.call_args_list)

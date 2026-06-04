@@ -29,6 +29,10 @@ class AgentConfig(BaseModel):
     session_cleanup_days: int = 30
     session_dir: str | None = None
 
+    # Context / compaction settings
+    auto_compact: bool = True
+    auto_compact_threshold: float = Field(default=0.85, ge=0.0, le=1.0)
+
     # Display settings
     verbose: bool = True
     show_timestamps: bool = False

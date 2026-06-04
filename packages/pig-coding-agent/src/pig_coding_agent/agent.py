@@ -70,8 +70,9 @@ class CodingAgent:
         self.verbose = verbose
         self.excluded_tools = set(excluded_tools or set())
         self._extensions_shutdown_done = False
+        self.config_manager = ConfigManager(self.workspace)
         if session_dir is None and os.environ.get("PIG_CODING_AGENT_SESSION_DIR") is None:
-            session_dir = ConfigManager(self.workspace).get_session_dir()
+            session_dir = self.config_manager.get_session_dir()
         self.sessions_dir = SessionManager(self.workspace, session_dir=session_dir).sessions_dir
         self._session_start_reason = "startup"
         self._previous_session_file: str | None = None
@@ -641,7 +642,8 @@ Tools: {len(self.agent.registry)}
             self._copy_last_message()
 
         elif cmd.startswith("/settings"):
-            self._show_settings()
+            arg = command.strip().split(maxsplit=1)
+            self._show_settings(arg[1].strip() if len(arg) > 1 else None)
 
         elif cmd.startswith("/"):
             # Check if it's a prompt template
@@ -886,9 +888,25 @@ Tools: {len(self.agent.registry)}
                     continue
         return False
 
-    def _show_settings(self) -> None:
-        """Show current settings and where to change them."""
-        cfg = ConfigManager(self.workspace)
+    # Config keys settable via `/settings <key> <value>`.
+    _EDITABLE_SETTINGS = (
+        "auto_compact",
+        "auto_compact_threshold",
+        "temperature",
+        "verbose",
+        "show_timestamps",
+        "theme",
+        "auto_save_session",
+        "enable_cost_tracking",
+    )
+
+    def _show_settings(self, args: str | None = None) -> None:
+        """Show settings, or set one with `/settings <key> <value>`."""
+        if args:
+            self._set_setting(args)
+            return
+
+        cfg = self.config_manager.load_config()
         lines = [
             "**Settings**",
             "",
@@ -898,13 +916,56 @@ Tools: {len(self.agent.registry)}
             f"Skills:      {'on' if self.skill_manager else 'off'}",
             f"Extensions:  {'on' if self.extension_manager else 'off'}",
             "",
-            "**Config files** (edit the JSON to change defaults):",
-            f"  project: {cfg.project_config}",
-            f"  global:  {cfg.global_config}",
+            "**Editable** (`/settings <key> <value>`):",
+        ]
+        for key in self._EDITABLE_SETTINGS:
+            lines.append(f"  {key} = {getattr(cfg, key, '?')}")
+        lines += [
             "",
-            "Quick changes: /model <provider/model>, /login, /logout, /name <name>",
+            "**Config files:**",
+            f"  project: {self.config_manager.project_config}",
+            f"  global:  {self.config_manager.global_config}",
+            "",
+            "Also: /model <provider/model>, /login, /logout, /name <name>",
         ]
         self.ui.panel("\n".join(lines), title="Settings")
+
+    def _set_setting(self, args: str) -> None:
+        """Parse and persist `<key> <value>` into the project config."""
+        parts = args.split(maxsplit=1)
+        if len(parts) < 2:
+            self.ui.error("Usage: /settings <key> <value>")
+            return
+        key, raw = parts[0], parts[1].strip()
+        if key not in self._EDITABLE_SETTINGS:
+            self.ui.error(
+                f"Unknown or read-only setting: {key}. "
+                f"Editable: {', '.join(self._EDITABLE_SETTINGS)}"
+            )
+            return
+
+        current = getattr(self.config_manager.load_config(), key, None)
+        try:
+            if isinstance(current, bool):
+                value: object = raw.lower() in ("1", "true", "yes", "on")
+            elif isinstance(current, int) and not isinstance(current, bool):
+                value = int(raw)
+            elif isinstance(current, float):
+                value = float(raw)
+            else:
+                value = raw
+        except ValueError:
+            self.ui.error(f"Invalid value for {key}: {raw!r}")
+            return
+
+        if key == "auto_compact_threshold" and not (0.0 <= float(value) <= 1.0):
+            self.ui.error("auto_compact_threshold must be between 0.0 and 1.0")
+            return
+
+        self.config_manager.set_config_value(key, value)
+        self.ui.system(f"✓ {key} = {value}  (saved to {self.config_manager.project_config})")
+        if key not in ("auto_compact", "auto_compact_threshold"):
+            self.ui.system("  (applies on next launch)")
 
     # Approximate context-window sizes by model-name substring (longest match wins).
     _CONTEXT_WINDOWS = {
@@ -924,7 +985,6 @@ Tools: {len(self.agent.registry)}
         "grok": 128_000,
     }
     _DEFAULT_CONTEXT_WINDOW = 128_000
-    _AUTO_COMPACT_FRACTION = 0.85
 
     def _context_window(self) -> int:
         model = self.agent.llm.config.model or ""
@@ -976,12 +1036,19 @@ Tools: {len(self.agent.registry)}
             self.ui.system(" · ".join(parts))
 
     def _maybe_auto_compact(self) -> None:
-        """Auto-compact when the context window is nearly full (pi-mono parity)."""
+        """Auto-compact when the context window is nearly full (pi-mono parity).
+
+        Controlled by config: auto_compact (on/off) and auto_compact_threshold
+        (fraction of the context window, default 0.85).
+        """
+        cfg = self.config_manager.load_config()
+        if not cfg.auto_compact:
+            return
         ctx = self._context_tokens()
         if ctx is None:
             return
         window = self._context_window()
-        if ctx <= int(window * self._AUTO_COMPACT_FRACTION):
+        if ctx <= int(window * cfg.auto_compact_threshold):
             return
         self.ui.system(
             f"⚠ Context {self._fmt_k(ctx)}/{self._fmt_k(window)} — auto-compacting to free space…"
