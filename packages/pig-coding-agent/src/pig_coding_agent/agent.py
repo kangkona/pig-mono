@@ -1,6 +1,5 @@
 """Coding agent with file operations and code generation."""
 
-import asyncio
 import os
 from pathlib import Path
 
@@ -16,7 +15,7 @@ from pig_agent_core import (
 )
 from pig_agent_core.tools import Tool
 from pig_llm import LLM
-from pig_tui import ChatUI, InteractivePrompt, LiveInputListener, hyperlink
+from pig_tui import ChatUI, InteractivePrompt, hyperlink
 
 from .billing import CostTracker
 from .config import ConfigManager
@@ -382,14 +381,18 @@ When generating code, provide clean, well-documented, production-ready code.
                 # Display user message
                 self.ui.user(user_input[:200] + "..." if len(user_input) > 200 else user_input)
 
-                # Run the turn as a cancellable streaming task. Ctrl-C during a
-                # turn aborts that turn but preserves the session (returns to the
-                # prompt) rather than tearing the whole session down.
-                try:
-                    asyncio.run(self._run_turn(user_input))
-                except KeyboardInterrupt:
-                    self.ui.system("[aborted]")
-                    continue
+                # Get agent response (uncapped; tool calling runs on the
+                # synchronous path, which is the only one that surfaces tool
+                # calls with real providers).
+                response = self.agent.run(user_input)
+
+                # Display response
+                self.ui.assistant(response.content)
+
+                # Add to session
+                if self.session:
+                    self.session.add_message("user", user_input)
+                    self.session.add_message("assistant", response.content)
 
         except SessionExitRequested:
             shutdown_reason = "normal"
@@ -416,39 +419,6 @@ When generating code, provide clean, well-documented, production-ready code.
                     f"{self.session.id}{session_dir_hint}"
                 )
             self.ui.system("\nGoodbye!")
-
-    async def _run_turn(self, user_input: str) -> None:
-        """Stream one agent turn, abortable via Esc and steerable while running.
-
-        Drives the cancellable streaming API with no iteration cap. A
-        LiveInputListener watches the keyboard during the turn: Esc sets the
-        cancel event (aborting the turn and killing any in-flight tool), and a
-        typed line is injected as a steering message before the next model call.
-        The session records the user message plus whatever assistant text was
-        produced (including a partial turn on abort).
-        """
-        cancel = asyncio.Event()
-        parts: list[str] = []
-
-        def on_steering(line: str) -> None:
-            self.agent.message_queue.add_steering(line)
-
-        async with LiveInputListener(cancel, on_steering=on_steering):
-            with self.ui.assistant_stream() as writer, writer:
-                async for chunk in self.agent.respond_stream(
-                    user_input, cancel=cancel, max_iterations=0
-                ):
-                    parts.append(chunk)
-                    writer.write(chunk)
-
-        if cancel.is_set():
-            self.ui.system("[aborted]")
-
-        if self.session:
-            self.session.add_message("user", user_input)
-            full = "".join(parts)
-            if full:
-                self.session.add_message("assistant", full)
 
     def _handle_command(self, command: str) -> None:
         """Handle slash commands.

@@ -340,3 +340,22 @@ def test_run_command_cancel_none_is_unaffected():
 
     assert result.ok is True
     assert "hi" in str(result.data)
+
+
+def test_execute_sync_drives_async_run_command():
+    """The synchronous run() path must drive the async run_command to a result.
+
+    Regression: making run_command async returned an un-awaited coroutine via
+    registry.execute_sync, breaking shell tools on the sync agent loop.
+    """
+    from pig_agent_core.tools.registry import ToolRegistry
+
+    tools = ShellTools()
+    bound = tools.run_command
+    registry = ToolRegistry()
+    registry.register("run_command", bound.func, bound.to_openai_schema())
+
+    result = registry.execute_sync("run_command", {"command": "echo hi"})
+
+    assert result.ok is True
+    assert "hi" in str(result.data)

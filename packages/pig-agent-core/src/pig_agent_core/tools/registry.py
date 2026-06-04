@@ -379,7 +379,13 @@ class ToolRegistry:
         try:
             signature = inspect.signature(handler)
             params = list(signature.parameters)
-            if params[:4] == ["args", "user_id", "meta", "cancel"]:
+            uses_ctx = params[:4] == ["args", "user_id", "meta", "cancel"]
+            if asyncio.iscoroutinefunction(handler):
+                # Async tool invoked from the synchronous run() path: drive the
+                # coroutine to completion on a private loop.
+                coro = handler(args, user_id, meta, None) if uses_ctx else handler(**args)
+                value = asyncio.run(coro)
+            elif uses_ctx:
                 value = handler(args, user_id, meta, None)
             else:
                 value = handler(**args)
