@@ -36,9 +36,9 @@ async def test_typed_line_then_enter_fires_steering():
     listener = LiveInputListener(cancel, on_steering=received.append, echo=False)
     listener._loop = asyncio.get_running_loop()
 
-    for ch in b"do X":
-        listener._handle_byte(bytes([ch]))
-    listener._handle_byte(b"\r")  # Enter submits the line
+    for ch in "do X":
+        listener._handle_char(ch)
+    listener._handle_char("\r")  # Enter submits the line
     await asyncio.sleep(0.01)
 
     assert received == ["do X"]
@@ -52,10 +52,10 @@ async def test_backspace_edits_line_before_submit():
     listener = LiveInputListener(cancel, on_steering=received.append, echo=False)
     listener._loop = asyncio.get_running_loop()
 
-    for ch in b"hix":
-        listener._handle_byte(bytes([ch]))
-    listener._handle_byte(b"\x7f")  # backspace removes the 'x'
-    listener._handle_byte(b"\r")
+    for ch in "hix":
+        listener._handle_char(ch)
+    listener._handle_char("\x7f")  # backspace removes the 'x'
+    listener._handle_char("\r")
     await asyncio.sleep(0.01)
 
     assert received == ["hi"]
@@ -68,7 +68,7 @@ async def test_blank_line_does_not_fire_steering():
     listener = LiveInputListener(cancel, on_steering=received.append, echo=False)
     listener._loop = asyncio.get_running_loop()
 
-    listener._handle_byte(b"\r")  # Enter on an empty line
+    listener._handle_char("\r")  # Enter on an empty line
     await asyncio.sleep(0.01)
 
     assert received == []
@@ -81,9 +81,9 @@ async def test_on_change_emits_live_buffer():
     listener = LiveInputListener(asyncio.Event(), on_change=seen.append, echo=False)
     listener._loop = asyncio.get_running_loop()
 
-    for ch in b"hey":
-        listener._handle_byte(bytes([ch]))
-    listener._handle_byte(b"\x7f")  # backspace
+    for ch in "hey":
+        listener._handle_char(ch)
+    listener._handle_char("\x7f")  # backspace
     await asyncio.sleep(0.01)
 
     assert seen[-1] == "he"
@@ -98,10 +98,30 @@ async def test_enter_clears_buffer_via_on_change():
     )
     listener._loop = asyncio.get_running_loop()
 
-    for ch in b"go":
-        listener._handle_byte(bytes([ch]))
-    listener._handle_byte(b"\r")
+    for ch in "go":
+        listener._handle_char(ch)
+    listener._handle_char("\r")
     await asyncio.sleep(0.01)
 
     assert received == ["go"]
     assert changes[-1] == ""  # buffer cleared after submit
+
+
+@pytest.mark.asyncio
+async def test_multibyte_cjk_input_is_decoded_and_buffered():
+    """CJK input (multi-byte UTF-8) must assemble into whole characters."""
+    import codecs
+
+    received: list[str] = []
+    listener = LiveInputListener(asyncio.Event(), on_steering=received.append, echo=False)
+    listener._loop = asyncio.get_running_loop()
+
+    # Feed the raw UTF-8 bytes of "中文" one byte at a time, as the reader does.
+    decoder = codecs.getincrementaldecoder("utf-8")(errors="ignore")
+    for byte in "中文".encode():
+        for char in decoder.decode(bytes([byte])):
+            listener._handle_char(char)
+    listener._handle_char("\r")  # Enter
+    await asyncio.sleep(0.01)
+
+    assert received == ["中文"]

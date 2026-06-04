@@ -137,8 +137,13 @@ class LiveInputListener:
             self._reader_unix()
 
     def _reader_unix(self) -> None:
+        import codecs
         import os
         import select
+
+        # Decode bytes incrementally so multibyte (e.g. CJK) input is assembled
+        # into complete characters instead of being dropped per byte.
+        decoder = codecs.getincrementaldecoder("utf-8")(errors="ignore")
 
         fd = self._fd
         assert fd is not None
@@ -165,7 +170,9 @@ class LiveInputListener:
                     continue
                 self._fire_abort()
                 continue
-            self._handle_byte(ch)
+            # Feed the byte to the incremental decoder; emit complete characters.
+            for char in decoder.decode(ch):
+                self._handle_char(char)
 
     def _reader_windows(self) -> None:
         import msvcrt
@@ -175,17 +182,16 @@ class LiveInputListener:
             if not msvcrt.kbhit():
                 time.sleep(0.05)
                 continue
-            ch = msvcrt.getwch()
-            b = ch.encode("utf-8", errors="ignore")
-            if b == _ESC:
+            ch = msvcrt.getwch()  # already a (wide) character
+            if ch == "\x1b":
                 self._fire_abort()
                 continue
-            self._handle_byte(b)
+            self._handle_char(ch)
 
     # -- key handling -------------------------------------------------------
 
-    def _handle_byte(self, ch: bytes) -> None:
-        if ch in _ENTER:
+    def _handle_char(self, char: str) -> None:
+        if char in ("\r", "\n"):
             line = "".join(self._line).strip()
             self._line.clear()
             if self._echo:
@@ -195,7 +201,7 @@ class LiveInputListener:
                 self._fire_steering(line)
             self._fire_change()
             return
-        if ch in _BACKSPACE:
+        if char in ("\x7f", "\x08"):
             if self._line:
                 self._line.pop()
                 if self._echo:
@@ -203,15 +209,11 @@ class LiveInputListener:
                     sys.stdout.flush()
                 self._fire_change()
             return
-        try:
-            text = ch.decode("utf-8")
-        except UnicodeDecodeError:
+        if not char.isprintable():
             return
-        if not text.isprintable():
-            return
-        self._line.append(text)
+        self._line.append(char)
         if self._echo:
-            sys.stdout.write(text)
+            sys.stdout.write(char)
             sys.stdout.flush()
         self._fire_change()
 
