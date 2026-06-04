@@ -468,6 +468,7 @@ When generating code, provide clean, well-documented, production-ready code.
                 cancel,
                 on_steering=on_steering,
                 on_change=writer.set_input,
+                completions=self._build_commands(),
                 echo=False,
             ):
                 # Animate the spinner / elapsed timer while the turn runs so a

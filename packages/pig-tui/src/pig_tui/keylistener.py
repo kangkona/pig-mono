@@ -24,6 +24,18 @@ _ENTER = (b"\r", b"\n")
 _BACKSPACE = (b"\x7f", b"\x08")
 
 
+def _longest_common_prefix(items: list[str]) -> str:
+    if not items:
+        return ""
+    prefix = items[0]
+    for item in items[1:]:
+        while not item.startswith(prefix):
+            prefix = prefix[:-1]
+            if not prefix:
+                return ""
+    return prefix
+
+
 def _stdin_is_interactive() -> bool:
     try:
         return bool(sys.stdin) and sys.stdin.isatty()
@@ -46,12 +58,14 @@ class LiveInputListener:
         cancel_event: asyncio.Event,
         on_steering: Callable[[str], None] | None = None,
         *,
-        on_change: Callable[[str, int], None] | None = None,
+        on_change: Callable[[str, int, list[str]], None] | None = None,
+        completions: list[str] | None = None,
         echo: bool = True,
     ) -> None:
         self._cancel = cancel_event
         self._on_steering = on_steering
         self._on_change = on_change
+        self._completions = completions or []
         self._echo = echo
         self._loop: asyncio.AbstractEventLoop | None = None
         self._thread = None
@@ -230,6 +244,9 @@ class LiveInputListener:
         if char == "\x17":  # Ctrl-W — delete the word before the cursor
             self._delete_word_before_cursor()
             return
+        if char == "\t":  # Tab — complete a leading slash-command
+            self._complete()
+            return
         if not char.isprintable():
             return
         self._line.insert(self._cursor, char)  # insert at cursor
@@ -280,6 +297,27 @@ class LiveInputListener:
             self._cursor = i
             self._fire_change()
 
+    def matching_completions(self) -> list[str]:
+        """Slash-commands matching the current line (only when it starts with '/')."""
+        line = "".join(self._line)
+        if not line.startswith("/") or " " in line:
+            return []
+        return [c for c in self._completions if c.startswith(line)]
+
+    def _complete(self) -> None:
+        """Tab-complete the current slash-command to the longest common prefix."""
+        matches = self.matching_completions()
+        if not matches:
+            return
+        if len(matches) == 1:
+            completed = matches[0] + " "
+        else:
+            completed = _longest_common_prefix(matches)
+        if completed and completed != "".join(self._line):
+            self._line = list(completed)
+            self._cursor = len(self._line)
+            self._fire_change()
+
     def _fire_abort(self) -> None:
         if self._loop is not None:
             self._loop.call_soon_threadsafe(self._cancel.set)
@@ -292,4 +330,5 @@ class LiveInputListener:
         if self._loop is not None and self._on_change is not None:
             current = "".join(self._line)
             cursor = self._cursor
-            self._loop.call_soon_threadsafe(self._on_change, current, cursor)
+            suggestions = self.matching_completions()
+            self._loop.call_soon_threadsafe(self._on_change, current, cursor, suggestions)

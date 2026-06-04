@@ -79,7 +79,7 @@ async def test_on_change_emits_live_buffer():
     """Typing fires on_change with the current buffer (for live echo in the UI)."""
     seen: list[tuple[str, int]] = []
     listener = LiveInputListener(
-        asyncio.Event(), on_change=lambda t, c: seen.append((t, c)), echo=False
+        asyncio.Event(), on_change=lambda t, c, sg: seen.append((t, c)), echo=False
     )
     listener._loop = asyncio.get_running_loop()
 
@@ -98,7 +98,7 @@ async def test_enter_clears_buffer_via_on_change():
     listener = LiveInputListener(
         asyncio.Event(),
         on_steering=received.append,
-        on_change=lambda t, c: changes.append(t),
+        on_change=lambda t, c, sg: changes.append(t),
         echo=False,
     )
     listener._loop = asyncio.get_running_loop()
@@ -192,7 +192,9 @@ async def test_ctrl_u_clears_and_ctrl_w_deletes_word():
 async def test_escape_sequence_moves_cursor_not_abort():
     cancel = asyncio.Event()
     changes: list[tuple[str, int]] = []
-    listener = LiveInputListener(cancel, on_change=lambda t, c: changes.append((t, c)), echo=False)
+    listener = LiveInputListener(
+        cancel, on_change=lambda t, c, sg: changes.append((t, c)), echo=False
+    )
     listener._loop = asyncio.get_running_loop()
 
     for ch in "abc":
@@ -201,3 +203,44 @@ async def test_escape_sequence_moves_cursor_not_abort():
     await asyncio.sleep(0.01)
     assert changes[-1] == ("abc", 2)  # cursor moved left, not aborted
     assert not cancel.is_set()
+
+
+@pytest.mark.asyncio
+async def test_slash_command_suggestions_emitted():
+    cmds = ["/compact", "/clear", "/copy", "/cost", "/model"]
+    changes: list[tuple[str, int, list[str]]] = []
+    listener = LiveInputListener(
+        asyncio.Event(), on_change=lambda t, c, sg: changes.append((t, c, sg)), completions=cmds
+    )
+    listener._loop = asyncio.get_running_loop()
+
+    for ch in "/co":
+        listener._handle_char(ch)
+    await asyncio.sleep(0.01)
+    assert set(changes[-1][2]) == {"/compact", "/copy", "/cost"}
+
+    # Non-slash text yields no suggestions.
+    for ch in "x":
+        listener._handle_char(ch)  # now "/cox" -> no match
+    await asyncio.sleep(0.01)
+    assert changes[-1][2] == []
+
+
+@pytest.mark.asyncio
+async def test_tab_completes_unique_and_common_prefix():
+    cmds = ["/compact", "/copy", "/cost", "/model"]
+    submitted: list[str] = []
+    listener = LiveInputListener(asyncio.Event(), on_steering=submitted.append, completions=cmds)
+    listener._loop = asyncio.get_running_loop()
+
+    # "/m" + Tab -> unique "/model " (with trailing space)
+    for ch in "/m":
+        listener._handle_char(ch)
+    listener._complete()
+    assert "".join(listener._line) == "/model "
+
+    # "/co" + Tab is ambiguous (compact/copy/cost) -> stays at the common prefix.
+    listener._line = list("/co")
+    listener._cursor = 3
+    listener._complete()
+    assert "".join(listener._line) == "/co"  # common prefix, no unique completion

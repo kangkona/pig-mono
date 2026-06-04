@@ -66,6 +66,7 @@ class MarkdownStreamWriter:
         self._done = False
         self._input = ""
         self._cursor = 0
+        self._suggestions: list[str] = []
 
     def _renderable(self) -> Any:
         from rich.console import Group
@@ -94,8 +95,15 @@ class MarkdownStreamWriter:
             input_line.append(after)
         else:
             input_line.append("▌", style="reverse")  # cursor at end
-        parts = [p for p in (body if self.text else None, status, input_line) if p is not None]
-        return Group(*parts)
+        rows: list[Any] = [p for p in (body if self.text else None, status, input_line) if p]
+        # Slash-command suggestions (when typing a "/command").
+        if self._suggestions:
+            shown = self._suggestions[:8]
+            hint = "  ".join(shown)
+            if len(self._suggestions) > len(shown):
+                hint += f"  … (+{len(self._suggestions) - len(shown)})"
+            rows.append(Text(f"  {hint}", style="dim cyan"))
+        return Group(*rows)
 
     def _refresh(self) -> None:
         if self._live is not None:
@@ -105,10 +113,13 @@ class MarkdownStreamWriter:
         self.text += normalize_terminal_output(text)
         self._refresh()
 
-    def set_input(self, text: str, cursor: int | None = None) -> None:
-        """Update the live input affordance (text + cursor position)."""
+    def set_input(
+        self, text: str, cursor: int | None = None, suggestions: list[str] | None = None
+    ) -> None:
+        """Update the live input affordance (text + cursor + command suggestions)."""
         self._input = text
         self._cursor = len(text) if cursor is None else cursor
+        self._suggestions = suggestions or []
         self._refresh()
 
     def tick(self) -> None:
