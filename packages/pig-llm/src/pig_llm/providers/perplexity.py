@@ -7,7 +7,7 @@ import openai
 from ..compat import (
     OPENAI_COMPAT,
     _OpenAIToolCallAccumulator,
-    aiter_openai_stream_choices,
+    _stream_usage_to_dict,
     apply_prompt_cache,
     apply_request_headers,
     apply_thinking_level,
@@ -261,7 +261,15 @@ class PerplexityProvider(Provider):
         )
 
         accumulator = _OpenAIToolCallAccumulator()
-        async for chunk, choice in aiter_openai_stream_choices(stream):
+        usage = None
+        async for chunk in stream:
+            chunk_usage = _stream_usage_to_dict(getattr(chunk, "usage", None))
+            if chunk_usage:
+                usage = chunk_usage
+            choices = getattr(chunk, "choices", None) or []
+            if not choices:
+                continue
+            choice = choices[0]
             if choice.delta.content:
                 metadata = {"id": chunk.id}
                 # Include citations if available
@@ -275,5 +283,5 @@ class PerplexityProvider(Provider):
                 )
             accumulator.add(choice)
         tool_calls = accumulator.finish()
-        if tool_calls:
-            yield StreamChunk(content="", tool_calls=tool_calls)
+        if tool_calls or usage:
+            yield StreamChunk(content="", tool_calls=tool_calls, usage=usage)
