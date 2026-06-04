@@ -197,3 +197,28 @@ def test_unknown_model_pricing():
         call = tracker.llm_calls[0]
         # Should use default pricing
         assert call["cost"] > 0
+
+
+def test_cached_tokens_are_billed_at_cache_read_rate(tmp_path):
+    """Cached input tokens are discounted at the model's cache-read rate."""
+    from pig_coding_agent.billing import CostTracker
+
+    ct = CostTracker(tmp_path)
+    # gpt-4o-2024-08-06: input 2.5, output 10, cache_read 1.25 ($/M)
+    ct.on_llm_call(
+        model="gpt-4o-2024-08-06", input_tokens=1000, output_tokens=50, cached_tokens=800
+    )
+    summary = ct.get_usage_summary()
+    # 200 fresh@2.5 + 800 cached@1.25 + 50 out@10 = 0.0005 + 0.001 + 0.0005 = 0.002
+    assert abs(summary["total_cost"] - 0.002) < 1e-6
+    assert summary["total_cached_tokens"] == 800
+
+
+def test_on_llm_call_without_cached_tokens_is_backward_compatible(tmp_path):
+    from pig_coding_agent.billing import CostTracker
+
+    ct = CostTracker(tmp_path)
+    ct.on_llm_call(model="gpt-4o-mini", input_tokens=100, output_tokens=10)
+    summary = ct.get_usage_summary()
+    assert summary["total_llm_calls"] == 1
+    assert summary["total_cached_tokens"] == 0

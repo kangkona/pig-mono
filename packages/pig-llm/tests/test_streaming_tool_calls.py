@@ -124,4 +124,27 @@ async def test_astream_captures_trailing_usage_chunk():
     chunks = [c async for c in astream_openai_tool_aware(stream)]
     assert "".join(c.content for c in chunks if c.content) == "hello world"
     usages = [c.usage for c in chunks if c.usage]
-    assert usages == [{"input_tokens": 120, "output_tokens": 45, "total_tokens": 165}]
+    assert usages == [
+        {"input_tokens": 120, "output_tokens": 45, "cached_tokens": 0, "total_tokens": 165}
+    ]
+
+
+@pytest.mark.asyncio
+async def test_astream_captures_cached_prompt_tokens():
+    """cached_tokens from prompt_tokens_details is carried in the usage chunk."""
+    usage = SimpleNamespace(
+        prompt_tokens=1000,
+        completion_tokens=20,
+        total_tokens=1020,
+        prompt_tokens_details=SimpleNamespace(cached_tokens=800),
+    )
+    stream = _AsyncStream(
+        [
+            _delta_chunk(content="hi", finish_reason="stop"),
+            SimpleNamespace(id="u", choices=[], usage=usage),
+        ]
+    )
+    chunks = [c async for c in astream_openai_tool_aware(stream)]
+    u = [c.usage for c in chunks if c.usage][0]
+    assert u["input_tokens"] == 1000
+    assert u["cached_tokens"] == 800

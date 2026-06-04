@@ -3,7 +3,7 @@
 
 Fetches https://models.dev/api.json and writes a compact Python data module
 (`pig_llm/_models_generated.py`) mapping model id -> (context_window,
-input_cost_per_M, output_cost_per_M). Run with:
+input_cost_per_M, output_cost_per_M, cache_read_cost_per_M). Run with:
 
     python scripts/generate_models.py
 
@@ -48,7 +48,7 @@ def main() -> None:
     with urllib.request.urlopen(request, timeout=60) as resp:  # noqa: S310
         data = json.loads(resp.read())
 
-    rows: list[tuple[str, int, float, float]] = []
+    rows: list[tuple[str, int, float, float, float]] = []
     seen: set[str] = set()
     for provider in PROVIDER_ORDER:
         models = (data.get(provider) or {}).get("models") or {}
@@ -63,17 +63,21 @@ def main() -> None:
             if model_id in seen:
                 continue
             seen.add(model_id)
-            rows.append((model_id, int(context), float(input_cost), float(output_cost)))
+            # cache_read defaults to the input price when the provider doesn't
+            # publish a discounted cached-read rate.
+            cache_read = cost.get("cache_read")
+            cache_read = float(cache_read) if cache_read is not None else float(input_cost)
+            rows.append((model_id, int(context), float(input_cost), float(output_cost), cache_read))
 
     rows.sort(key=lambda r: r[0])
     lines = [
         '"""Auto-generated model registry. Do not edit — run scripts/generate_models.py."""',
         "",
-        "# model id -> (context_window, input_cost_per_million, output_cost_per_million)",
-        "MODELS: dict[str, tuple[int, float, float]] = {",
+        "# model id -> (context_window, input_$/M, output_$/M, cache_read_$/M)",
+        "MODELS: dict[str, tuple[int, float, float, float]] = {",
     ]
-    for model_id, context, inp, out in rows:
-        lines.append(f"    {model_id!r}: ({context}, {inp}, {out}),")
+    for model_id, context, inp, out, cache in rows:
+        lines.append(f"    {model_id!r}: ({context}, {inp}, {out}, {cache}),")
     lines.append("}")
     OUTPUT.write_text("\n".join(lines) + "\n")
     print(f"Wrote {len(rows)} models to {OUTPUT}")

@@ -274,6 +274,7 @@ def test_complete_falls_back_to_choice_usage_when_response_usage_missing() -> No
     assert result.usage == {
         "prompt_tokens": 7,
         "completion_tokens": 3,
+        "cached_tokens": 0,
         "total_tokens": 10,
     }
 

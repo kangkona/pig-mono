@@ -874,8 +874,24 @@ class _OpenAIToolCallAccumulator:
         ]
 
 
+def _cached_tokens(usage: Any) -> int:
+    """Extract cached prompt tokens from an OpenAI-compatible usage object.
+
+    OpenAI/DeepSeek/etc. report cache hits under
+    ``prompt_tokens_details.cached_tokens``; some surface ``cached_tokens``
+    directly.
+    """
+    details = getattr(usage, "prompt_tokens_details", None)
+    cached = getattr(details, "cached_tokens", None) if details is not None else None
+    if cached is None and isinstance(details, dict):
+        cached = details.get("cached_tokens")
+    if cached is None:
+        cached = getattr(usage, "cached_tokens", None)
+    return int(cached or 0)
+
+
 def _stream_usage_to_dict(usage: Any) -> dict[str, int] | None:
-    """Normalize an OpenAI-compatible usage object into input/output tokens."""
+    """Normalize an OpenAI-compatible usage object into token counts."""
     if usage is None:
         return None
     prompt = getattr(usage, "prompt_tokens", None)
@@ -888,6 +904,7 @@ def _stream_usage_to_dict(usage: Any) -> dict[str, int] | None:
     return {
         "input_tokens": prompt,
         "output_tokens": completion,
+        "cached_tokens": _cached_tokens(usage),
         "total_tokens": int(total) if total is not None else prompt + completion,
     }
 
@@ -946,5 +963,6 @@ def extract_openai_usage(response: Any) -> dict[str, int]:
     return {
         "prompt_tokens": getattr(usage, "prompt_tokens", 0) if usage else 0,
         "completion_tokens": getattr(usage, "completion_tokens", 0) if usage else 0,
+        "cached_tokens": _cached_tokens(usage) if usage else 0,
         "total_tokens": getattr(usage, "total_tokens", 0) if usage else 0,
     }

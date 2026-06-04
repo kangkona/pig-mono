@@ -56,6 +56,7 @@ class CostTracker:
         model: str,
         input_tokens: int,
         output_tokens: int,
+        cached_tokens: int = 0,
         user_id: str | None = None,
         metadata: dict[str, Any] | None = None,
     ) -> None:
@@ -63,8 +64,10 @@ class CostTracker:
 
         Args:
             model: Model name
-            input_tokens: Input token count
+            input_tokens: Input token count (includes cached_tokens)
             output_tokens: Output token count
+            cached_tokens: Portion of input served from the prompt cache, billed
+                at the model's discounted cache-read rate when known.
             user_id: Optional user ID
             metadata: Optional metadata
         """
@@ -74,17 +77,26 @@ class CostTracker:
 
         info = get_model_info(model)
         if info is not None:
-            pricing = {"input": info["input_cost"], "output": info["output_cost"]}
+            pricing = {
+                "input": info["input_cost"],
+                "output": info["output_cost"],
+                "cache_read": info.get("cache_read_cost", info["input_cost"]),
+            }
         else:
-            pricing = self.PRICING.get(model, {"input": 1.0, "output": 2.0})
-        input_cost = (input_tokens / 1_000_000) * pricing["input"]
+            base = self.PRICING.get(model, {"input": 1.0, "output": 2.0})
+            pricing = {**base, "cache_read": base["input"]}
+        cached = max(0, min(cached_tokens, input_tokens))
+        fresh_input = input_tokens - cached
+        input_cost = (fresh_input / 1_000_000) * pricing["input"]
+        cache_cost = (cached / 1_000_000) * pricing["cache_read"]
         output_cost = (output_tokens / 1_000_000) * pricing["output"]
-        total_cost = input_cost + output_cost
+        total_cost = input_cost + cache_cost + output_cost
 
         call_data = {
             "model": model,
             "input_tokens": input_tokens,
             "output_tokens": output_tokens,
+            "cached_tokens": cached,
             "cost": total_cost,
             "user_id": user_id,
             "metadata": metadata or {},
@@ -135,6 +147,7 @@ class CostTracker:
         # Calculate totals
         total_input_tokens = sum(c["input_tokens"] for c in llm_calls)
         total_output_tokens = sum(c["output_tokens"] for c in llm_calls)
+        total_cached_tokens = sum(c.get("cached_tokens", 0) for c in llm_calls)
         total_cost = sum(c["cost"] for c in llm_calls)
 
         # Group by model
@@ -164,6 +177,7 @@ class CostTracker:
             "total_tool_calls": len(tool_calls),
             "total_input_tokens": total_input_tokens,
             "total_output_tokens": total_output_tokens,
+            "total_cached_tokens": total_cached_tokens,
             "total_cost": total_cost,
             "by_model": by_model,
             "by_tool": by_tool,
@@ -193,6 +207,9 @@ class CostTracker:
             f"Total tokens: {summary['total_input_tokens']:,} in + "
             f"{summary['total_output_tokens']:,} out"
         )
+        cached = summary.get("total_cached_tokens", 0)
+        if cached:
+            lines.append(f"  (of input, {cached:,} cached — billed at the cache-read rate)")
         lines.append(f"Total cost: ${summary['total_cost']:.4f}\n")
 
         if summary["by_model"]:

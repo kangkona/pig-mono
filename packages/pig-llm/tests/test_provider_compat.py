@@ -336,6 +336,7 @@ def test_openrouter_falls_back_to_choice_usage_when_top_level_usage_missing() ->
     assert result.usage == {
         "prompt_tokens": 20,
         "completion_tokens": 5,
+        "cached_tokens": 0,
         "total_tokens": 25,
     }
 

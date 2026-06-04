@@ -256,22 +256,37 @@ class Agent:
         """
         try:
             model = self.llm.config.model
+            cached_tokens = 0
             if usage and usage.get("input_tokens") is not None:
                 input_tokens = int(usage.get("input_tokens", 0))
                 output_tokens = int(usage.get("output_tokens", 0))
+                cached_tokens = int(usage.get("cached_tokens", 0) or 0)
             else:
                 from .token_counter import count_message_tokens, count_tokens
 
                 messages = [{"role": m.role, "content": m.content} for m in self.history]
                 input_tokens = count_message_tokens(messages, model)
                 output_tokens = count_tokens("".join(content_parts), model)
-            self.last_llm_usage = {"input_tokens": input_tokens, "output_tokens": output_tokens}
+            self.last_llm_usage = {
+                "input_tokens": input_tokens,
+                "output_tokens": output_tokens,
+                "cached_tokens": cached_tokens,
+            }
             if self.billing_hook:
-                self.billing_hook.on_llm_call(
-                    model=model,
-                    input_tokens=input_tokens,
-                    output_tokens=output_tokens,
-                )
+                # Pass cached_tokens when the hook accepts it (older hooks don't).
+                try:
+                    self.billing_hook.on_llm_call(
+                        model=model,
+                        input_tokens=input_tokens,
+                        output_tokens=output_tokens,
+                        cached_tokens=cached_tokens,
+                    )
+                except TypeError:
+                    self.billing_hook.on_llm_call(
+                        model=model,
+                        input_tokens=input_tokens,
+                        output_tokens=output_tokens,
+                    )
         except Exception:
             pass
 
