@@ -15,7 +15,7 @@ from pig_agent_core import (
     assert_valid_session_id,
 )
 from pig_agent_core.tools import Tool
-from pig_llm import LLM
+from pig_llm import LLM, Message
 from pig_tui import ChatUI, InteractivePrompt, LiveInputListener, hyperlink
 
 from .billing import CostTracker
@@ -294,6 +294,13 @@ When generating code, provide clean, well-documented, production-ready code.
         "/resilience",
         "/cost",
         "/usage",
+        "/new",
+        "/resume",
+        "/clone",
+        "/name",
+        "/import",
+        "/copy",
+        "/settings",
     ]
 
     def _build_commands(self) -> list[str]:
@@ -595,6 +602,31 @@ Tools: {len(self.agent.registry)}
         elif cmd.startswith("/cost") or cmd.startswith("/usage"):
             self._show_cost_summary()
 
+        elif cmd.startswith("/new"):
+            self._new_session()
+
+        elif cmd.startswith("/resume"):
+            # case-preserving arg (session name or id)
+            arg = command.strip().split(maxsplit=1)
+            self._resume_session(arg[1].strip() if len(arg) > 1 else None)
+
+        elif cmd.startswith("/clone"):
+            self._clone_session()
+
+        elif cmd.startswith("/name"):
+            arg = command.strip().split(maxsplit=1)
+            self._name_session(arg[1].strip() if len(arg) > 1 else None)
+
+        elif cmd.startswith("/import"):
+            arg = command.strip().split(maxsplit=1)
+            self._import_session(arg[1].strip() if len(arg) > 1 else None)
+
+        elif cmd.startswith("/copy"):
+            self._copy_last_message()
+
+        elif cmd.startswith("/settings"):
+            self._show_settings()
+
         elif cmd.startswith("/"):
             # Check if it's a prompt template
             template_name = cmd.lstrip("/").split()[0]
@@ -670,6 +702,193 @@ Tools: {len(self.agent.registry)}
         self.ui.system(f"✓ Forked session: {name}")
         self.ui.system(f"  Copied {len(fork.tree.entries)} entries")
         self.ui.system(f"  Saved to: {save_path}")
+
+    def _rebuild_history_from_session(self) -> None:
+        """Replay the active session's conversation into the agent's LLM context.
+
+        The session tree and the agent's in-memory history are separate stores;
+        switching sessions (resume/import/new/clone) must rebuild the context so
+        the model actually sees the loaded conversation.
+        """
+        system = None
+        if self.agent.history and self.agent.history[0].role == "system":
+            system = self.agent.history[0]
+        history: list[Message] = []
+        if system is not None:
+            history.append(system)
+        if self.session:
+            for entry in self.session.get_current_conversation():
+                # Skip plain system entries (the agent's own system prompt is
+                # already first); keep compacted summaries as context.
+                if entry.role == "system" and not (entry.metadata or {}).get("compacted"):
+                    continue
+                history.append(
+                    Message(
+                        role=entry.role,
+                        content=entry.content,
+                        metadata=entry.metadata or None,
+                    )
+                )
+        self.agent.history = history
+
+    def _switch_to_session(self, new_session: Session, reason: str) -> None:
+        """Persist the current session, swap to ``new_session``, and run the
+        extension lifecycle + context rebuild (shared by new/resume/clone/import).
+        """
+        previous_session_file = str(self.session.save()) if self.session else None
+        if self.extension_manager:
+            self.extension_manager.cleanup(reason=reason, target_session_file=previous_session_file)
+        self.session = new_session
+        self.agent.session = self.session
+        self._rebuild_history_from_session()
+        if self.extension_manager:
+            self._load_extensions()
+            self.extension_manager.emit_event(
+                "session_start",
+                {"reason": reason, "previousSessionFile": previous_session_file},
+            )
+
+    def _new_session(self) -> None:
+        """Start a fresh session, leaving the current one saved on disk."""
+        new_session = Session(
+            name="coding-session",
+            workspace=str(self.workspace),
+            auto_save=True,
+            session_dir=self.sessions_dir,
+        )
+        self._switch_to_session(new_session, reason="new")
+        self.ui.system(f"✓ Started a new session: {new_session.id}")
+
+    def _resume_session(self, name_or_id: str | None) -> None:
+        """Switch to a different saved session by name or id."""
+        if not name_or_id:
+            self._list_sessions()
+            self.ui.system("Resume one with: /resume <session-id-or-name>")
+            return
+        session_mgr = SessionManager(self.workspace, session_dir=self.sessions_dir)
+        path = session_mgr.find_session(name_or_id)
+        if not path or not path.exists():
+            self.ui.error(f"Session not found: {name_or_id}")
+            return
+        try:
+            loaded = Session.load(path)
+        except Exception as e:
+            self.ui.error(f"Failed to load session: {e}")
+            return
+        self._switch_to_session(loaded, reason="resume")
+        self.ui.system(f"✓ Resumed session: {loaded.name} ({loaded.id})")
+        self.ui.system(f"  {len(self.agent.history)} messages restored")
+
+    def _clone_session(self) -> None:
+        """Duplicate the current session at its current position."""
+        if not self.session:
+            self.ui.error("No session loaded")
+            return
+        conversation = self.session.get_current_conversation()
+        if not conversation:
+            self.ui.error("No messages to clone")
+            return
+        clone = self.session.fork(conversation[-1].id, f"{self.session.name}-clone")
+        save_path = clone.save()
+        self._switch_to_session(clone, reason="fork")
+        self.ui.system(f"✓ Cloned session: {clone.name} ({clone.id})")
+        self.ui.system(f"  Saved to: {save_path}")
+
+    def _name_session(self, name: str | None) -> None:
+        """Set the current session's display name."""
+        if not self.session:
+            self.ui.error("No session loaded")
+            return
+        if not name:
+            self.ui.system(f"Current session name: {self.session.name}")
+            self.ui.system("Set it with: /name <display name>")
+            return
+        self.session.name = name
+        self.session.save()
+        self.ui.system(f"✓ Session renamed to: {name}")
+
+    def _import_session(self, file_path: str | None) -> None:
+        """Import a session from a JSONL file and resume it."""
+        if not file_path:
+            self.ui.error("Usage: /import <path-to-session.jsonl>")
+            return
+        path = Path(file_path).expanduser()
+        if not path.exists():
+            self.ui.error(f"File not found: {path}")
+            return
+        try:
+            loaded = Session.load(path)
+        except Exception as e:
+            self.ui.error(f"Failed to import session: {e}")
+            return
+        # Re-home into our sessions dir so the import is tracked and resumable.
+        loaded.session_dir = self.sessions_dir
+        loaded._save_path = None
+        save_path = loaded.save()
+        self._switch_to_session(loaded, reason="resume")
+        self.ui.system(f"✓ Imported session: {loaded.name} ({loaded.id})")
+        self.ui.system(f"  Saved to: {save_path}")
+        self.ui.system(f"  {len(self.agent.history)} messages restored")
+
+    def _copy_last_message(self) -> None:
+        """Copy the last assistant reply to the system clipboard."""
+        last = None
+        for msg in reversed(self.agent.history):
+            if msg.role == "assistant" and msg.content:
+                last = msg.content
+                break
+        if not last:
+            self.ui.error("No assistant message to copy")
+            return
+        if self._copy_to_clipboard(last):
+            self.ui.system(f"✓ Copied last reply to clipboard ({len(last)} chars)")
+        else:
+            self.ui.error("Clipboard not available (install pbcopy/xclip/wl-copy)")
+
+    @staticmethod
+    def _copy_to_clipboard(text: str) -> bool:
+        import shutil
+        import subprocess
+        import sys
+
+        if sys.platform == "darwin":
+            candidates = [["pbcopy"]]
+        elif sys.platform == "win32":
+            candidates = [["clip"]]
+        else:
+            candidates = [
+                ["wl-copy"],
+                ["xclip", "-selection", "clipboard"],
+                ["xsel", "--clipboard", "--input"],
+            ]
+        for cmd in candidates:
+            if shutil.which(cmd[0]):
+                try:
+                    subprocess.run(cmd, input=text.encode("utf-8"), check=True)
+                    return True
+                except Exception:
+                    continue
+        return False
+
+    def _show_settings(self) -> None:
+        """Show current settings and where to change them."""
+        cfg = ConfigManager(self.workspace)
+        lines = [
+            "**Settings**",
+            "",
+            f"Model:       {self.agent.llm.config.provider}/{self.agent.llm.config.model}",
+            f"Workspace:   {self.workspace}",
+            f"Session dir: {self.sessions_dir}",
+            f"Skills:      {'on' if self.skill_manager else 'off'}",
+            f"Extensions:  {'on' if self.extension_manager else 'off'}",
+            "",
+            "**Config files** (edit the JSON to change defaults):",
+            f"  project: {cfg.project_config}",
+            f"  global:  {cfg.global_config}",
+            "",
+            "Quick changes: /model <provider/model>, /login, /logout, /name <name>",
+        ]
+        self.ui.panel("\n".join(lines), title="Settings")
 
     def _compact_session(self, instructions: str | None):
         """Compact session messages."""

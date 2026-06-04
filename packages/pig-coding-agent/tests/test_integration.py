@@ -1037,3 +1037,103 @@ def test_run_turn_aborts_and_preserves_partial(mock_llm, temp_workspace):
     convo = [(m.role, m.content) for m in agent.session.get_current_conversation()]
     assert ("user", "do something") in convo
     assert ("assistant", "partial ") in convo
+
+
+def _agent(mock_llm, ws, **kw):
+    return CodingAgent(
+        llm=mock_llm,
+        workspace=str(ws),
+        verbose=False,
+        enable_skills=False,
+        enable_extensions=False,
+        **kw,
+    )
+
+
+def test_command_name_sets_display_name(mock_llm, temp_workspace):
+    agent = _agent(mock_llm, temp_workspace, session_name="orig")
+    agent.ui = Mock()
+    agent._handle_command("/name My Cool Session")
+    assert agent.session.name == "My Cool Session"
+
+
+def test_command_new_starts_fresh_session(mock_llm, temp_workspace):
+    agent = _agent(mock_llm, temp_workspace)
+    agent.ui = Mock()
+    old_id = agent.session.id
+    agent.session.add_message("user", "hello")
+    agent._handle_command("/new")
+    assert agent.session.id != old_id
+    # New session has no prior conversation in the agent context.
+    assert all(m.role == "system" for m in agent.agent.history)
+
+
+def test_command_clone_duplicates_and_switches(mock_llm, temp_workspace):
+    agent = _agent(mock_llm, temp_workspace, session_name="base")
+    agent.ui = Mock()
+    agent.session.add_message("user", "hi")
+    agent.session.add_message("assistant", "hello there")
+    old_id = agent.session.id
+    agent._handle_command("/clone")
+    assert agent.session.id != old_id
+    assert agent.session.name == "base-clone"
+    # The cloned conversation is rebuilt into the agent context.
+    contents = [m.content for m in agent.agent.history]
+    assert "hi" in contents and "hello there" in contents
+
+
+def test_command_resume_switches_and_restores_context(mock_llm, temp_workspace):
+    a = _agent(mock_llm, temp_workspace, session_name="first")
+    a.ui = Mock()
+    a.session.add_message("user", "remember X")
+    a.session.add_message("assistant", "noted X")
+    target_id = a.session.id
+    a.session.save()
+
+    # Start elsewhere, then resume the first session by id.
+    a._handle_command("/new")
+    assert a.session.id != target_id
+    a._handle_command(f"/resume {target_id}")
+    assert a.session.id == target_id
+    contents = [m.content for m in a.agent.history]
+    assert "remember X" in contents and "noted X" in contents
+
+
+def test_command_import_loads_jsonl_session(mock_llm, temp_workspace, tmp_path):
+    # Produce a session file elsewhere.
+    src = _agent(mock_llm, temp_workspace, session_name="exported")
+    src.ui = Mock()
+    src.session.add_message("user", "imported question")
+    src.session.add_message("assistant", "imported answer")
+    src_path = src.session.save()
+
+    other_ws = tmp_path / "other"
+    other_ws.mkdir()
+    agent = _agent(mock_llm, other_ws)
+    agent.ui = Mock()
+    agent._handle_command(f"/import {src_path}")
+    contents = [m.content for m in agent.agent.history]
+    assert "imported question" in contents and "imported answer" in contents
+
+
+def test_command_copy_uses_clipboard(mock_llm, temp_workspace):
+    from unittest.mock import patch
+
+    from pig_llm import Message
+
+    agent = _agent(mock_llm, temp_workspace)
+    agent.ui = Mock()
+    agent.agent.history.append(Message(role="assistant", content="the final answer"))
+
+    with patch.object(CodingAgent, "_copy_to_clipboard", return_value=True) as cp:
+        agent._handle_command("/copy")
+    cp.assert_called_once_with("the final answer")
+
+
+def test_command_settings_shows_panel(mock_llm, temp_workspace):
+    agent = _agent(mock_llm, temp_workspace)
+    agent.ui = Mock()
+    agent._handle_command("/settings")
+    agent.ui.panel.assert_called_once()
+    body = agent.ui.panel.call_args.args[0]
+    assert "Settings" in body and "Model:" in body
