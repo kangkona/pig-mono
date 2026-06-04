@@ -929,3 +929,92 @@ def test_skill_invocation(mock_llm, temp_workspace):
 
     # Should show skill panel
     agent.ui.panel.assert_called()
+
+
+def _stream_chunk(*, content="", tool_calls=None):
+    from pig_llm import StreamChunk
+
+    return StreamChunk(content=content, tool_calls=tool_calls)
+
+
+def test_run_turn_streams_tokens_and_records_session(mock_llm, temp_workspace):
+    """_run_turn streams tokens via the writer and records user + assistant."""
+    import asyncio
+
+    def achat_stream(messages, tools=None):
+        async def stream():
+            yield _stream_chunk(content="hello ")
+            yield _stream_chunk(content="world")
+
+        return stream()
+
+    mock_llm.achat_stream = achat_stream
+
+    agent = CodingAgent(
+        llm=mock_llm,
+        workspace=str(temp_workspace),
+        session_name="turn-test",
+        verbose=False,
+        enable_skills=False,
+        enable_extensions=False,
+    )
+    written = []
+    agent.ui = Mock()
+    writer = Mock()
+    writer.write = lambda chunk: written.append(chunk)
+    agent.ui.assistant_stream.return_value.__enter__ = Mock(return_value=writer)
+    agent.ui.assistant_stream.return_value.__exit__ = Mock(return_value=False)
+    writer.__enter__ = Mock(return_value=writer)
+    writer.__exit__ = Mock(return_value=False)
+
+    asyncio.run(agent._run_turn("hi there"))
+
+    assert "".join(written) == "hello world"
+    convo = [(m.role, m.content) for m in agent.session.get_current_conversation()]
+    assert ("user", "hi there") in convo
+    assert ("assistant", "hello world") in convo
+
+
+def test_run_turn_aborts_and_preserves_partial(mock_llm, temp_workspace):
+    """A cancel mid-turn records the partial assistant text and shows [aborted]."""
+    import asyncio
+
+    agent = CodingAgent(
+        llm=mock_llm,
+        workspace=str(temp_workspace),
+        session_name="abort-test",
+        verbose=False,
+        enable_skills=False,
+        enable_extensions=False,
+    )
+    captured = {}
+
+    def achat_stream(messages, tools=None):
+        async def stream():
+            yield _stream_chunk(content="partial ")
+            captured["cancel"].set()
+            yield _stream_chunk(content="dropped")
+
+        return stream()
+
+    mock_llm.achat_stream = achat_stream
+    real_respond_stream = agent.agent.respond_stream
+
+    def respond_stream(message, cancel=None, max_iterations=None):
+        captured["cancel"] = cancel
+        return real_respond_stream(message, cancel=cancel, max_iterations=max_iterations)
+
+    agent.agent.respond_stream = respond_stream
+    agent.ui = Mock()
+    writer = Mock()
+    agent.ui.assistant_stream.return_value.__enter__ = Mock(return_value=writer)
+    agent.ui.assistant_stream.return_value.__exit__ = Mock(return_value=False)
+    writer.__enter__ = Mock(return_value=writer)
+    writer.__exit__ = Mock(return_value=False)
+
+    asyncio.run(agent._run_turn("do something"))
+
+    agent.ui.system.assert_any_call("[aborted]")
+    convo = [(m.role, m.content) for m in agent.session.get_current_conversation()]
+    assert ("user", "do something") in convo
+    assert ("assistant", "partial ") in convo
