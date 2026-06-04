@@ -46,7 +46,7 @@ class LiveInputListener:
         cancel_event: asyncio.Event,
         on_steering: Callable[[str], None] | None = None,
         *,
-        on_change: Callable[[str], None] | None = None,
+        on_change: Callable[[str, int], None] | None = None,
         echo: bool = True,
     ) -> None:
         self._cancel = cancel_event
@@ -57,6 +57,7 @@ class LiveInputListener:
         self._thread = None
         self._stop = None
         self._line: list[str] = []
+        self._cursor = 0  # insertion index into _line
         # Platform backend, resolved on enter.
         self._fd: int | None = None
         self._old_termios = None
@@ -158,15 +159,16 @@ class LiveInputListener:
             if not ch:
                 break
             if ch == _ESC:
-                # Distinguish a lone Esc (abort) from an escape sequence such as
-                # an arrow key (Esc + "[A"): if more bytes are immediately
-                # available, drain and ignore the sequence.
+                # A lone Esc aborts; Esc followed by more bytes is an escape
+                # sequence (arrow keys / Home / End / Delete) — parse it for
+                # cursor movement rather than discarding it.
                 more, _, _ = select.select([fd], [], [], 0.0)
                 if more:
                     try:
-                        os.read(fd, 8)  # discard the rest of the sequence
+                        seq = os.read(fd, 8)
                     except OSError:
-                        pass
+                        seq = b""
+                    self._handle_escape_seq(seq.decode("ascii", errors="ignore"))
                     continue
                 self._fire_abort()
                 continue
@@ -178,6 +180,8 @@ class LiveInputListener:
         import msvcrt
         import time
 
+        # Windows scan-code (after \x00/\xe0) -> navigation action.
+        nav = {"K": "left", "M": "right", "G": "home", "O": "end", "S": "delete"}
         while self._stop is None or not self._stop.is_set():
             if not msvcrt.kbhit():
                 time.sleep(0.05)
@@ -186,36 +190,95 @@ class LiveInputListener:
             if ch == "\x1b":
                 self._fire_abort()
                 continue
+            if ch in ("\x00", "\xe0"):  # special key: next char is the scan code
+                code = msvcrt.getwch()
+                action = nav.get(code)
+                if action:
+                    self._move_cursor(action)
+                continue
             self._handle_char(ch)
 
     # -- key handling -------------------------------------------------------
 
     def _handle_char(self, char: str) -> None:
-        if char in ("\r", "\n"):
+        if char in ("\r", "\n"):  # Enter — submit
             line = "".join(self._line).strip()
             self._line.clear()
-            if self._echo:
-                sys.stdout.write("\n")
-                sys.stdout.flush()
+            self._cursor = 0
             if line and self._on_steering is not None:
                 self._fire_steering(line)
             self._fire_change()
             return
-        if char in ("\x7f", "\x08"):
-            if self._line:
-                self._line.pop()
-                if self._echo:
-                    sys.stdout.write("\b \b")
-                    sys.stdout.flush()
+        if char in ("\x7f", "\x08"):  # Backspace — delete before cursor
+            if self._cursor > 0:
+                del self._line[self._cursor - 1]
+                self._cursor -= 1
                 self._fire_change()
+            return
+        if char == "\x01":  # Ctrl-A — home
+            self._move_cursor("home")
+            return
+        if char == "\x05":  # Ctrl-E — end
+            self._move_cursor("end")
+            return
+        if char == "\x15":  # Ctrl-U — clear the line
+            if self._line:
+                self._line.clear()
+                self._cursor = 0
+                self._fire_change()
+            return
+        if char == "\x17":  # Ctrl-W — delete the word before the cursor
+            self._delete_word_before_cursor()
             return
         if not char.isprintable():
             return
-        self._line.append(char)
-        if self._echo:
-            sys.stdout.write(char)
-            sys.stdout.flush()
+        self._line.insert(self._cursor, char)  # insert at cursor
+        self._cursor += 1
         self._fire_change()
+
+    def _handle_escape_seq(self, seq: str) -> None:
+        action = {
+            "[D": "left",
+            "OD": "left",
+            "[C": "right",
+            "OC": "right",
+            "[H": "home",
+            "OH": "home",
+            "[1~": "home",
+            "[F": "end",
+            "OF": "end",
+            "[4~": "end",
+            "[3~": "delete",
+        }.get(seq)
+        if action:
+            self._move_cursor(action)
+
+    def _move_cursor(self, action: str) -> None:
+        if action == "left":
+            self._cursor = max(0, self._cursor - 1)
+        elif action == "right":
+            self._cursor = min(len(self._line), self._cursor + 1)
+        elif action == "home":
+            self._cursor = 0
+        elif action == "end":
+            self._cursor = len(self._line)
+        elif action == "delete":  # forward delete (Del key)
+            if self._cursor < len(self._line):
+                del self._line[self._cursor]
+        else:
+            return
+        self._fire_change()
+
+    def _delete_word_before_cursor(self) -> None:
+        i = self._cursor
+        while i > 0 and self._line[i - 1].isspace():  # skip trailing spaces
+            i -= 1
+        while i > 0 and not self._line[i - 1].isspace():  # then the word
+            i -= 1
+        if i != self._cursor:
+            del self._line[i : self._cursor]
+            self._cursor = i
+            self._fire_change()
 
     def _fire_abort(self) -> None:
         if self._loop is not None:
@@ -228,4 +291,5 @@ class LiveInputListener:
     def _fire_change(self) -> None:
         if self._loop is not None and self._on_change is not None:
             current = "".join(self._line)
-            self._loop.call_soon_threadsafe(self._on_change, current)
+            cursor = self._cursor
+            self._loop.call_soon_threadsafe(self._on_change, current, cursor)

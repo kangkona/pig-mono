@@ -65,6 +65,7 @@ class MarkdownStreamWriter:
         self._frame = 0
         self._done = False
         self._input = ""
+        self._cursor = 0
 
     def _renderable(self) -> Any:
         from rich.console import Group
@@ -77,12 +78,22 @@ class MarkdownStreamWriter:
         elapsed = int(time.monotonic() - self._started)
         status = Text(f"{spin} working… {elapsed}s", style="dim")
         # A persistent input affordance: the user can type to steer at any time;
-        # echo it here (rendered inside Live) instead of to raw stdout.
-        input_line = Text.assemble(
-            ("You › ", "bold cyan"),
-            (self._input, "default"),
-            ("▌", "dim"),
+        # echo it here (rendered inside Live) instead of to raw stdout. The
+        # cursor position is rendered in place (reverse video) so editing
+        # mid-line is visible.
+        input_line = Text("You › ", style="bold cyan")
+        cursor = max(0, min(self._cursor, len(self._input)))
+        before, at, after = (
+            self._input[:cursor],
+            self._input[cursor : cursor + 1],
+            self._input[cursor + 1 :],
         )
+        input_line.append(before)
+        if at:
+            input_line.append(at, style="reverse")
+            input_line.append(after)
+        else:
+            input_line.append("▌", style="reverse")  # cursor at end
         parts = [p for p in (body if self.text else None, status, input_line) if p is not None]
         return Group(*parts)
 
@@ -94,9 +105,10 @@ class MarkdownStreamWriter:
         self.text += normalize_terminal_output(text)
         self._refresh()
 
-    def set_input(self, text: str) -> None:
-        """Update the live input affordance with the user's in-progress steering text."""
+    def set_input(self, text: str, cursor: int | None = None) -> None:
+        """Update the live input affordance (text + cursor position)."""
         self._input = text
+        self._cursor = len(text) if cursor is None else cursor
         self._refresh()
 
     def tick(self) -> None:

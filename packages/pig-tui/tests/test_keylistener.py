@@ -77,8 +77,10 @@ async def test_blank_line_does_not_fire_steering():
 @pytest.mark.asyncio
 async def test_on_change_emits_live_buffer():
     """Typing fires on_change with the current buffer (for live echo in the UI)."""
-    seen: list[str] = []
-    listener = LiveInputListener(asyncio.Event(), on_change=seen.append, echo=False)
+    seen: list[tuple[str, int]] = []
+    listener = LiveInputListener(
+        asyncio.Event(), on_change=lambda t, c: seen.append((t, c)), echo=False
+    )
     listener._loop = asyncio.get_running_loop()
 
     for ch in "hey":
@@ -86,7 +88,7 @@ async def test_on_change_emits_live_buffer():
     listener._handle_char("\x7f")  # backspace
     await asyncio.sleep(0.01)
 
-    assert seen[-1] == "he"
+    assert seen[-1] == ("he", 2)
 
 
 @pytest.mark.asyncio
@@ -94,7 +96,10 @@ async def test_enter_clears_buffer_via_on_change():
     received: list[str] = []
     changes: list[str] = []
     listener = LiveInputListener(
-        asyncio.Event(), on_steering=received.append, on_change=changes.append, echo=False
+        asyncio.Event(),
+        on_steering=received.append,
+        on_change=lambda t, c: changes.append(t),
+        echo=False,
     )
     listener._loop = asyncio.get_running_loop()
 
@@ -125,3 +130,74 @@ async def test_multibyte_cjk_input_is_decoded_and_buffered():
     await asyncio.sleep(0.01)
 
     assert received == ["中文"]
+
+
+@pytest.mark.asyncio
+async def test_cursor_insert_move_and_edit():
+    """Arrow/Home/End move the cursor; typing inserts at the cursor."""
+    submitted: list[str] = []
+    listener = LiveInputListener(asyncio.Event(), on_steering=submitted.append, echo=False)
+    listener._loop = asyncio.get_running_loop()
+
+    for ch in "helo":
+        listener._handle_char(ch)
+    # Move left once (between 'l' and 'o') and insert 'l' -> "hello"
+    listener._move_cursor("left")
+    listener._handle_char("l")
+    listener._handle_char("\r")
+    await asyncio.sleep(0.01)
+    assert submitted == ["hello"]
+
+
+@pytest.mark.asyncio
+async def test_home_end_and_backspace_at_cursor():
+    submitted: list[str] = []
+    listener = LiveInputListener(asyncio.Event(), on_steering=submitted.append, echo=False)
+    listener._loop = asyncio.get_running_loop()
+
+    for ch in "world":
+        listener._handle_char(ch)
+    listener._move_cursor("home")
+    listener._handle_char("X")  # insert at start -> "Xworld"
+    listener._move_cursor("end")
+    listener._handle_char("\x7f")  # backspace at end -> "Xworl"
+    listener._handle_char("\r")
+    await asyncio.sleep(0.01)
+    assert submitted == ["Xworl"]
+
+
+@pytest.mark.asyncio
+async def test_ctrl_u_clears_and_ctrl_w_deletes_word():
+    submitted: list[str] = []
+    listener = LiveInputListener(asyncio.Event(), on_steering=submitted.append, echo=False)
+    listener._loop = asyncio.get_running_loop()
+
+    for ch in "add a feature":
+        listener._handle_char(ch)
+    listener._handle_char("\x17")  # Ctrl-W deletes "feature"
+    listener._handle_char("\r")
+    await asyncio.sleep(0.01)
+    assert submitted == ["add a"]
+
+    for ch in "throwaway":
+        listener._handle_char(ch)
+    listener._handle_char("\x15")  # Ctrl-U clears the line
+    listener._handle_char("k")
+    listener._handle_char("\r")
+    await asyncio.sleep(0.01)
+    assert submitted[-1] == "k"
+
+
+@pytest.mark.asyncio
+async def test_escape_sequence_moves_cursor_not_abort():
+    cancel = asyncio.Event()
+    changes: list[tuple[str, int]] = []
+    listener = LiveInputListener(cancel, on_change=lambda t, c: changes.append((t, c)), echo=False)
+    listener._loop = asyncio.get_running_loop()
+
+    for ch in "abc":
+        listener._handle_char(ch)
+    listener._handle_escape_seq("[D")  # Left arrow
+    await asyncio.sleep(0.01)
+    assert changes[-1] == ("abc", 2)  # cursor moved left, not aborted
+    assert not cancel.is_set()
