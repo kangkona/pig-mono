@@ -25,10 +25,17 @@ class Response(BaseModel):
 
 
 class StreamChunk(BaseModel):
-    """A chunk from a streaming response."""
+    """A chunk from a streaming response.
+
+    Text deltas arrive as ``content``. When a streaming response includes tool
+    calls, the provider emits a final chunk carrying the fully-assembled
+    ``tool_calls`` (canonical OpenAI shape: ``{"id","type":"function",
+    "function":{"name","arguments"}}``).
+    """
 
     content: str
     finish_reason: str | None = None
+    tool_calls: list[dict[str, Any]] | None = None
     metadata: dict[str, Any] | None = None
 
 

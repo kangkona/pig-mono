@@ -16,11 +16,11 @@ from ..compat import (
     STRING_THINKING_COMPAT,
     TOGETHER_COMPAT,
     ZAI_COMPAT,
-    aiter_openai_stream_choices,
     apply_prompt_cache,
     apply_request_headers,
     apply_session_affinity_headers,
     apply_thinking_level,
+    astream_openai_tool_aware,
     build_token_limit_param,
     extract_openai_usage,
     iter_openai_stream_choices,
@@ -292,10 +292,5 @@ class OpenAIProvider(Provider):
             **kwargs,
         )
 
-        async for chunk, choice in aiter_openai_stream_choices(stream):
-            if choice.delta.content:
-                yield StreamChunk(
-                    content=choice.delta.content,
-                    finish_reason=choice.finish_reason,
-                    metadata={"id": chunk.id},
-                )
+        async for sc in astream_openai_tool_aware(stream):
+            yield sc

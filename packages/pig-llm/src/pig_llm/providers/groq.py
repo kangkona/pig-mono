@@ -6,11 +6,11 @@ from groq import AsyncGroq, Groq
 
 from ..compat import (
     GROQ_COMPAT,
-    aiter_openai_stream_choices,
     apply_prompt_cache,
     apply_request_headers,
     apply_session_affinity_headers,
     apply_thinking_level,
+    astream_openai_tool_aware,
     iter_openai_stream_choices,
     normalize_messages,
 )
@@ -235,10 +235,5 @@ class GroqProvider(Provider):
             **kwargs,
         )
 
-        async for chunk, choice in aiter_openai_stream_choices(stream):
-            if choice.delta.content:
-                yield StreamChunk(
-                    content=choice.delta.content,
-                    finish_reason=choice.finish_reason,
-                    metadata={"id": chunk.id},
-                )
+        async for sc in astream_openai_tool_aware(stream):
+            yield sc

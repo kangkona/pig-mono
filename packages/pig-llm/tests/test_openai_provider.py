@@ -1201,3 +1201,50 @@ async def test_astream_skips_usage_only_chunks_without_choices() -> None:
     chunks = [chunk async for chunk in provider.astream(_messages(), model="gpt-5.2")]
 
     assert [chunk.content for chunk in chunks] == ["ok"]
+
+
+@pytest.mark.asyncio
+async def test_astream_assembles_streamed_tool_calls() -> None:
+    """openai.astream yields text live then a final chunk with assembled tool calls."""
+
+    def _chunk(*, content=None, tool_calls=None, finish_reason=None):
+        return SimpleNamespace(
+            id="c",
+            choices=[
+                SimpleNamespace(
+                    delta=SimpleNamespace(content=content, tool_calls=tool_calls),
+                    finish_reason=finish_reason,
+                )
+            ],
+        )
+
+    stream = _AsyncChunks(
+        [
+            _chunk(content="working "),
+            _chunk(
+                tool_calls=[
+                    SimpleNamespace(
+                        index=0,
+                        id="call_1",
+                        function=SimpleNamespace(name="shell", arguments='{"cmd":"ls"}'),
+                    )
+                ]
+            ),
+            _chunk(finish_reason="tool_calls"),
+        ]
+    )
+    async_create = AsyncMock(return_value=stream)
+    provider = _provider_with_clients(Mock(), async_create)
+
+    out = [chunk async for chunk in provider.astream(_messages(), model="gpt-5.2")]
+
+    assert [c.content for c in out if c.content] == ["working "]
+    tool_chunks = [c for c in out if c.tool_calls]
+    assert len(tool_chunks) == 1
+    assert tool_chunks[0].tool_calls == [
+        {
+            "id": "call_1",
+            "type": "function",
+            "function": {"name": "shell", "arguments": '{"cmd":"ls"}'},
+        }
+    ]

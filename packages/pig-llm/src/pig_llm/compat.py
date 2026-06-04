@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Literal
 
-from .models import Message
+from .models import Message, StreamChunk
 
 SystemRolePolicy = Literal["system", "developer"]
 MaxOutputTokenPolicy = Literal["omit_default", "send_when_explicit", "required"]
@@ -828,6 +828,73 @@ async def aiter_openai_stream_choices(
         yield chunk, choice
         if getattr(choice, "finish_reason", None):
             break
+
+
+class _OpenAIToolCallAccumulator:
+    """Assemble streamed OpenAI-style tool-call deltas into canonical tool calls.
+
+    OpenAI-compatible streams deliver tool calls incrementally: an ``id`` and
+    ``function.name`` arrive once, while ``function.arguments`` is a JSON string
+    streamed in fragments, keyed by a per-call ``index``.
+    """
+
+    def __init__(self) -> None:
+        self._by_index: dict[int, dict[str, str]] = {}
+
+    def add(self, choice: Any) -> None:
+        delta = getattr(choice, "delta", None)
+        tool_calls = getattr(delta, "tool_calls", None) if delta is not None else None
+        if not tool_calls:
+            return
+        for tc in tool_calls:
+            index = getattr(tc, "index", 0) or 0
+            slot = self._by_index.setdefault(index, {"id": "", "name": "", "arguments": ""})
+            tc_id = getattr(tc, "id", None)
+            if tc_id:
+                slot["id"] = tc_id
+            function = getattr(tc, "function", None)
+            if function is not None:
+                name = getattr(function, "name", None)
+                if name:
+                    slot["name"] = name
+                arguments = getattr(function, "arguments", None)
+                if arguments:
+                    slot["arguments"] += arguments
+
+    def finish(self) -> list[dict[str, Any]] | None:
+        if not self._by_index:
+            return None
+        return [
+            {
+                "id": slot["id"],
+                "type": "function",
+                "function": {"name": slot["name"], "arguments": slot["arguments"]},
+            }
+            for _, slot in sorted(self._by_index.items())
+        ]
+
+
+async def astream_openai_tool_aware(stream: AsyncIterator[Any]) -> AsyncIterator[StreamChunk]:
+    """Stream OpenAI-compatible chunks as StreamChunks, carrying tool calls.
+
+    Yields a StreamChunk for each text delta (live), and — when the response
+    includes tool calls — one final StreamChunk whose ``tool_calls`` holds the
+    fully-assembled canonical tool calls.
+    """
+    accumulator = _OpenAIToolCallAccumulator()
+    async for chunk, choice in aiter_openai_stream_choices(stream):
+        delta = getattr(choice, "delta", None)
+        content = getattr(delta, "content", None) if delta is not None else None
+        if content:
+            yield StreamChunk(
+                content=content,
+                finish_reason=getattr(choice, "finish_reason", None),
+                metadata={"id": getattr(chunk, "id", None)},
+            )
+        accumulator.add(choice)
+    tool_calls = accumulator.finish()
+    if tool_calls:
+        yield StreamChunk(content="", tool_calls=tool_calls)
 
 
 def extract_openai_usage(response: Any) -> dict[str, int]:

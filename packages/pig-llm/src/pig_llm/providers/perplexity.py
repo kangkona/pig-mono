@@ -6,6 +6,7 @@ import openai
 
 from ..compat import (
     OPENAI_COMPAT,
+    _OpenAIToolCallAccumulator,
     aiter_openai_stream_choices,
     apply_prompt_cache,
     apply_request_headers,
@@ -257,6 +258,7 @@ class PerplexityProvider(Provider):
             **kwargs,
         )
 
+        accumulator = _OpenAIToolCallAccumulator()
         async for chunk, choice in aiter_openai_stream_choices(stream):
             if choice.delta.content:
                 metadata = {"id": chunk.id}
@@ -269,3 +271,7 @@ class PerplexityProvider(Provider):
                     finish_reason=choice.finish_reason,
                     metadata=metadata,
                 )
+            accumulator.add(choice)
+        tool_calls = accumulator.finish()
+        if tool_calls:
+            yield StreamChunk(content="", tool_calls=tool_calls)
