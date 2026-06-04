@@ -599,8 +599,11 @@ Tools: {len(self.agent.registry)}
         elif cmd.startswith("/resilience"):
             self._show_resilience_status()
 
-        elif cmd.startswith("/cost") or cmd.startswith("/usage"):
-            self._show_cost_summary()
+        elif cmd.startswith("/cost"):
+            self._show_cost_summary(title="Cost")
+
+        elif cmd.startswith("/usage"):
+            self._show_cost_summary(title="Usage")
 
         elif cmd.startswith("/new"):
             self._new_session()
@@ -1545,14 +1548,14 @@ In cooldown: {status["cooldown_profiles"]}
 
         self.ui.panel(status_text, title="Resilience")
 
-    def _show_cost_summary(self):
-        """Show cost tracking summary."""
+    def _show_cost_summary(self, title: str = "Usage & Cost"):
+        """Show cost/usage tracking summary."""
         if not self.cost_tracker:
             self.ui.system("Cost tracking not enabled")
             return
 
         summary_text = self.cost_tracker.format_summary()
-        self.ui.panel(summary_text, title="Cost Tracking")
+        self.ui.panel(summary_text, title=title)
 
         # Show usage file location
         self.ui.system(f"\nUsage data: {self.cost_tracker.usage_file}")
