@@ -244,20 +244,26 @@ class Agent:
             response = self.run(message.content, check_queue=True)
         return response
 
-    def _record_llm_billing(self, content_parts: list[str]) -> None:
-        """Report an LLM round to the billing hook, estimating tokens locally.
+    def _record_llm_billing(
+        self, content_parts: list[str], usage: dict[str, int] | None = None
+    ) -> None:
+        """Report an LLM round to the billing hook.
 
-        The streaming path receives no provider usage, so input tokens are
-        estimated from the messages sent (current history) and output tokens
-        from the streamed text.
+        Prefers real provider ``usage`` (input/output tokens); when the provider
+        did not report it, estimates locally from the messages sent and the
+        streamed text.
         """
         try:
-            from .token_counter import count_message_tokens, count_tokens
-
             model = self.llm.config.model
-            messages = [{"role": m.role, "content": m.content} for m in self.history]
-            input_tokens = count_message_tokens(messages, model)
-            output_tokens = count_tokens("".join(content_parts), model)
+            if usage and usage.get("input_tokens") is not None:
+                input_tokens = int(usage.get("input_tokens", 0))
+                output_tokens = int(usage.get("output_tokens", 0))
+            else:
+                from .token_counter import count_message_tokens, count_tokens
+
+                messages = [{"role": m.role, "content": m.content} for m in self.history]
+                input_tokens = count_message_tokens(messages, model)
+                output_tokens = count_tokens("".join(content_parts), model)
             self.billing_hook.on_llm_call(
                 model=model,
                 input_tokens=input_tokens,
@@ -501,6 +507,7 @@ class Agent:
             # Use resilient_streaming_call for LLM call
             response_content = ""
             response_tool_calls = None
+            response_usage = None
             aborted = False
 
             try:
@@ -519,14 +526,12 @@ class Agent:
                         response_content += chunk.content
                     if hasattr(chunk, "tool_calls") and chunk.tool_calls:
                         response_tool_calls = chunk.tool_calls
+                    if getattr(chunk, "usage", None):
+                        response_usage = chunk.usage
 
-                # Track billing if hook provided
-                if self.billing_hook and hasattr(chunk, "usage"):
-                    self.billing_hook.on_llm_call(
-                        model=self.llm.config.model,
-                        input_tokens=chunk.usage.get("input_tokens", 0),
-                        output_tokens=chunk.usage.get("output_tokens", 0),
-                    )
+                # Track billing — prefer real provider usage, else estimate.
+                if self.billing_hook:
+                    self._record_llm_billing([response_content], response_usage)
 
             except Exception as e:
                 self._log(f"LLM call failed: {e}")
@@ -888,9 +893,10 @@ class Agent:
                 self._emit_agent_end(success=False, error=str(e))
                 raise
 
-            # Consume the stream: yield text tokens live, capture tool calls.
+            # Consume the stream: yield text tokens live, capture tool calls + usage.
             content_parts: list[str] = []
             streamed_tool_calls: list[dict[str, Any]] | None = None
+            streamed_usage: dict[str, int] | None = None
             aborted = False
 
             async for chunk in response_stream:
@@ -902,11 +908,13 @@ class Agent:
                     yield chunk.content
                 if getattr(chunk, "tool_calls", None):
                     streamed_tool_calls = chunk.tool_calls
+                if getattr(chunk, "usage", None):
+                    streamed_usage = chunk.usage
 
-            # Record this LLM round for cost/usage tracking (the streaming path
-            # has no provider usage, so estimate tokens locally).
+            # Record this LLM round for cost/usage tracking — prefer real provider
+            # usage, falling back to a local token estimate when unavailable.
             if self.billing_hook:
-                self._record_llm_billing(content_parts)
+                self._record_llm_billing(content_parts, streamed_usage)
 
             # Aborted mid-stream: the partial text already streamed; record it so the
             # session reflects it, then stop cleanly (no dangling tool message).

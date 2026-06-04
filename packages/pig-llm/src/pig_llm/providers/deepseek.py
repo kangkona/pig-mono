@@ -147,6 +147,7 @@ class DeepSeekProvider(Provider):
             messages=self._convert_messages(normalized_messages),
             temperature=temperature,
             stream=True,
+            stream_options={"include_usage": True},
             **build_token_limit_param(
                 max_tokens,
                 param_name="max_tokens",
@@ -224,6 +225,7 @@ class DeepSeekProvider(Provider):
             messages=self._convert_messages(normalized_messages),
             temperature=temperature,
             stream=True,
+            stream_options={"include_usage": True},
             **build_token_limit_param(
                 max_tokens,
                 param_name="max_tokens",

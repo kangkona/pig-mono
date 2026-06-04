@@ -1598,3 +1598,38 @@ async def test_master_loop_records_billing_for_llm_and_tool_calls() -> None:
     assert len(hook.llm) == 2  # two LLM rounds recorded
     assert hook.tools == ["shell"]  # the tool call recorded
     assert all(inp > 0 for _, inp, _ in hook.llm)  # token estimates are non-zero
+
+
+@pytest.mark.asyncio
+async def test_master_loop_uses_real_provider_usage_when_present() -> None:
+    """Billing uses real provider usage from the stream, not the local estimate."""
+
+    class Hook:
+        def __init__(self):
+            self.llm = []
+
+        def on_llm_call(self, model, input_tokens, output_tokens):
+            self.llm.append((input_tokens, output_tokens))
+
+        def on_tool_call(self, tool_name):
+            pass
+
+    class FakeLLM:
+        config = SimpleNamespace(model="gpt-4o-mini")
+
+        def achat_stream(self, messages, tools=None):
+            async def stream():
+                yield _StreamChunk(content="hi")
+                yield StreamChunk(
+                    content="",
+                    usage={"input_tokens": 200, "output_tokens": 30, "total_tokens": 230},
+                )
+
+            return stream()
+
+    hook = Hook()
+    agent = Agent(llm=FakeLLM(), tools=[], verbose=False, billing_hook=hook)
+    async for _ in agent.respond_stream("go"):
+        pass
+
+    assert hook.llm == [(200, 30)]

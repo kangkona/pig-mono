@@ -108,3 +108,20 @@ async def test_astream_tool_aware_text_only_has_no_tool_calls():
 
     assert "".join(c.content for c in chunks) == "hello world"
     assert all(c.tool_calls is None for c in chunks)
+
+
+@pytest.mark.asyncio
+async def test_astream_captures_trailing_usage_chunk():
+    """A usage-only chunk after the terminal finish_reason is captured."""
+    usage = SimpleNamespace(prompt_tokens=120, completion_tokens=45, total_tokens=165)
+    stream = _AsyncStream(
+        [
+            _delta_chunk(content="hello "),
+            _delta_chunk(content="world", finish_reason="stop"),
+            SimpleNamespace(id="u", choices=[], usage=usage),
+        ]
+    )
+    chunks = [c async for c in astream_openai_tool_aware(stream)]
+    assert "".join(c.content for c in chunks if c.content) == "hello world"
+    usages = [c.usage for c in chunks if c.usage]
+    assert usages == [{"input_tokens": 120, "output_tokens": 45, "total_tokens": 165}]

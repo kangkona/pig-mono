@@ -209,6 +209,7 @@ class OpenAIProvider(Provider):
             messages=self._convert_messages(normalized_messages),
             temperature=temperature,
             stream=True,
+            stream_options={"include_usage": True},
             **self._token_limit_param(max_tokens, compat),
             **kwargs,
         )
@@ -288,6 +289,7 @@ class OpenAIProvider(Provider):
             messages=self._convert_messages(normalized_messages),
             temperature=temperature,
             stream=True,
+            stream_options={"include_usage": True},
             **self._token_limit_param(max_tokens, compat),
             **kwargs,
         )

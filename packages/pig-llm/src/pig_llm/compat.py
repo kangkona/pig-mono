@@ -874,15 +874,47 @@ class _OpenAIToolCallAccumulator:
         ]
 
 
-async def astream_openai_tool_aware(stream: AsyncIterator[Any]) -> AsyncIterator[StreamChunk]:
-    """Stream OpenAI-compatible chunks as StreamChunks, carrying tool calls.
+def _stream_usage_to_dict(usage: Any) -> dict[str, int] | None:
+    """Normalize an OpenAI-compatible usage object into input/output tokens."""
+    if usage is None:
+        return None
+    prompt = getattr(usage, "prompt_tokens", None)
+    completion = getattr(usage, "completion_tokens", None)
+    if prompt is None and completion is None:
+        return None
+    prompt = int(prompt or 0)
+    completion = int(completion or 0)
+    total = getattr(usage, "total_tokens", None)
+    return {
+        "input_tokens": prompt,
+        "output_tokens": completion,
+        "total_tokens": int(total) if total is not None else prompt + completion,
+    }
 
-    Yields a StreamChunk for each text delta (live), and — when the response
-    includes tool calls — one final StreamChunk whose ``tool_calls`` holds the
-    fully-assembled canonical tool calls.
+
+async def astream_openai_tool_aware(stream: AsyncIterator[Any]) -> AsyncIterator[StreamChunk]:
+    """Stream OpenAI-compatible chunks as StreamChunks, carrying tool calls + usage.
+
+    Yields a StreamChunk for each text delta (live); after the stream ends, emits
+    one final StreamChunk carrying the fully-assembled ``tool_calls`` and/or the
+    provider ``usage`` (the usage-only chunk arrives after the terminal
+    finish_reason when stream_options include_usage was requested).
     """
     accumulator = _OpenAIToolCallAccumulator()
-    async for chunk, choice in aiter_openai_stream_choices(stream):
+    usage: dict[str, int] | None = None
+    terminated = False
+    async for chunk in stream:
+        chunk_usage = _stream_usage_to_dict(getattr(chunk, "usage", None))
+        if chunk_usage:
+            usage = chunk_usage
+        choices = getattr(chunk, "choices", None) or []
+        if not choices:
+            continue
+        # Ignore any content after a terminal finish_reason, but keep draining so
+        # a trailing usage-only chunk is still captured.
+        if terminated:
+            continue
+        choice = choices[0]
         delta = getattr(choice, "delta", None)
         content = getattr(delta, "content", None) if delta is not None else None
         if content:
@@ -892,9 +924,11 @@ async def astream_openai_tool_aware(stream: AsyncIterator[Any]) -> AsyncIterator
                 metadata={"id": getattr(chunk, "id", None)},
             )
         accumulator.add(choice)
+        if getattr(choice, "finish_reason", None):
+            terminated = True
     tool_calls = accumulator.finish()
-    if tool_calls:
-        yield StreamChunk(content="", tool_calls=tool_calls)
+    if tool_calls or usage:
+        yield StreamChunk(content="", tool_calls=tool_calls, usage=usage)
 
 
 def extract_openai_usage(response: Any) -> dict[str, int]:
