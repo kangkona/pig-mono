@@ -407,15 +407,18 @@ When generating code, provide clean, well-documented, production-ready code.
                 cleared = self.agent.message_queue.clear()
                 if cleared:
                     self.ui.system(f"\nCleared {len(cleared)} queued messages")
-            if shutdown_reason == "normal" and self.session:
+            # Always surface the resume command on exit (however the user left),
+            # like Claude Code — the session is auto-saved as messages arrive.
+            if self.session:
                 session_dir_hint = ""
                 if self.sessions_dir != self.workspace / ".sessions":
                     session_dir_hint = f" --session-dir {self.sessions_dir}"
                 self.ui.system(
-                    f"To resume this session: pig-code --session-id "
-                    f"{self.session.id}{session_dir_hint}"
+                    f"💾 Session saved. Resume with:  "
+                    f"pig-code --session-id {self.session.id}{session_dir_hint}"
                 )
-            self.ui.system("\nGoodbye!")
+                self.ui.system("(or pig-code --continue to resume the most recent session)")
+            self.ui.system("Goodbye!")
 
     async def _run_turn(self, user_input: str) -> None:
         """Stream one agent turn: live tokens, Esc-abort, type-to-steer.

@@ -750,8 +750,29 @@ def test_run_interactive_prints_resume_hint_on_clean_exit(mock_llm, temp_workspa
         agent.run_interactive()
 
     messages = [call.args[0] for call in agent.ui.system.call_args_list]
-    assert any("To resume this session:" in message for message in messages)
+    assert any("Resume with:" in message for message in messages)
     assert any(agent.session.id in message for message in messages)
+
+
+def test_run_interactive_prints_resume_hint_on_eof_exit(mock_llm, temp_workspace):
+    """The resume hint must appear however the user exits (here: Ctrl-D / EOF)."""
+    agent = CodingAgent(
+        llm=mock_llm,
+        workspace=str(temp_workspace),
+        verbose=False,
+        enable_extensions=False,
+    )
+    agent.ui = Mock()
+    agent.extension_manager = Mock()
+
+    prompt = Mock()
+    prompt.ask.side_effect = EOFError()
+
+    with patch("pig_coding_agent.agent.InteractivePrompt", return_value=prompt):
+        agent.run_interactive()
+
+    messages = [call.args[0] for call in agent.ui.system.call_args_list]
+    assert any("Resume with:" in message and agent.session.id in message for message in messages)
 
 
 def test_run_interactive_resume_hint_includes_explicit_session_dir(mock_llm, tmp_path):
