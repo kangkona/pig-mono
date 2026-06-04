@@ -68,8 +68,15 @@ class CostTracker:
             user_id: Optional user ID
             metadata: Optional metadata
         """
-        # Calculate cost
-        pricing = self.PRICING.get(model, {"input": 1.0, "output": 2.0})
+        # Calculate cost. Prefer the generated model registry (real per-model
+        # pricing from models.dev), then the local PRICING table, then a default.
+        from pig_llm import get_model_info
+
+        info = get_model_info(model)
+        if info is not None:
+            pricing = {"input": info["input_cost"], "output": info["output_cost"]}
+        else:
+            pricing = self.PRICING.get(model, {"input": 1.0, "output": 2.0})
         input_cost = (input_tokens / 1_000_000) * pricing["input"]
         output_cost = (output_tokens / 1_000_000) * pricing["output"]
         total_cost = input_cost + output_cost

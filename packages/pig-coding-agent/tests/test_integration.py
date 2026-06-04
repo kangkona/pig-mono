@@ -1142,7 +1142,7 @@ def test_command_settings_shows_panel(mock_llm, temp_workspace):
 def test_context_window_lookup_matches_model(mock_llm, temp_workspace):
     agent = _agent(mock_llm, temp_workspace)
     agent.agent.llm.config.model = "google/gemini-3.5-flash"
-    assert agent._context_window() == 1_000_000
+    assert agent._context_window() == 1_048_576  # real value from the registry
     agent.agent.llm.config.model = "gpt-4o-mini"
     assert agent._context_window() == 128_000
     agent.agent.llm.config.model = "some-unknown-model"

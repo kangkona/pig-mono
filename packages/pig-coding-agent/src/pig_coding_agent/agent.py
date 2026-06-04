@@ -927,10 +927,18 @@ Tools: {len(self.agent.registry)}
     _AUTO_COMPACT_FRACTION = 0.85
 
     def _context_window(self) -> int:
-        model = (self.agent.llm.config.model or "").lower()
+        model = self.agent.llm.config.model or ""
+        # Prefer the generated model registry (real per-model context windows).
+        from pig_llm import get_model_info
+
+        info = get_model_info(model)
+        if info is not None:
+            return int(info["context_window"])
+        # Fall back to a coarse substring table, then a default.
+        lowered = model.lower()
         best = None
         for key, window in self._CONTEXT_WINDOWS.items():
-            if key in model and (best is None or len(key) > len(best[0])):
+            if key in lowered and (best is None or len(key) > len(best[0])):
                 best = (key, window)
         return best[1] if best else self._DEFAULT_CONTEXT_WINDOW
 

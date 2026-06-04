@@ -2,6 +2,7 @@
 
 from .client import LLM
 from .config import Config
+from .model_info import get_model_info
 from .models import Message, Response, StreamChunk
 from .providers import Provider
 
@@ -14,4 +15,5 @@ __all__ = [
     "Response",
     "StreamChunk",
     "Provider",
+    "get_model_info",
 ]
