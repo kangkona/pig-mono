@@ -130,6 +130,7 @@ class MistralProvider(Provider):
             **kwargs,
         )
 
+        usage = None
         async for chunk in stream:
             choice = chunk.choices[0]
             if choice.delta.content:
@@ -137,3 +138,12 @@ class MistralProvider(Provider):
                     content=choice.delta.content,
                     finish_reason=choice.finish_reason,
                 )
+            chunk_usage = getattr(chunk, "usage", None)
+            if chunk_usage:
+                usage = {
+                    "input_tokens": int(getattr(chunk_usage, "prompt_tokens", 0) or 0),
+                    "output_tokens": int(getattr(chunk_usage, "completion_tokens", 0) or 0),
+                    "total_tokens": int(getattr(chunk_usage, "total_tokens", 0) or 0),
+                }
+        if usage:
+            yield StreamChunk(content="", usage=usage)

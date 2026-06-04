@@ -187,22 +187,55 @@ class BedrockProvider(Provider):
 
         stream = response.get("stream")
         if stream:
+            # Accumulate toolUse blocks (name/id arrive on contentBlockStart,
+            # input JSON arrives in contentBlockDelta fragments) and usage
+            # (metadata event), emitting them on a trailing chunk.
+            tool_blocks: dict[int, dict] = {}
+            usage: dict[str, int] | None = None
             for event in stream:
-                if "contentBlockDelta" in event:
-                    delta = event["contentBlockDelta"]["delta"]
+                if "contentBlockStart" in event:
+                    start = event["contentBlockStart"]
+                    idx = start.get("contentBlockIndex", 0)
+                    tool_use = start.get("start", {}).get("toolUse")
+                    if tool_use:
+                        tool_blocks[idx] = {
+                            "id": tool_use.get("toolUseId", ""),
+                            "name": tool_use.get("name", ""),
+                            "arguments": "",
+                        }
+                elif "contentBlockDelta" in event:
+                    block = event["contentBlockDelta"]
+                    delta = block["delta"]
                     if "text" in delta:
-                        yield StreamChunk(
-                            content=delta["text"],
-                            finish_reason=None,
-                            metadata={},
-                        )
+                        yield StreamChunk(content=delta["text"], finish_reason=None, metadata={})
+                    elif "toolUse" in delta:
+                        idx = block.get("contentBlockIndex", 0)
+                        tool_blocks.setdefault(idx, {"id": "", "name": "", "arguments": ""})[
+                            "arguments"
+                        ] += delta["toolUse"].get("input", "")
+                elif "metadata" in event:
+                    u = event["metadata"].get("usage") or {}
+                    if u:
+                        usage = {
+                            "input_tokens": int(u.get("inputTokens", 0) or 0),
+                            "output_tokens": int(u.get("outputTokens", 0) or 0),
+                            "cached_tokens": int(u.get("cacheReadInputTokens", 0) or 0),
+                            "total_tokens": int(u.get("totalTokens", 0) or 0),
+                        }
                 elif "messageStop" in event:
                     stop_reason = event["messageStop"].get("stopReason", "stop")
-                    yield StreamChunk(
-                        content="",
-                        finish_reason=stop_reason,
-                        metadata={},
-                    )
+                    yield StreamChunk(content="", finish_reason=stop_reason, metadata={})
+
+            tool_calls = [
+                {
+                    "id": tb["id"],
+                    "type": "function",
+                    "function": {"name": tb["name"], "arguments": tb["arguments"] or "{}"},
+                }
+                for _, tb in sorted(tool_blocks.items())
+            ]
+            if tool_calls or usage:
+                yield StreamChunk(content="", tool_calls=tool_calls or None, usage=usage)
 
     async def acomplete(
         self,

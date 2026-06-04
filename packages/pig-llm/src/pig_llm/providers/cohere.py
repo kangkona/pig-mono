@@ -132,11 +132,25 @@ class CohereProvider(Provider):
                     metadata={},
                 )
             elif event.event_type == "stream-end":
+                # Usage lives on the final response in the stream-end event.
+                usage = None
+                response = getattr(event, "response", None)
+                meta = getattr(response, "meta", None) if response is not None else None
+                tokens = getattr(meta, "tokens", None) if meta is not None else None
+                if tokens is not None:
+                    inp = int(getattr(tokens, "input_tokens", 0) or 0)
+                    out = int(getattr(tokens, "output_tokens", 0) or 0)
+                    usage = {
+                        "input_tokens": inp,
+                        "output_tokens": out,
+                        "total_tokens": inp + out,
+                    }
                 yield StreamChunk(
                     content="",
                     finish_reason=event.finish_reason
                     if hasattr(event, "finish_reason")
                     else "stop",
+                    usage=usage,
                     metadata={},
                 )
 
@@ -218,10 +232,24 @@ class CohereProvider(Provider):
                     metadata={},
                 )
             elif event.event_type == "stream-end":
+                # Usage lives on the final response in the stream-end event.
+                usage = None
+                response = getattr(event, "response", None)
+                meta = getattr(response, "meta", None) if response is not None else None
+                tokens = getattr(meta, "tokens", None) if meta is not None else None
+                if tokens is not None:
+                    inp = int(getattr(tokens, "input_tokens", 0) or 0)
+                    out = int(getattr(tokens, "output_tokens", 0) or 0)
+                    usage = {
+                        "input_tokens": inp,
+                        "output_tokens": out,
+                        "total_tokens": inp + out,
+                    }
                 yield StreamChunk(
                     content="",
                     finish_reason=event.finish_reason
                     if hasattr(event, "finish_reason")
                     else "stop",
+                    usage=usage,
                     metadata={},
                 )

@@ -1600,3 +1600,143 @@ def test_groq_provider_preserves_explicit_max_tokens() -> None:
     )
 
     assert create.call_args.kwargs["max_tokens"] == 222
+
+
+@pytest.mark.asyncio
+async def test_bedrock_astream_captures_tool_use_and_usage() -> None:
+    """Bedrock converse_stream surfaces toolUse blocks + usage (Phase B)."""
+    pytest.importorskip("boto3")
+
+    events = [
+        {"contentBlockDelta": {"contentBlockIndex": 0, "delta": {"text": "checking"}}},
+        {
+            "contentBlockStart": {
+                "contentBlockIndex": 1,
+                "start": {"toolUse": {"toolUseId": "tu_1", "name": "get_weather"}},
+            }
+        },
+        {
+            "contentBlockDelta": {
+                "contentBlockIndex": 1,
+                "delta": {"toolUse": {"input": '{"city":'}},
+            }
+        },
+        {
+            "contentBlockDelta": {
+                "contentBlockIndex": 1,
+                "delta": {"toolUse": {"input": '"Tokyo"}'}},
+            }
+        },
+        {"messageStop": {"stopReason": "tool_use"}},
+        {
+            "metadata": {
+                "usage": {
+                    "inputTokens": 120,
+                    "outputTokens": 18,
+                    "totalTokens": 138,
+                    "cacheReadInputTokens": 40,
+                }
+            }
+        },
+    ]
+    converse_stream = Mock(return_value={"stream": iter(events)})
+    client = SimpleNamespace(converse_stream=converse_stream)
+
+    with (
+        patch("pig_llm.providers.bedrock.boto3.client", return_value=client),
+        patch("pig_llm.providers.bedrock.BotoConfig", return_value=Mock()),
+    ):
+        from pig_llm.providers.bedrock import BedrockProvider
+
+        provider = BedrockProvider(Config(provider="bedrock", api_key="us-east-1"))
+        chunks = [
+            c
+            async for c in provider.astream(
+                [Message(role="user", content="weather?")], model="anthropic.claude-3-haiku"
+            )
+        ]
+
+    assert "".join(c.content for c in chunks if c.content) == "checking"
+    tool_chunks = [c for c in chunks if c.tool_calls]
+    tc = tool_chunks[-1].tool_calls[0]
+    assert tc["function"]["name"] == "get_weather"
+    assert tc["function"]["arguments"] == '{"city":"Tokyo"}'
+    usages = [c.usage for c in chunks if c.usage]
+    assert usages[-1]["input_tokens"] == 120
+    assert usages[-1]["cached_tokens"] == 40
+
+
+@pytest.mark.asyncio
+async def test_mistral_astream_emits_usage() -> None:
+    pytest.importorskip("mistralai.models.chat_completion")
+
+    class _Stream:
+        def __aiter__(self):
+            async def gen():
+                yield SimpleNamespace(
+                    choices=[
+                        SimpleNamespace(delta=SimpleNamespace(content="ok"), finish_reason=None)
+                    ],
+                    usage=None,
+                )
+                yield SimpleNamespace(
+                    choices=[
+                        SimpleNamespace(delta=SimpleNamespace(content=None), finish_reason="stop")
+                    ],
+                    usage=SimpleNamespace(prompt_tokens=50, completion_tokens=8, total_tokens=58),
+                )
+
+            return gen()
+
+    from pig_llm.providers.mistral import MistralProvider
+
+    provider = MistralProvider.__new__(MistralProvider)
+    provider.config = Config(provider="mistral", api_key="t")
+    provider.async_client = SimpleNamespace(chat_stream=AsyncMock(return_value=_Stream()))
+    if True:
+        chunks = [
+            c
+            async for c in provider.astream(
+                [Message(role="user", content="hi")], model="mistral-small"
+            )
+        ]
+
+    assert "".join(c.content for c in chunks if c.content) == "ok"
+    usages = [c.usage for c in chunks if c.usage]
+    assert usages[-1] == {"input_tokens": 50, "output_tokens": 8, "total_tokens": 58}
+
+
+@pytest.mark.asyncio
+async def test_cohere_astream_emits_usage() -> None:
+    pytest.importorskip("cohere")
+
+    class _Stream:
+        def __aiter__(self):
+            async def gen():
+                yield SimpleNamespace(event_type="text-generation", text="ok")
+                yield SimpleNamespace(
+                    event_type="stream-end",
+                    finish_reason="COMPLETE",
+                    response=SimpleNamespace(
+                        meta=SimpleNamespace(
+                            tokens=SimpleNamespace(input_tokens=40, output_tokens=6)
+                        )
+                    ),
+                )
+
+            return gen()
+
+    from pig_llm.providers.cohere import CohereProvider
+
+    provider = CohereProvider.__new__(CohereProvider)
+    provider.config = Config(provider="cohere", api_key="t")
+    provider.async_client = SimpleNamespace(chat_stream=Mock(return_value=_Stream()))
+    if True:
+        chunks = [
+            c
+            async for c in provider.astream([Message(role="user", content="hi")], model="command-r")
+        ]
+
+    assert "".join(c.content for c in chunks if c.content) == "ok"
+    usages = [c.usage for c in chunks if c.usage]
+    assert usages[-1] == {"input_tokens": 40, "output_tokens": 6, "total_tokens": 46}
