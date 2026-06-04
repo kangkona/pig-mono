@@ -443,7 +443,11 @@ async def test_anthropic_opus_47_astream_omits_temperature_param(
     mock_anthropic, mock_async_anthropic
 ) -> None:
     stream_ctx = AsyncMock()
-    stream_ctx.__aenter__.return_value = SimpleNamespace(text_stream=_AsyncTextStream([]))
+    final_message = SimpleNamespace(content=[], usage=None)
+    stream_ctx.__aenter__.return_value = SimpleNamespace(
+        text_stream=_AsyncTextStream([]),
+        get_final_message=AsyncMock(return_value=final_message),
+    )
     stream_ctx.__aexit__.return_value = False
     mock_async_anthropic.return_value = SimpleNamespace(
         messages=SimpleNamespace(stream=Mock(return_value=stream_ctx))
@@ -465,3 +469,96 @@ async def test_anthropic_opus_47_astream_omits_temperature_param(
 
     assert chunks == []
     assert "temperature" not in mock_async_anthropic.return_value.messages.stream.call_args.kwargs
+
+
+def test_anthropic_uses_base_url_from_config(monkeypatch) -> None:
+    captured = {}
+
+    def fake_anthropic(**kwargs):
+        captured.setdefault("sync", kwargs)
+        return SimpleNamespace(messages=SimpleNamespace())
+
+    def fake_async_anthropic(**kwargs):
+        captured.setdefault("async", kwargs)
+        return SimpleNamespace(messages=SimpleNamespace())
+
+    monkeypatch.delenv("ANTHROPIC_BASE_URL", raising=False)
+    with (
+        patch("pig_llm.providers.anthropic.anthropic.Anthropic", side_effect=fake_anthropic),
+        patch(
+            "pig_llm.providers.anthropic.anthropic.AsyncAnthropic",
+            side_effect=fake_async_anthropic,
+        ),
+    ):
+        from pig_llm.providers.anthropic import AnthropicProvider
+
+        AnthropicProvider(
+            Config(provider="anthropic", api_key="t", base_url="https://proxy.example")
+        )
+
+    assert captured["async"]["base_url"] == "https://proxy.example"
+
+
+def test_anthropic_uses_base_url_from_env(monkeypatch) -> None:
+    captured = {}
+
+    def fake_client(**kwargs):
+        captured.update(kwargs)
+        return SimpleNamespace(messages=SimpleNamespace())
+
+    monkeypatch.setenv("ANTHROPIC_BASE_URL", "https://env-proxy.example")
+    with (
+        patch("pig_llm.providers.anthropic.anthropic.Anthropic", side_effect=fake_client),
+        patch("pig_llm.providers.anthropic.anthropic.AsyncAnthropic", side_effect=fake_client),
+    ):
+        from pig_llm.providers.anthropic import AnthropicProvider
+
+        AnthropicProvider(Config(provider="anthropic", api_key="t"))
+
+    assert captured["base_url"] == "https://env-proxy.example"
+
+
+@pytest.mark.asyncio
+async def test_anthropic_astream_emits_tool_calls_and_usage(monkeypatch) -> None:
+    """Native Anthropic streaming surfaces tool_use + usage (Phase B)."""
+    monkeypatch.delenv("ANTHROPIC_BASE_URL", raising=False)
+    final_message = SimpleNamespace(
+        content=[
+            SimpleNamespace(type="text", text="checking"),
+            SimpleNamespace(
+                type="tool_use", id="tu_1", name="get_weather", input={"city": "Tokyo"}
+            ),
+        ],
+        usage=SimpleNamespace(input_tokens=120, output_tokens=18, cache_read_input_tokens=40),
+    )
+    inner = SimpleNamespace(
+        text_stream=_AsyncTextStream(["checking"]),
+        get_final_message=AsyncMock(return_value=final_message),
+    )
+    stream_ctx = AsyncMock()
+    stream_ctx.__aenter__.return_value = inner
+    stream_ctx.__aexit__.return_value = False
+    async_client = SimpleNamespace(messages=SimpleNamespace(stream=Mock(return_value=stream_ctx)))
+
+    with (
+        patch("pig_llm.providers.anthropic.anthropic.AsyncAnthropic", return_value=async_client),
+        patch("pig_llm.providers.anthropic.anthropic.Anthropic", return_value=SimpleNamespace()),
+    ):
+        from pig_llm.providers.anthropic import AnthropicProvider
+
+        provider = AnthropicProvider(Config(provider="anthropic", api_key="t"))
+        chunks = [
+            chunk
+            async for chunk in provider.astream(
+                [Message(role="user", content="weather?")],
+                model="claude-3-5-haiku-latest",
+                tools=[{"type": "function", "function": {"name": "get_weather", "parameters": {}}}],
+            )
+        ]
+
+    assert "".join(c.content for c in chunks if c.content) == "checking"
+    tool_chunks = [c for c in chunks if c.tool_calls]
+    assert tool_chunks[-1].tool_calls[0]["function"]["name"] == "get_weather"
+    usages = [c.usage for c in chunks if c.usage]
+    assert usages[-1]["input_tokens"] == 120
+    assert usages[-1]["cached_tokens"] == 40
