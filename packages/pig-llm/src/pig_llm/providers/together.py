@@ -4,6 +4,19 @@ from collections.abc import AsyncIterator, Iterator
 
 import openai
 
+from ..compat import (
+    TOGETHER_COMPAT,
+    TOGETHER_OPENAI_REASONING_COMPAT,
+    apply_prompt_cache,
+    apply_request_headers,
+    apply_session_affinity_headers,
+    apply_thinking_level,
+    astream_openai_tool_aware,
+    build_token_limit_param,
+    extract_openai_usage,
+    iter_openai_stream_choices,
+    normalize_messages,
+)
 from ..config import Config
 from ..models import Message, Response, StreamChunk
 from ._base import Provider
@@ -14,6 +27,12 @@ class TogetherProvider(Provider):
 
     Together AI uses OpenAI-compatible API for open-source models.
     """
+
+    @staticmethod
+    def _compat(model: str):
+        if model.lower() in {"openai/gpt-oss-20b", "openai/gpt-oss-120b"}:
+            return TOGETHER_OPENAI_REASONING_COMPAT
+        return TOGETHER_COMPAT
 
     def __init__(self, config: Config):
         """Initialize Together AI provider."""
@@ -83,20 +102,28 @@ class TogetherProvider(Provider):
         **kwargs,
     ) -> Response:
         """Generate a completion."""
+        kwargs["model"] = model
+        compat = self._compat(model)
+        kwargs = apply_thinking_level(kwargs, compat)
+        kwargs.pop("model", None)
+        kwargs = apply_prompt_cache(kwargs, compat)
+        kwargs = apply_session_affinity_headers(kwargs, compat)
+        kwargs = apply_request_headers(kwargs)
+        normalized_messages = normalize_messages(messages, compat)
         response = self.client.chat.completions.create(
             model=model,
-            messages=self._convert_messages(messages),
+            messages=self._convert_messages(normalized_messages),
             temperature=temperature,
-            max_tokens=max_tokens,
+            **build_token_limit_param(
+                max_tokens,
+                param_name="max_tokens",
+                compat=compat,
+            ),
             **kwargs,
         )
 
         choice = response.choices[0]
-        usage = {
-            "prompt_tokens": response.usage.prompt_tokens if response.usage else 0,
-            "completion_tokens": response.usage.completion_tokens if response.usage else 0,
-            "total_tokens": response.usage.total_tokens if response.usage else 0,
-        }
+        usage = extract_openai_usage(response)
 
         return Response(
             content=choice.message.content or "",
@@ -116,17 +143,29 @@ class TogetherProvider(Provider):
         **kwargs,
     ) -> Iterator[StreamChunk]:
         """Stream a completion."""
+        kwargs["model"] = model
+        compat = self._compat(model)
+        kwargs = apply_thinking_level(kwargs, compat)
+        kwargs.pop("model", None)
+        kwargs = apply_prompt_cache(kwargs, compat)
+        kwargs = apply_session_affinity_headers(kwargs, compat)
+        kwargs = apply_request_headers(kwargs)
+        normalized_messages = normalize_messages(messages, compat)
         stream = self.client.chat.completions.create(
             model=model,
-            messages=self._convert_messages(messages),
+            messages=self._convert_messages(normalized_messages),
             temperature=temperature,
-            max_tokens=max_tokens,
             stream=True,
+            stream_options={"include_usage": True},
+            **build_token_limit_param(
+                max_tokens,
+                param_name="max_tokens",
+                compat=compat,
+            ),
             **kwargs,
         )
 
-        for chunk in stream:
-            choice = chunk.choices[0]
+        for chunk, choice in iter_openai_stream_choices(stream):
             if choice.delta.content:
                 yield StreamChunk(
                     content=choice.delta.content,
@@ -143,20 +182,28 @@ class TogetherProvider(Provider):
         **kwargs,
     ) -> Response:
         """Async generate a completion."""
+        kwargs["model"] = model
+        compat = self._compat(model)
+        kwargs = apply_thinking_level(kwargs, compat)
+        kwargs.pop("model", None)
+        kwargs = apply_prompt_cache(kwargs, compat)
+        kwargs = apply_session_affinity_headers(kwargs, compat)
+        kwargs = apply_request_headers(kwargs)
+        normalized_messages = normalize_messages(messages, compat)
         response = await self.async_client.chat.completions.create(
             model=model,
-            messages=self._convert_messages(messages),
+            messages=self._convert_messages(normalized_messages),
             temperature=temperature,
-            max_tokens=max_tokens,
+            **build_token_limit_param(
+                max_tokens,
+                param_name="max_tokens",
+                compat=compat,
+            ),
             **kwargs,
         )
 
         choice = response.choices[0]
-        usage = {
-            "prompt_tokens": response.usage.prompt_tokens if response.usage else 0,
-            "completion_tokens": response.usage.completion_tokens if response.usage else 0,
-            "total_tokens": response.usage.total_tokens if response.usage else 0,
-        }
+        usage = extract_openai_usage(response)
 
         return Response(
             content=choice.message.content or "",
@@ -176,20 +223,27 @@ class TogetherProvider(Provider):
         **kwargs,
     ) -> AsyncIterator[StreamChunk]:
         """Async stream a completion."""
+        kwargs["model"] = model
+        compat = self._compat(model)
+        kwargs = apply_thinking_level(kwargs, compat)
+        kwargs.pop("model", None)
+        kwargs = apply_prompt_cache(kwargs, compat)
+        kwargs = apply_session_affinity_headers(kwargs, compat)
+        kwargs = apply_request_headers(kwargs)
+        normalized_messages = normalize_messages(messages, compat)
         stream = await self.async_client.chat.completions.create(
             model=model,
-            messages=self._convert_messages(messages),
+            messages=self._convert_messages(normalized_messages),
             temperature=temperature,
-            max_tokens=max_tokens,
             stream=True,
+            stream_options={"include_usage": True},
+            **build_token_limit_param(
+                max_tokens,
+                param_name="max_tokens",
+                compat=compat,
+            ),
             **kwargs,
         )
 
-        async for chunk in stream:
-            choice = chunk.choices[0]
-            if choice.delta.content:
-                yield StreamChunk(
-                    content=choice.delta.content,
-                    finish_reason=choice.finish_reason,
-                    metadata={"id": chunk.id},
-                )
+        async for sc in astream_openai_tool_aware(stream):
+            yield sc

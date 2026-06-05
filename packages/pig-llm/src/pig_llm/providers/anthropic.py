@@ -1,10 +1,12 @@
 """Anthropic provider implementation."""
 
 import json
+import os
 from collections.abc import AsyncIterator, Iterator
 
 import anthropic
 
+from ..compat import ANTHROPIC_COMPAT, apply_thinking_level, normalize_messages
 from ..config import Config
 from ..models import Message, Response, StreamChunk
 from ._base import Provider
@@ -13,19 +15,26 @@ from ._base import Provider
 class AnthropicProvider(Provider):
     """Anthropic (Claude) provider implementation."""
 
+    @staticmethod
+    def _supports_temperature(model: str) -> bool:
+        """Claude Opus 4.7+ rejects explicit temperature parameters."""
+        model_name = (model or "").lower()
+        return "claude-opus-4-7" not in model_name and "claude-opus-4-8" not in model_name
+
     def __init__(self, config: Config):
         """Initialize Anthropic provider."""
         self.config = config
-        self.client = anthropic.Anthropic(
-            api_key=config.api_key,
-            timeout=config.timeout,
-            max_retries=config.max_retries,
-        )
-        self.async_client = anthropic.AsyncAnthropic(
-            api_key=config.api_key,
-            timeout=config.timeout,
-            max_retries=config.max_retries,
-        )
+        # Allow a custom endpoint via config.base_url or ANTHROPIC_BASE_URL.
+        base_url = config.base_url or os.environ.get("ANTHROPIC_BASE_URL")
+        client_kwargs: dict = {
+            "api_key": config.api_key,
+            "timeout": config.timeout,
+            "max_retries": config.max_retries,
+        }
+        if base_url:
+            client_kwargs["base_url"] = base_url
+        self.client = anthropic.Anthropic(**client_kwargs)
+        self.async_client = anthropic.AsyncAnthropic(**client_kwargs)
 
     def _convert_messages(self, messages: list[Message]) -> tuple[str | None, list[dict]]:
         """Convert internal messages to Anthropic format.
@@ -131,21 +140,26 @@ class AnthropicProvider(Provider):
         **kwargs,
     ) -> Response:
         """Generate a completion."""
-        system, anthropic_messages = self._convert_messages(messages)
+        normalized_messages = normalize_messages(messages, ANTHROPIC_COMPAT)
+        system, anthropic_messages = self._convert_messages(normalized_messages)
 
         # Convert tools if present
+        kwargs = apply_thinking_level(kwargs, ANTHROPIC_COMPAT)
         tools = self._convert_tools(kwargs.get("tools"))
         if tools:
             kwargs = {k: v for k, v in kwargs.items() if k != "tools"}
             kwargs["tools"] = tools
 
+        request_kwargs = dict(kwargs)
+        if self._supports_temperature(model):
+            request_kwargs["temperature"] = temperature
+
         response = self.client.messages.create(
             model=model,
             messages=anthropic_messages,
             system=system,
-            temperature=temperature,
             max_tokens=max_tokens or 4096,
-            **kwargs,
+            **request_kwargs,
         )
 
         # Extract text content
@@ -181,15 +195,19 @@ class AnthropicProvider(Provider):
         **kwargs,
     ) -> Iterator[StreamChunk]:
         """Stream a completion."""
-        system, anthropic_messages = self._convert_messages(messages)
+        normalized_messages = normalize_messages(messages, ANTHROPIC_COMPAT)
+        system, anthropic_messages = self._convert_messages(normalized_messages)
+        kwargs = apply_thinking_level(kwargs, ANTHROPIC_COMPAT)
+        request_kwargs = dict(kwargs)
+        if self._supports_temperature(model):
+            request_kwargs["temperature"] = temperature
 
         with self.client.messages.stream(
             model=model,
             messages=anthropic_messages,
             system=system,
-            temperature=temperature,
             max_tokens=max_tokens or 4096,
-            **kwargs,
+            **request_kwargs,
         ) as stream:
             for text in stream.text_stream:
                 yield StreamChunk(content=text, finish_reason=None)
@@ -203,21 +221,26 @@ class AnthropicProvider(Provider):
         **kwargs,
     ) -> Response:
         """Async generate a completion."""
-        system, anthropic_messages = self._convert_messages(messages)
+        normalized_messages = normalize_messages(messages, ANTHROPIC_COMPAT)
+        system, anthropic_messages = self._convert_messages(normalized_messages)
 
         # Convert tools if present
+        kwargs = apply_thinking_level(kwargs, ANTHROPIC_COMPAT)
         tools = self._convert_tools(kwargs.get("tools"))
         if tools:
             kwargs = {k: v for k, v in kwargs.items() if k != "tools"}
             kwargs["tools"] = tools
 
+        request_kwargs = dict(kwargs)
+        if self._supports_temperature(model):
+            request_kwargs["temperature"] = temperature
+
         response = await self.async_client.messages.create(
             model=model,
             messages=anthropic_messages,
             system=system,
-            temperature=temperature,
             max_tokens=max_tokens or 4096,
-            **kwargs,
+            **request_kwargs,
         )
 
         # Extract text content
@@ -253,15 +276,39 @@ class AnthropicProvider(Provider):
         **kwargs,
     ) -> AsyncIterator[StreamChunk]:
         """Async stream a completion."""
-        system, anthropic_messages = self._convert_messages(messages)
-
+        normalized_messages = normalize_messages(messages, ANTHROPIC_COMPAT)
+        system, anthropic_messages = self._convert_messages(normalized_messages)
+        kwargs = apply_thinking_level(kwargs, ANTHROPIC_COMPAT)
+        request_kwargs = dict(kwargs)
+        request_kwargs["tools"] = self._convert_tools(request_kwargs.get("tools"))
+        if request_kwargs["tools"] is None:
+            request_kwargs.pop("tools")
+        if self._supports_temperature(model):
+            request_kwargs["temperature"] = temperature
         async with self.async_client.messages.stream(
             model=model,
             messages=anthropic_messages,
             system=system,
-            temperature=temperature,
             max_tokens=max_tokens or 4096,
-            **kwargs,
+            **request_kwargs,
         ) as stream:
             async for text in stream.text_stream:
                 yield StreamChunk(content=text, finish_reason=None)
+
+            # After the text stream, pull tool calls + usage from the final
+            # message (Anthropic only exposes assembled tool_use blocks there).
+            final = await stream.get_final_message()
+            tool_calls = self._extract_tool_calls(final.content)
+            usage = None
+            if getattr(final, "usage", None):
+                u = final.usage
+                cached = getattr(u, "cache_read_input_tokens", None)
+                usage = {
+                    "input_tokens": int(getattr(u, "input_tokens", 0) or 0),
+                    "output_tokens": int(getattr(u, "output_tokens", 0) or 0),
+                    "cached_tokens": int(cached or 0),
+                    "total_tokens": int(getattr(u, "input_tokens", 0) or 0)
+                    + int(getattr(u, "output_tokens", 0) or 0),
+                }
+            if tool_calls or usage:
+                yield StreamChunk(content="", tool_calls=tool_calls, usage=usage)

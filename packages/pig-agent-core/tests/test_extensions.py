@@ -148,6 +148,29 @@ def test_extension_manager_emit_event(mock_agent):
     assert len(called) == 1
 
 
+def test_extension_manager_cleanup_clears_loaded_extensions(mock_agent):
+    manager = ExtensionManager(mock_agent)
+    manager.extensions = {"a.py": object(), "b.py": object()}
+
+    manager.cleanup()
+
+    assert manager.extensions == {}
+
+
+def test_extension_manager_cleanup_emits_session_shutdown_event():
+    agent = Mock()
+    manager = ExtensionManager(agent)
+    calls = []
+
+    @manager.api.on("session_shutdown")
+    def on_shutdown(event, ctx):
+        calls.append(event)
+
+    manager.cleanup(reason="normal")
+
+    assert calls == [{"reason": "normal"}]
+
+
 def test_extension_manager_load_extension(mock_agent, tmp_path):
     """Test loading extension from file."""
     manager = ExtensionManager(mock_agent)

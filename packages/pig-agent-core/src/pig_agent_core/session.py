@@ -1,12 +1,30 @@
 """Session management with tree structure and JSONL storage."""
 
 import json
+import re
 import uuid
+from collections.abc import Iterable
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from pydantic import BaseModel, Field
+
+from .session_manager import resolve_session_dir
+from .tools import ToolResult
+
+_UUID_LIKE_ID_RE = re.compile(
+    r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+    re.IGNORECASE,
+)
+
+
+def serialize_compaction_tool_result(result: ToolResult | Any, max_chars: int = 4000) -> str:
+    """Serialize tool output for compaction without letting huge outputs dominate."""
+    if isinstance(result, ToolResult):
+        return cast(str, result.serialize(max_chars=max_chars))
+
+    return cast(str, ToolResult(ok=True, data=result).serialize(max_chars=max_chars))
 
 
 class SessionEntry(BaseModel):
@@ -23,14 +41,14 @@ class SessionEntry(BaseModel):
 class SessionTree:
     """Tree-based session storage."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize session tree."""
         self.entries: dict[str, SessionEntry] = {}
         self.current_id: str | None = None
         self.root_id: str | None = None
 
     def add_entry(
-        self, role: str, content: str, parent_id: str | None = None, **metadata
+        self, role: str, content: str, parent_id: str | None = None, **metadata: Any
     ) -> SessionEntry:
         """Add an entry to the tree.
 
@@ -65,7 +83,7 @@ class SessionTree:
         Returns:
             List of entries from root to entry
         """
-        path = []
+        path: list[SessionEntry] = []
         current = self.entries.get(entry_id)
 
         while current:
@@ -149,23 +167,51 @@ class SessionTree:
         Returns:
             Loaded session tree
         """
-        tree = cls()
+        return cls.from_jsonl_iter(jsonl.splitlines())
 
-        for line in jsonl.strip().split("\n"):
+    @classmethod
+    def from_jsonl_iter(cls, lines: Iterable[str]) -> "SessionTree":
+        """Load tree from an iterable of JSONL lines.
+
+        This avoids materializing large session files in memory before parsing.
+        """
+        tree = cls()
+        ordered_entries: list[SessionEntry] = []
+        parent_ids: set[str] = set()
+        for line in lines:
+            line = line.strip()
             if not line:
                 continue
 
             entry = SessionEntry.model_validate_json(line)
             tree.entries[entry.id] = entry
+            ordered_entries.append(entry)
+            if entry.parent_id is not None:
+                parent_ids.add(entry.parent_id)
 
-            # Find root
-            if entry.parent_id is None:
-                tree.root_id = entry.id
+        if ordered_entries:
+            leaf_candidates = [
+                (index, entry)
+                for index, entry in enumerate(ordered_entries)
+                if entry.id not in parent_ids
+            ]
+            _, current_entry = max(
+                leaf_candidates or list(enumerate(ordered_entries)),
+                key=lambda item: (item[1].timestamp, item[0]),
+            )
+            tree.current_id = current_entry.id
 
-        # Set current to last entry (chronologically)
-        if tree.entries:
-            last_entry = max(tree.entries.values(), key=lambda e: e.timestamp)
-            tree.current_id = last_entry.id
+            root_entry = current_entry
+            visited: set[str] = set()
+            while (
+                root_entry.parent_id is not None
+                and root_entry.parent_id in tree.entries
+                and root_entry.parent_id not in visited
+            ):
+                visited.add(root_entry.id)
+                root_entry = tree.entries[root_entry.parent_id]
+
+            tree.root_id = root_entry.id
 
         return tree
 
@@ -178,18 +224,22 @@ class Session:
         name: str | None = None,
         workspace: str | None = None,
         auto_save: bool = True,
-    ):
+        session_dir: str | Path | None = None,
+    ) -> None:
         """Initialize session.
 
         Args:
             name: Session name
             workspace: Workspace directory
             auto_save: Auto-save after changes
+            session_dir: Explicit session directory override
         """
         self.id = str(uuid.uuid4())
         self.name = name or f"session-{self.id[:8]}"
         self.workspace = Path(workspace) if workspace else Path.cwd()
         self.auto_save = auto_save
+        self.session_dir = Path(session_dir).expanduser().resolve() if session_dir else None
+        self._save_path: Path | None = None
 
         self.tree = SessionTree()
         self.created_at = datetime.utcnow()
@@ -202,7 +252,7 @@ class Session:
         }
 
     def add_message(
-        self, role: str, content: str, parent_id: str | None = None, **metadata
+        self, role: str, content: str, parent_id: str | None = None, **metadata: Any
     ) -> SessionEntry:
         """Add a message to the session.
 
@@ -243,7 +293,12 @@ class Session:
         if self.auto_save:
             self.save()
 
-    def compact(self, instructions: str | None = None) -> list[SessionEntry]:
+    def compact(
+        self,
+        instructions: str | None = None,
+        *,
+        max_tool_chars: int = 1000,
+    ) -> list[SessionEntry]:
         """Compact old messages.
 
         Args:
@@ -261,24 +316,58 @@ class Session:
         # Keep recent messages
         recent = path[-5:]
 
-        # Compact older messages
+        # Compact older messages without embedding full tool payloads.
         old = path[:-5]
+        old_ids = {entry.id for entry in old}
+        existing_entries = list(self.tree.entries.values())
 
-        # Create summary (simplified - real implementation would use LLM)
+        tool_summaries = []
+        for entry in old:
+            if entry.role == "tool":
+                tool_name = entry.metadata.get("name", "tool")
+                tool_summaries.append(
+                    f"- {tool_name}: "
+                    + serialize_compaction_tool_result(entry.content, max_chars=max_tool_chars)
+                )
+
         summary_content = f"[Compacted {len(old)} messages]\n"
         if instructions:
             summary_content += f"Instructions: {instructions}\n"
         summary_content += f"Topics covered: {len({e.role for e in old})} roles"
+        if tool_summaries:
+            summary_content += "\nTool outputs:\n" + "\n".join(tool_summaries[:10])
 
-        # Create compacted entry
-        compacted = self.add_message(
+        summary_entry = SessionEntry(
             role="system",
             content=summary_content,
-            metadata={"compacted": True, "original_count": len(old)},
+            metadata={
+                "compacted": True,
+                "original_count": len(old),
+            },
         )
+        new_entries: dict[str, SessionEntry] = {summary_entry.id: summary_entry}
+        for entry in existing_entries:
+            if entry.id in old_ids:
+                continue
+            if entry.parent_id is None or entry.parent_id in old_ids:
+                entry.parent_id = summary_entry.id
+            new_entries[entry.id] = entry
+
+        self.tree.entries = new_entries
+        self.tree.root_id = summary_entry.id
+
+        if recent:
+            self.tree.current_id = recent[-1].id
+        else:
+            self.tree.current_id = summary_entry.id
+
+        self.updated_at = datetime.utcnow()
+
+        if self.auto_save:
+            self.save()
 
         # Return compacted path
-        return [compacted] + recent
+        return self.get_current_conversation()
 
     def fork(self, entry_id: str, new_name: str | None = None) -> "Session":
         """Fork session from a point.
@@ -295,6 +384,7 @@ class Session:
             name=new_name or f"{self.name}-fork",
             workspace=str(self.workspace),
             auto_save=self.auto_save,
+            session_dir=self.session_dir,
         )
 
         # Copy path to entry
@@ -313,27 +403,41 @@ class Session:
         Returns:
             Saved file path
         """
+        if path is None and self._save_path is not None:
+            path = self._save_path
         if path is None:
             # Auto-generate path
-            session_dir = self.workspace / ".sessions"
-            session_dir.mkdir(exist_ok=True)
-            path = session_dir / f"{self.name}.jsonl"
+            session_dir = resolve_session_dir(self.workspace, self.session_dir)
+            session_dir.mkdir(parents=True, exist_ok=True)
+            file_id = self.id[:8] if _UUID_LIKE_ID_RE.fullmatch(self.id) else self.id
+            path = session_dir / f"{self.name}-{file_id}.jsonl"
+        else:
+            path = Path(path)
 
-        # Save metadata and tree
+        metadata = dict(self.metadata)
+        metadata["entries"] = len(self.tree.entries)
+
+        # Save metadata and tree. Persist the authoritative current/root ids so
+        # reload restores the exact conversation tip instead of inferring it from
+        # entry timestamps (which resurrects stale off-path branch leaves).
         data = {
             "id": self.id,
             "name": self.name,
+            "workspace": str(self.workspace),
             "created_at": self.created_at.isoformat(),
             "updated_at": self.updated_at.isoformat(),
-            "metadata": self.metadata,
-            "tree": self.tree.to_jsonl(),
+            "current_id": self.tree.current_id,
+            "root_id": self.tree.root_id,
+            "metadata": metadata,
         }
 
-        # Write header + tree
+        # Write header + tree tail without duplicating the tree in metadata.
         with open(path, "w") as f:
             f.write(json.dumps(data) + "\n")
-            f.write(data["tree"])
+            for entry in self.tree.entries.values():
+                f.write(entry.model_dump_json() + "\n")
 
+        self._save_path = path.resolve()
         return path
 
     @classmethod
@@ -350,17 +454,34 @@ class Session:
             # Read header
             header = json.loads(f.readline())
 
-            # Read tree
-            tree_jsonl = f.read()
+            tree = SessionTree.from_jsonl_iter(f)
 
         # Create session
-        session = cls(name=header["name"], workspace=str(path.parent.parent), auto_save=False)
+        workspace = header.get("workspace")
+        resolved_workspace = (
+            str(Path(workspace).expanduser())
+            if isinstance(workspace, str) and workspace
+            else str(path.parent.parent)
+        )
+        session = cls(name=header["name"], workspace=resolved_workspace, auto_save=False)
+        session.session_dir = path.parent.resolve()
 
         session.id = header["id"]
         session.created_at = datetime.fromisoformat(header["created_at"])
         session.updated_at = datetime.fromisoformat(header["updated_at"])
         session.metadata = header["metadata"]
-        session.tree = SessionTree.from_jsonl(tree_jsonl)
+        session.tree = tree
+        session._save_path = path.resolve()
+
+        # Prefer the persisted tip/root when present and still valid; fall back
+        # to from_jsonl_iter's timestamp heuristic for legacy files that predate
+        # these header fields.
+        header_current = header.get("current_id")
+        if isinstance(header_current, str) and header_current in tree.entries:
+            tree.current_id = header_current
+        header_root = header.get("root_id")
+        if isinstance(header_root, str) and header_root in tree.entries:
+            tree.root_id = header_root
 
         return session
 

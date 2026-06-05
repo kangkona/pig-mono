@@ -1,13 +1,17 @@
 """Chat interface components."""
 
 import sys
+import time
 from contextlib import contextmanager
 from datetime import datetime
+from typing import Any
 
 from rich.console import Console
+from rich.live import Live
 from rich.markdown import Markdown
 from rich.panel import Panel
 
+from .rendering import normalize_terminal_output, print_markdown_safely
 from .theme import Theme
 
 
@@ -19,23 +23,114 @@ class StreamWriter:
         self.console = console
         self.prefix = prefix
         self.style = style
-        self.buffer = []
+        self.buffer: list[str] = []
 
     def write(self, text: str) -> None:
         """Write text to stream."""
-        self.buffer.append(text)
+        normalized = normalize_terminal_output(text)
+        self.buffer.append(normalized)
         # Print immediately for streaming effect
-        self.console.print(text, style=self.style, end="")
+        self.console.print(normalized, style=self.style, end="")
         sys.stdout.flush()
 
-    def __enter__(self):
+    def __enter__(self) -> "StreamWriter":
         """Enter context."""
         self.console.print(self.prefix, style=self.style, end="")
         return self
 
-    def __exit__(self, *args):
+    def __exit__(self, *args: Any) -> None:
         """Exit context."""
         self.console.print()  # New line
+
+
+class MarkdownStreamWriter:
+    """Accumulates streamed text and live-renders it as Markdown.
+
+    Re-rendering the whole Markdown on every token is what lets partial syntax
+    (an unterminated ``**bold**`` or a ``###`` heading) resolve as more text
+    arrives. Refreshes are throttled by the owning Live (a few times a second)
+    so long, scrolling responses don't flicker.
+
+    A spinner + elapsed-time status line sits below the content while the turn
+    is in progress, so a long LLM/tool wait with no visible output still shows
+    the agent is alive (call :meth:`tick` periodically to animate it).
+    """
+
+    _FRAMES = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+
+    def __init__(self) -> None:
+        self.text = ""
+        self._live: Live | None = None
+        self._started = time.monotonic()
+        self._frame = 0
+        self._done = False
+        self._input = ""
+        self._cursor = 0
+        self._suggestions: list[str] = []
+
+    def _renderable(self) -> Any:
+        from rich.console import Group
+        from rich.text import Text
+
+        body = Markdown(self.text) if self.text else Text("")
+        if self._done:
+            return body
+        spin = self._FRAMES[self._frame % len(self._FRAMES)]
+        elapsed = int(time.monotonic() - self._started)
+        status = Text(f"{spin} working… {elapsed}s", style="dim")
+        # A persistent input affordance: the user can type to steer at any time;
+        # echo it here (rendered inside Live) instead of to raw stdout. The
+        # cursor position is rendered in place (reverse video) so editing
+        # mid-line is visible.
+        input_line = Text("You › ", style="bold cyan")
+        cursor = max(0, min(self._cursor, len(self._input)))
+        before, at, after = (
+            self._input[:cursor],
+            self._input[cursor : cursor + 1],
+            self._input[cursor + 1 :],
+        )
+        input_line.append(before)
+        if at:
+            input_line.append(at, style="reverse")
+            input_line.append(after)
+        else:
+            input_line.append("▌", style="reverse")  # cursor at end
+        rows: list[Any] = [p for p in (body if self.text else None, status, input_line) if p]
+        # Slash-command suggestions (when typing a "/command").
+        if self._suggestions:
+            shown = self._suggestions[:8]
+            hint = "  ".join(shown)
+            if len(self._suggestions) > len(shown):
+                hint += f"  … (+{len(self._suggestions) - len(shown)})"
+            rows.append(Text(f"  {hint}", style="dim cyan"))
+        return Group(*rows)
+
+    def _refresh(self) -> None:
+        if self._live is not None:
+            self._live.update(self._renderable())
+
+    def write(self, text: str) -> None:
+        self.text += normalize_terminal_output(text)
+        self._refresh()
+
+    def set_input(
+        self, text: str, cursor: int | None = None, suggestions: list[str] | None = None
+    ) -> None:
+        """Update the live input affordance (text + cursor + command suggestions)."""
+        self._input = text
+        self._cursor = len(text) if cursor is None else cursor
+        self._suggestions = suggestions or []
+        self._refresh()
+
+    def tick(self) -> None:
+        """Advance the spinner / elapsed timer (called on a timer while busy)."""
+        self._frame += 1
+        self._refresh()
+
+    def finalize(self) -> None:
+        """Drop the status / input lines, leaving only the rendered content."""
+        self._done = True
+        self._refresh()
 
 
 class ChatUI:
@@ -79,9 +174,13 @@ class ChatUI:
 
         if self.markdown_mode:
             self.console.print(prefix, end="")
-            self.console.print(Markdown(message))
+            print_markdown_safely(
+                message,
+                renderer=Markdown,
+                printer=self.console.print,
+            )
         else:
-            self.console.print(f"{prefix}{message}")
+            self.console.print(f"{prefix}{normalize_terminal_output(message)}")
 
     def assistant(self, message: str) -> None:
         """Display assistant message.
@@ -94,12 +193,16 @@ class ChatUI:
 
         if self.markdown_mode:
             self.console.print(prefix, end="")
-            self.console.print(Markdown(message))
+            print_markdown_safely(
+                message,
+                renderer=Markdown,
+                printer=self.console.print,
+            )
         else:
-            self.console.print(f"{prefix}{message}")
+            self.console.print(f"{prefix}{normalize_terminal_output(message)}")
 
     @contextmanager
-    def assistant_stream(self):
+    def assistant_stream(self) -> Any:
         """Stream assistant response.
 
         Yields:
@@ -111,6 +214,37 @@ class ChatUI:
         writer = StreamWriter(self.console, prefix, self.theme.assistant_color)
         yield writer
 
+    @contextmanager
+    def assistant_stream_markdown(self, refresh_per_second: int = 8) -> Any:
+        """Stream an assistant response, live-rendering it as Markdown.
+
+        Prints the ``Assistant:`` prefix, then drives a throttled Rich ``Live``
+        that re-renders the accumulated Markdown as tokens arrive. Yields a
+        MarkdownStreamWriter; the rendered text remains on screen on exit.
+
+        Yields:
+            MarkdownStreamWriter for writing chunks
+        """
+        timestamp = self._format_timestamp()
+        self.console.print(f"{timestamp}[bold {self.theme.assistant_color}]Assistant:[/]")
+
+        writer = MarkdownStreamWriter()
+        live = Live(
+            writer._renderable(),
+            console=self.console,
+            refresh_per_second=refresh_per_second,
+            vertical_overflow="visible",
+        )
+        writer._live = live
+        live.start()
+        try:
+            yield writer
+        finally:
+            # Drop the status line and render the final, complete Markdown.
+            writer.finalize()
+            live.refresh()
+            live.stop()
+
     def system(self, message: str) -> None:
         """Display system message.
 
@@ -118,7 +252,9 @@ class ChatUI:
             message: System message
         """
         timestamp = self._format_timestamp()
-        self.console.print(f"{timestamp}[{self.theme.system_color}]System: {message}[/]")
+        self.console.print(
+            f"{timestamp}[{self.theme.system_color}]System: {normalize_terminal_output(message)}[/]"
+        )
 
     def error(self, message: str) -> None:
         """Display error message.
@@ -127,7 +263,10 @@ class ChatUI:
             message: Error message
         """
         timestamp = self._format_timestamp()
-        self.console.print(f"{timestamp}[bold {self.theme.error_color}]Error: {message}[/]")
+        self.console.print(
+            f"{timestamp}[bold {self.theme.error_color}]Error: "
+            f"{normalize_terminal_output(message)}[/]"
+        )
 
     def panel(self, content: str, title: str = "") -> None:
         """Display content in a panel.

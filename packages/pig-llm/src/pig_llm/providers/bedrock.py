@@ -8,6 +8,7 @@ try:
 except ImportError as err:
     raise ImportError("boto3 is required for Bedrock. Install with: pip install boto3") from err
 
+from ..compat import BEDROCK_COMPAT, apply_thinking_level, normalize_messages
 from ..config import Config
 from ..models import Message, Response, StreamChunk
 from ._base import Provider
@@ -15,6 +16,23 @@ from ._base import Provider
 
 class BedrockProvider(Provider):
     """Amazon Bedrock provider implementation."""
+
+    @staticmethod
+    def _sanitize_request_headers(headers: dict[str, str] | None) -> dict[str, str] | None:
+        """Drop reserved headers before attaching request metadata."""
+        if not headers:
+            return None
+        sanitized = {
+            key: value
+            for key, value in headers.items()
+            if key.lower() not in {"authorization", "host"} and not key.lower().startswith("x-amz-")
+        }
+        return sanitized or None
+
+    @staticmethod
+    def _is_adaptive_claude_model(model: str) -> bool:
+        model_name = (model or "").lower()
+        return "claude-opus-4-8" in model_name
 
     def __init__(self, config: Config):
         """Initialize Bedrock provider.
@@ -62,6 +80,7 @@ class BedrockProvider(Provider):
     ) -> dict:
         """Build request body for Bedrock."""
         system_prompt, converted_messages = self._convert_messages(messages)
+        resolved_max_tokens = max_tokens if max_tokens is not None else self.config.max_tokens
 
         body = {
             "messages": converted_messages,
@@ -70,8 +89,8 @@ class BedrockProvider(Provider):
             },
         }
 
-        if max_tokens:
-            body["inferenceConfig"]["maxTokens"] = max_tokens
+        if resolved_max_tokens:
+            body["inferenceConfig"]["maxTokens"] = resolved_max_tokens
 
         if system_prompt:
             body["system"] = [{"text": system_prompt}]
@@ -87,11 +106,30 @@ class BedrockProvider(Provider):
         **kwargs,
     ) -> Response:
         """Generate a completion."""
-        body = self._build_request_body(messages, model, temperature, max_tokens)
+        normalized_messages = normalize_messages(messages, BEDROCK_COMPAT)
+        kwargs = apply_thinking_level(kwargs, BEDROCK_COMPAT)
+        body = self._build_request_body(normalized_messages, model, temperature, max_tokens)
+        thinking = kwargs.pop("thinking", None)
+        if thinking is not None:
+            body["additionalModelRequestFields"] = {
+                **body.get("additionalModelRequestFields", {}),
+                "thinking": thinking,
+            }
+        if self._is_adaptive_claude_model(model) and thinking is not None:
+            effort = "xhigh" if thinking.get("budget_tokens") == 16384 else "high"
+            body["additionalModelRequestFields"] = {
+                **body.get("additionalModelRequestFields", {}),
+                "thinking": {"type": "adaptive", "display": "summarized"},
+                "output_config": {"effort": effort},
+            }
+        headers = self._sanitize_request_headers(kwargs.pop("headers", None))
+        if headers:
+            body["requestMetadata"] = headers
 
         response = self.client.converse(
             modelId=model,
             **body,
+            **kwargs,
         )
 
         output = response["output"]["message"]
@@ -121,31 +159,83 @@ class BedrockProvider(Provider):
         **kwargs,
     ) -> Iterator[StreamChunk]:
         """Stream a completion."""
-        body = self._build_request_body(messages, model, temperature, max_tokens)
+        normalized_messages = normalize_messages(messages, BEDROCK_COMPAT)
+        kwargs = apply_thinking_level(kwargs, BEDROCK_COMPAT)
+        body = self._build_request_body(normalized_messages, model, temperature, max_tokens)
+        thinking = kwargs.pop("thinking", None)
+        if thinking is not None:
+            body["additionalModelRequestFields"] = {
+                **body.get("additionalModelRequestFields", {}),
+                "thinking": thinking,
+            }
+        if self._is_adaptive_claude_model(model) and thinking is not None:
+            effort = "xhigh" if thinking.get("budget_tokens") == 16384 else "high"
+            body["additionalModelRequestFields"] = {
+                **body.get("additionalModelRequestFields", {}),
+                "thinking": {"type": "adaptive", "display": "summarized"},
+                "output_config": {"effort": effort},
+            }
+        headers = self._sanitize_request_headers(kwargs.pop("headers", None))
+        if headers:
+            body["requestMetadata"] = headers
 
         response = self.client.converse_stream(
             modelId=model,
             **body,
+            **kwargs,
         )
 
         stream = response.get("stream")
         if stream:
+            # Accumulate toolUse blocks (name/id arrive on contentBlockStart,
+            # input JSON arrives in contentBlockDelta fragments) and usage
+            # (metadata event), emitting them on a trailing chunk.
+            tool_blocks: dict[int, dict] = {}
+            usage: dict[str, int] | None = None
             for event in stream:
-                if "contentBlockDelta" in event:
-                    delta = event["contentBlockDelta"]["delta"]
+                if "contentBlockStart" in event:
+                    start = event["contentBlockStart"]
+                    idx = start.get("contentBlockIndex", 0)
+                    tool_use = start.get("start", {}).get("toolUse")
+                    if tool_use:
+                        tool_blocks[idx] = {
+                            "id": tool_use.get("toolUseId", ""),
+                            "name": tool_use.get("name", ""),
+                            "arguments": "",
+                        }
+                elif "contentBlockDelta" in event:
+                    block = event["contentBlockDelta"]
+                    delta = block["delta"]
                     if "text" in delta:
-                        yield StreamChunk(
-                            content=delta["text"],
-                            finish_reason=None,
-                            metadata={},
-                        )
+                        yield StreamChunk(content=delta["text"], finish_reason=None, metadata={})
+                    elif "toolUse" in delta:
+                        idx = block.get("contentBlockIndex", 0)
+                        tool_blocks.setdefault(idx, {"id": "", "name": "", "arguments": ""})[
+                            "arguments"
+                        ] += delta["toolUse"].get("input", "")
+                elif "metadata" in event:
+                    u = event["metadata"].get("usage") or {}
+                    if u:
+                        usage = {
+                            "input_tokens": int(u.get("inputTokens", 0) or 0),
+                            "output_tokens": int(u.get("outputTokens", 0) or 0),
+                            "cached_tokens": int(u.get("cacheReadInputTokens", 0) or 0),
+                            "total_tokens": int(u.get("totalTokens", 0) or 0),
+                        }
                 elif "messageStop" in event:
                     stop_reason = event["messageStop"].get("stopReason", "stop")
-                    yield StreamChunk(
-                        content="",
-                        finish_reason=stop_reason,
-                        metadata={},
-                    )
+                    yield StreamChunk(content="", finish_reason=stop_reason, metadata={})
+
+            tool_calls = [
+                {
+                    "id": tb["id"],
+                    "type": "function",
+                    "function": {"name": tb["name"], "arguments": tb["arguments"] or "{}"},
+                }
+                for _, tb in sorted(tool_blocks.items())
+            ]
+            if tool_calls or usage:
+                yield StreamChunk(content="", tool_calls=tool_calls or None, usage=usage)
 
     async def acomplete(
         self,

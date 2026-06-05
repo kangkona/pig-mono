@@ -27,6 +27,7 @@ def test_session_info_creation(temp_workspace):
 
     info = SessionInfo(path)
     assert info.name == "test"
+    assert info.file_stem.startswith("test-")
     assert info.path == path
 
 
@@ -111,6 +112,16 @@ def test_session_manager_get_most_recent(temp_workspace):
     assert recent.name == "second"
 
 
+def test_session_manager_find_by_file_stem(temp_workspace):
+    session = Session(name="file-stem", workspace=str(temp_workspace), auto_save=False)
+    path = session.save()
+
+    mgr = SessionManager(temp_workspace)
+    found = mgr.find_session(path.stem)
+
+    assert found == path
+
+
 def test_session_manager_find_by_name(temp_workspace):
     """Test finding session by name."""
     session = Session(name="findme", workspace=str(temp_workspace), auto_save=False)
@@ -122,12 +133,97 @@ def test_session_manager_find_by_name(temp_workspace):
     assert found == path
 
 
+def test_session_manager_find_by_explicit_path(temp_workspace):
+    session = Session(name="find-by-path", workspace=str(temp_workspace), auto_save=False)
+    path = session.save()
+
+    mgr = SessionManager(temp_workspace)
+    found = mgr.find_session(str(path))
+
+    assert found == path
+
+
+def test_session_manager_find_by_relative_path(temp_workspace):
+    session = Session(name="relative-path", workspace=str(temp_workspace), auto_save=False)
+    path = session.save()
+
+    mgr = SessionManager(temp_workspace)
+    found = mgr.find_session(str(path.relative_to(temp_workspace)))
+
+    assert found == path
+
+
+def test_session_manager_rejects_explicit_path_outside_sessions_dir(temp_workspace, tmp_path):
+    external_path = tmp_path / "external.jsonl"
+    external_path.write_text("{}\n")
+
+    mgr = SessionManager(temp_workspace)
+
+    assert mgr.find_session(str(external_path)) is None
+
+
+def test_session_manager_prefers_session_name_over_unrelated_workspace_path(temp_workspace):
+    session = Session(name="findme", workspace=str(temp_workspace), auto_save=False)
+    path = session.save()
+    (temp_workspace / "findme").mkdir()
+
+    mgr = SessionManager(temp_workspace)
+
+    assert mgr.find_session("findme") == path
+
+
 def test_session_manager_find_missing(temp_workspace):
     """Test finding non-existent session."""
     mgr = SessionManager(temp_workspace)
     found = mgr.find_session("missing")
 
     assert found is None
+
+
+def test_session_manager_uses_env_session_dir(tmp_path, monkeypatch):
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    session_dir = tmp_path / "custom-sessions"
+    monkeypatch.setenv("PIG_CODING_AGENT_SESSION_DIR", str(session_dir))
+
+    mgr = SessionManager(workspace)
+
+    assert mgr.sessions_dir == session_dir
+
+
+def test_session_manager_scopes_custom_session_dir_to_current_workspace(tmp_path, monkeypatch):
+    workspace1 = tmp_path / "workspace-1"
+    workspace2 = tmp_path / "workspace-2"
+    workspace1.mkdir()
+    workspace2.mkdir()
+    session_dir = tmp_path / "custom-sessions"
+    monkeypatch.setenv("PIG_CODING_AGENT_SESSION_DIR", str(session_dir))
+
+    session1 = Session(name="one", workspace=str(workspace1), auto_save=False)
+    session1.add_message("user", "hello")
+    session1.save()
+
+    session2 = Session(name="two", workspace=str(workspace2), auto_save=False)
+    session2.add_message("user", "world")
+    session2.save()
+
+    mgr1 = SessionManager(workspace1)
+    sessions = mgr1.list_sessions()
+
+    assert [session.name for session in sessions] == ["one"]
+    assert mgr1.find_session("two") is None
+
+
+def test_session_manager_explicit_session_dir_overrides_env(tmp_path, monkeypatch):
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    env_session_dir = tmp_path / "env-sessions"
+    explicit_session_dir = tmp_path / "explicit-sessions"
+    monkeypatch.setenv("PIG_CODING_AGENT_SESSION_DIR", str(env_session_dir))
+
+    mgr = SessionManager(workspace, session_dir=explicit_session_dir)
+
+    assert mgr.sessions_dir == explicit_session_dir
 
 
 def test_session_manager_delete(temp_workspace):

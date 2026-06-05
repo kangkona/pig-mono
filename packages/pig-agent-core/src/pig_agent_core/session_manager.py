@@ -1,7 +1,37 @@
 """Session manager for listing and selecting sessions."""
 
+import os
+import re
 from datetime import datetime
 from pathlib import Path
+
+_SESSION_ID_RE = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$")
+_SESSION_DIR_ENV = "PIG_CODING_AGENT_SESSION_DIR"
+
+
+def resolve_session_dir(
+    workspace: Path | None = None,
+    session_dir: str | Path | None = None,
+) -> Path:
+    """Resolve the effective session directory for a workspace."""
+    if session_dir:
+        return Path(session_dir).expanduser().resolve()
+
+    env_dir = os.environ.get(_SESSION_DIR_ENV)
+    if env_dir:
+        return Path(env_dir).expanduser().resolve()
+
+    base = Path(workspace) if workspace else Path.cwd()
+    return base / ".sessions"
+
+
+def assert_valid_session_id(session_id: str) -> None:
+    """Validate session ids used for automation and explicit session selection."""
+    if not _SESSION_ID_RE.fullmatch(session_id):
+        raise ValueError(
+            "Session id must be non-empty, contain only alphanumeric characters, '-', '_', "
+            "and '.', and start and end with an alphanumeric character"
+        )
 
 
 class SessionInfo:
@@ -14,9 +44,11 @@ class SessionInfo:
             path: Path to session file
         """
         self.path = path
-        self.name = path.stem
+        self.file_stem = path.stem
+        self.name = self.file_stem
         self.modified = datetime.fromtimestamp(path.stat().st_mtime)
         self.size = path.stat().st_size
+        self.workspace: Path | None = None
 
         # Try to load header for more info
         try:
@@ -24,11 +56,15 @@ class SessionInfo:
 
             with open(path) as f:
                 header = json.loads(f.readline())
-                self.session_name = header.get("name", self.name)
+                self.session_name = header.get("name", self.file_stem)
+                self.name = self.session_name
+                workspace = header.get("workspace")
+                if isinstance(workspace, str) and workspace:
+                    self.workspace = Path(workspace).expanduser().resolve()
                 self.created = datetime.fromisoformat(header["created_at"])
                 self.entries = header.get("metadata", {}).get("entries", 0)
         except Exception:
-            self.session_name = self.name
+            self.session_name = self.file_stem
             self.created = self.modified
             self.entries = 0
 
@@ -39,14 +75,18 @@ class SessionInfo:
 class SessionManager:
     """Manages multiple sessions."""
 
-    def __init__(self, workspace: Path | None = None):
+    def __init__(self, workspace: Path | None = None, session_dir: str | Path | None = None):
         """Initialize session manager.
 
         Args:
             workspace: Workspace directory
+            session_dir: Explicit session directory override
         """
         self.workspace = Path(workspace) if workspace else Path.cwd()
-        self.sessions_dir = self.workspace / ".sessions"
+        self.sessions_dir = resolve_session_dir(self.workspace, session_dir)
+        self._filter_by_workspace = (
+            session_dir is not None or os.environ.get(_SESSION_DIR_ENV) is not None
+        )
 
     def list_sessions(self, limit: int | None = None) -> list[SessionInfo]:
         """List available sessions.
@@ -64,6 +104,11 @@ class SessionManager:
         for session_file in self.sessions_dir.glob("*.jsonl"):
             try:
                 info = SessionInfo(session_file)
+                if self._filter_by_workspace and info.workspace not in {
+                    None,
+                    self.workspace.resolve(),
+                }:
+                    continue
                 sessions.append(info)
             except Exception as e:
                 print(f"Warning: Failed to load session info from {session_file}: {e}")
@@ -85,6 +130,29 @@ class SessionManager:
         sessions = self.list_sessions(limit=1)
         return sessions[0] if sessions else None
 
+    def _resolve_explicit_session_path(self, name_or_id: str) -> Path | None:
+        """Resolve a path candidate only when it points inside the active sessions directory."""
+        candidate = Path(name_or_id).expanduser()
+        session_root = self.sessions_dir.resolve()
+
+        path_candidates: list[Path] = []
+        if candidate.is_absolute():
+            path_candidates.append(candidate)
+        else:
+            path_candidates.append((self.workspace / candidate).resolve())
+
+        for path_candidate in path_candidates:
+            if not path_candidate.exists() or not path_candidate.is_file():
+                continue
+            resolved = path_candidate.resolve()
+            if resolved.suffix != ".jsonl":
+                continue
+            if not resolved.is_relative_to(session_root):
+                continue
+            return resolved
+
+        return None
+
     def find_session(self, name_or_id: str) -> Path | None:
         """Find a session by name or partial ID.
 
@@ -94,11 +162,19 @@ class SessionManager:
         Returns:
             Path to session file if found
         """
+        explicit_path = self._resolve_explicit_session_path(name_or_id)
+        if explicit_path is not None:
+            return explicit_path
+
         sessions = self.list_sessions()
 
         for info in sessions:
             # Match by name
-            if info.session_name == name_or_id or info.name == name_or_id:
+            if (
+                info.session_name == name_or_id
+                or info.name == name_or_id
+                or info.file_stem == name_or_id
+            ):
                 return info.path
 
             # Match by partial ID (from header)

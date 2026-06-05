@@ -1,9 +1,11 @@
 """Tests for CodingAgent."""
 
+import json
 from unittest.mock import Mock, patch
 
 import pytest
-from pig_coding_agent.agent import CodingAgent
+from pig_agent_core import Session
+from pig_coding_agent.agent import CodingAgent, SessionExitRequested
 
 
 @pytest.fixture
@@ -87,7 +89,7 @@ def test_coding_agent_handle_exit_command(mock_llm, temp_workspace):
     """Test handling exit command."""
     agent = CodingAgent(llm=mock_llm, workspace=str(temp_workspace))
 
-    with pytest.raises(KeyboardInterrupt):
+    with pytest.raises(SessionExitRequested):
         agent._handle_command("/exit")
 
 
@@ -95,7 +97,7 @@ def test_coding_agent_handle_quit_command(mock_llm, temp_workspace):
     """Test handling quit command."""
     agent = CodingAgent(llm=mock_llm, workspace=str(temp_workspace))
 
-    with pytest.raises(KeyboardInterrupt):
+    with pytest.raises(SessionExitRequested):
         agent._handle_command("/quit")
 
 
@@ -161,3 +163,236 @@ def test_coding_agent_verbose_mode(mock_llm, temp_workspace):
 
     assert agent.verbose is True
     assert agent.agent.verbose is True
+
+
+def test_coding_agent_reuses_existing_session_by_session_id(mock_llm, temp_workspace):
+    session = Session(name="existing", workspace=str(temp_workspace), auto_save=False)
+    session.add_message("user", "hello")
+    save_path = session.save()
+    assert save_path.exists()
+
+    agent = CodingAgent(
+        llm=mock_llm,
+        workspace=str(temp_workspace),
+        verbose=False,
+        session_id=session.id,
+    )
+
+    assert agent.session.id == session.id
+    assert agent.session.name == "existing"
+    assert len(agent.session.tree.entries) == 1
+
+
+def test_coding_agent_creates_new_session_when_session_id_missing(mock_llm, temp_workspace):
+    agent = CodingAgent(
+        llm=mock_llm,
+        workspace=str(temp_workspace),
+        verbose=False,
+        session_id="manual-session-id",
+    )
+
+    assert agent.session.id == "manual-session-id"
+
+
+def test_coding_agent_preserves_full_explicit_session_id_in_saved_filename(
+    mock_llm, temp_workspace
+):
+    agent = CodingAgent(
+        llm=mock_llm,
+        workspace=str(temp_workspace),
+        verbose=False,
+        session_id="manual-session-id",
+    )
+
+    saved = agent.session.save()
+
+    assert saved.name == "coding-session-manual-session-id.jsonl"
+
+
+def test_coding_agent_uses_env_session_dir_for_new_sessions(mock_llm, tmp_path, monkeypatch):
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    session_dir = tmp_path / "custom-sessions"
+    monkeypatch.setenv("PIG_CODING_AGENT_SESSION_DIR", str(session_dir))
+
+    agent = CodingAgent(
+        llm=mock_llm,
+        workspace=str(workspace),
+        verbose=False,
+    )
+
+    saved = agent.session.save()
+    assert saved.parent == session_dir
+
+
+def test_list_sessions_reports_resolved_env_session_dir(mock_llm, tmp_path, monkeypatch):
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    session_dir = tmp_path / "custom-sessions"
+    monkeypatch.setenv("PIG_CODING_AGENT_SESSION_DIR", str(session_dir))
+
+    agent = CodingAgent(
+        llm=mock_llm,
+        workspace=str(workspace),
+        verbose=False,
+    )
+    agent.ui = Mock()
+
+    agent._list_sessions()
+
+    messages = [call.args[0] for call in agent.ui.system.call_args_list]
+    assert f"Sessions are saved to: {session_dir}" in messages
+
+
+def test_coding_agent_explicit_session_dir_overrides_env(mock_llm, tmp_path, monkeypatch):
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    env_session_dir = tmp_path / "env-sessions"
+    explicit_session_dir = tmp_path / "explicit-sessions"
+    monkeypatch.setenv("PIG_CODING_AGENT_SESSION_DIR", str(env_session_dir))
+
+    agent = CodingAgent(
+        llm=mock_llm,
+        workspace=str(workspace),
+        verbose=False,
+        session_dir=explicit_session_dir,
+    )
+
+    saved = agent.session.save()
+    assert saved.parent == explicit_session_dir
+
+
+def test_coding_agent_uses_project_config_session_dir_when_env_missing(mock_llm, tmp_path):
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    session_dir = tmp_path / "config-sessions"
+    config_dir = workspace / ".agents"
+    config_dir.mkdir()
+    (config_dir / "config.json").write_text(
+        json.dumps(
+            {
+                "session_dir": str(session_dir),
+            }
+        )
+    )
+
+    agent = CodingAgent(
+        llm=mock_llm,
+        workspace=str(workspace),
+        verbose=False,
+    )
+
+    saved = agent.session.save()
+    assert saved.parent == session_dir
+
+
+def test_coding_agent_uses_global_config_session_dir_when_project_missing(
+    mock_llm, tmp_path, monkeypatch
+):
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    session_dir = tmp_path / "global-sessions"
+    fake_home = tmp_path / "home"
+    (fake_home / ".agents").mkdir(parents=True)
+    monkeypatch.setenv("HOME", str(fake_home))
+    ((fake_home / ".agents") / "config.json").write_text(
+        json.dumps(
+            {
+                "session_dir": str(session_dir),
+            }
+        )
+    )
+
+    agent = CodingAgent(
+        llm=mock_llm,
+        workspace=str(workspace),
+        verbose=False,
+    )
+
+    saved = agent.session.save()
+    assert saved.parent == session_dir
+
+
+def test_coding_agent_project_config_session_dir_overrides_global_config(
+    mock_llm, tmp_path, monkeypatch
+):
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    global_session_dir = tmp_path / "global-sessions"
+    project_session_dir = tmp_path / "project-sessions"
+    fake_home = tmp_path / "home"
+    (fake_home / ".agents").mkdir(parents=True)
+    monkeypatch.setenv("HOME", str(fake_home))
+    ((fake_home / ".agents") / "config.json").write_text(
+        json.dumps(
+            {
+                "session_dir": str(global_session_dir),
+            }
+        )
+    )
+    agents_dir = workspace / ".agents"
+    agents_dir.mkdir()
+    (agents_dir / "config.json").write_text(json.dumps({"session_dir": str(project_session_dir)}))
+
+    agent = CodingAgent(
+        llm=mock_llm,
+        workspace=str(workspace),
+        verbose=False,
+    )
+
+    saved = agent.session.save()
+    assert saved.parent == project_session_dir
+
+
+def test_coding_agent_fork_keeps_explicit_session_id(mock_llm, temp_workspace):
+    source = Session(name="existing", workspace=str(temp_workspace), auto_save=False)
+    source.add_message("user", "hello")
+    source.add_message("assistant", "world")
+    session_path = source.save()
+
+    agent = CodingAgent(
+        llm=mock_llm,
+        workspace=str(temp_workspace),
+        verbose=False,
+        session_id="fork-target-id",
+        fork_source_path=session_path,
+    )
+
+    assert agent.session.id == "fork-target-id"
+    assert agent.session.name == "existing-fork"
+    assert len(agent.session.tree.entries) == 2
+
+
+def test_coding_agent_verbose_false_suppresses_startup_prints_on_resume(mock_llm, temp_workspace):
+    session = Session(name="existing", workspace=str(temp_workspace), auto_save=False)
+    session.add_message("user", "hello")
+    session_path = session.save()
+
+    mock_skill_manager = Mock()
+    mock_skill_manager.__len__ = Mock(return_value=2)
+    mock_prompt_manager = Mock()
+    mock_prompt_manager.__len__ = Mock(return_value=3)
+
+    with (
+        patch("pig_coding_agent.agent.SkillManager", return_value=mock_skill_manager),
+        patch("pig_coding_agent.agent.PromptManager", return_value=mock_prompt_manager),
+        patch("builtins.print") as mock_print,
+    ):
+        CodingAgent(
+            llm=mock_llm,
+            workspace=str(temp_workspace),
+            verbose=False,
+            session_path=session_path,
+        )
+
+    mock_print.assert_not_called()
+
+
+def test_coding_agent_rejects_invalid_manual_session_id(mock_llm, temp_workspace):
+    with pytest.raises(ValueError, match="Session id must be non-empty"):
+        CodingAgent(
+            llm=mock_llm,
+            workspace=str(temp_workspace),
+            verbose=False,
+            session_id="-bad",
+        )

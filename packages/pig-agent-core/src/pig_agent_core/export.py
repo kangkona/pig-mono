@@ -1,5 +1,6 @@
 """Session export functionality (HTML, Markdown, etc.)."""
 
+import html
 from datetime import datetime
 from pathlib import Path
 
@@ -172,16 +173,16 @@ class SessionExporter:
             messages_html.append(msg_html)
 
         # Fill template
-        html = SessionExporter.HTML_TEMPLATE.format(
-            title=title or session.name,
-            session_id=session.id[:8],
+        page_html = SessionExporter.HTML_TEMPLATE.format(
+            title=html.escape(title or session.name),
+            session_id=html.escape(session.id[:8]),
             export_time=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             entry_count=len(conversation),
             messages_html="\n".join(messages_html),
         )
 
         # Write file
-        output_path.write_text(html)
+        output_path.write_text(page_html)
 
         return output_path
 
@@ -195,7 +196,6 @@ class SessionExporter:
         Returns:
             HTML-formatted content
         """
-        import html
         import re
 
         # Escape HTML

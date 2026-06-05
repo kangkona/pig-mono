@@ -14,6 +14,7 @@ class Config(BaseModel):
     timeout: int = Field(default=30, ge=1)
     max_retries: int = Field(default=3, ge=0)
     base_url: str | None = None
+    compat_mode: str | None = None
 
     class Config:
         """Pydantic config."""

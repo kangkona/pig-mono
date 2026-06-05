@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, Mock
 import pytest
 from pig_agent_core import Agent, tool
 from pig_agent_core.models import AgentState
+from pig_llm import StreamChunk
 
 
 @pytest.fixture
@@ -48,6 +49,8 @@ def test_agent_add_tool(mock_llm):
 
     assert len(agent.registry) == 1
     assert "my_tool" in agent.registry
+    schemas = agent.registry.get_schemas()
+    assert [schema["function"]["name"] for schema in schemas] == ["my_tool"]
 
 
 def test_agent_with_tools(mock_llm):
@@ -140,23 +143,10 @@ async def test_agent_respond_stream_basic():
     mock_llm = Mock()
     mock_llm.config = Mock(model="test-model")
 
-    # Mock streaming response
+    # Mock streaming response (StreamChunk shape: text deltas as .content)
     async def mock_stream():
-        # Simulate streaming chunks
-        chunk1 = Mock()
-        chunk1.choices = [Mock()]
-        chunk1.choices[0].delta = Mock()
-        chunk1.choices[0].delta.content = "Hello"
-        chunk1.choices[0].delta.tool_calls = None
-
-        chunk2 = Mock()
-        chunk2.choices = [Mock()]
-        chunk2.choices[0].delta = Mock()
-        chunk2.choices[0].delta.content = " world"
-        chunk2.choices[0].delta.tool_calls = None
-
-        yield chunk1
-        yield chunk2
+        yield StreamChunk(content="Hello")
+        yield StreamChunk(content=" world")
 
     mock_llm.achat_stream = AsyncMock(return_value=mock_stream())
 
@@ -178,22 +168,10 @@ async def test_agent_respond_non_streaming():
     mock_llm = Mock()
     mock_llm.config = Mock(model="test-model")
 
-    # Mock streaming response
+    # Mock streaming response (StreamChunk shape)
     async def mock_stream():
-        chunk1 = Mock()
-        chunk1.choices = [Mock()]
-        chunk1.choices[0].delta = Mock()
-        chunk1.choices[0].delta.content = "Complete"
-        chunk1.choices[0].delta.tool_calls = None
-
-        chunk2 = Mock()
-        chunk2.choices = [Mock()]
-        chunk2.choices[0].delta = Mock()
-        chunk2.choices[0].delta.content = " response"
-        chunk2.choices[0].delta.tool_calls = None
-
-        yield chunk1
-        yield chunk2
+        yield StreamChunk(content="Complete")
+        yield StreamChunk(content=" response")
 
     mock_llm.achat_stream = AsyncMock(return_value=mock_stream())
 
@@ -229,9 +207,109 @@ async def test_agent_respond_with_cancellation():
     cancel = asyncio.Event()
     cancel.set()
 
-    # Test cancellation
+    # Test cancellation: aborts cleanly, yielding nothing (no fake message).
     chunks = []
     async for chunk in agent.respond_stream("Hello", cancel=cancel):
         chunks.append(chunk)
 
-    assert chunks == ["Request was cancelled."]
+    assert chunks == []
+
+
+def _mock_llm_returning(content):
+    llm = Mock()
+    llm.config = Mock(model="test-model")
+    llm.chat.return_value = Mock(content=content, tool_calls=None)
+    return llm
+
+
+def test_verbose_log_renders_through_attached_ui_without_duplicate_turns():
+    """With a UI attached, turn echoes are suppressed and markup is rendered.
+
+    Regression: core Agent._log used a raw print(), so it (a) double-printed
+    User/Agent lines already shown by the UI and (b) emitted literal Rich
+    markup tags like '[bold blue]'.
+    """
+    import io
+
+    from rich.console import Console
+
+    ui = Mock()
+    ui.console = Console(file=io.StringIO(), force_terminal=True, width=80)
+
+    agent = Agent(llm=_mock_llm_returning("hi"), verbose=True)
+    agent.ui = ui
+
+    captured = io.StringIO()
+    import contextlib
+
+    with contextlib.redirect_stdout(captured):
+        agent.run("ping")
+
+    stdout_text = captured.getvalue()
+    ui_text = ui.console.file.getvalue()
+
+    # UI owns turn rendering -> no raw stdout echoes
+    assert "User:" not in stdout_text
+    assert "Agent:" not in stdout_text
+    # Markup must be rendered, never emitted literally
+    assert "[bold blue]" not in stdout_text
+    assert "[bold blue]" not in ui_text
+    # Execution trace still surfaces, now through the Rich console
+    assert "Iteration" in ui_text
+
+
+def test_verbose_log_does_not_parse_arbitrary_content_as_markup():
+    """Tool output containing '[...]' must render verbatim, never as Rich markup.
+
+    Regression: routing _log through the Rich console parsed interpolated
+    content as markup, which swallowed '[tag]'-looking substrings and raised
+    MarkupError on unbalanced tags like '[/]'.
+    """
+    import io
+
+    from rich.console import Console
+
+    ui = Mock()
+    ui.console = Console(file=io.StringIO(), force_terminal=True, width=100)
+
+    agent = Agent(llm=_mock_llm_returning("hi"), verbose=True)
+    agent.ui = ui
+
+    # Adversarial content that previously broke rendering
+    agent._log("✓ Result: WARN [deprecated] see [/] for details", style="green")
+
+    out = ui.console.file.getvalue()
+    assert "[deprecated]" in out  # not swallowed
+    assert "[/]" in out  # did not raise MarkupError
+    assert "[green]" not in out  # style applied via style=, not as a literal tag
+    assert "\x1b[32m" in out  # green actually applied
+
+
+def test_verbose_log_falls_back_to_print_without_ui():
+    """Headless library use keeps printing turns + trace (unchanged behavior)."""
+    import contextlib
+    import io
+
+    agent = Agent(llm=_mock_llm_returning("hi"), verbose=True)
+
+    captured = io.StringIO()
+    with contextlib.redirect_stdout(captured):
+        agent.run("ping")
+
+    text = captured.getvalue()
+    assert "User:" in text
+    assert "Agent:" in text
+    assert "Iteration" in text
+
+
+def test_format_tool_args_truncates_long_values():
+    """Long tool-call argument values are previewed + char-counted, not dumped."""
+    out = Agent._format_tool_args({"content": "A" * 5000, "path": "index.html"})
+    assert "(5000 chars)" in out
+    assert out.count("A") < 200  # preview only, not the whole 5000
+    assert "path='index.html'" in out
+
+
+def test_format_tool_args_keeps_short_values():
+    out = Agent._format_tool_args({"pattern": "foo", "path": "."})
+    assert out == "pattern='foo', path='.'"

@@ -7,6 +7,8 @@ from rich.json import JSON
 from rich.markdown import Markdown
 from rich.syntax import Syntax
 
+from .rendering import normalize_terminal_output, print_markdown_safely
+
 
 class Console:
     """Enhanced console for rich terminal output."""
@@ -20,7 +22,7 @@ class Console:
         self.console = RichConsole()
         self.theme = theme
 
-    def print(self, *args, style: str = "", **kwargs) -> None:
+    def print(self, *args: Any, style: str = "", **kwargs: Any) -> None:
         """Print with optional styling.
 
         Args:
@@ -28,7 +30,10 @@ class Console:
             style: Rich style string (e.g., "bold blue")
             **kwargs: Additional arguments for rich.print
         """
-        self.console.print(*args, style=style, **kwargs)
+        normalized_args = tuple(
+            normalize_terminal_output(arg) if isinstance(arg, str) else arg for arg in args
+        )
+        self.console.print(*normalized_args, style=style, **kwargs)
 
     def markdown(self, text: str) -> None:
         """Render markdown text.
@@ -36,8 +41,11 @@ class Console:
         Args:
             text: Markdown text to render
         """
-        md = Markdown(text)
-        self.console.print(md)
+        print_markdown_safely(
+            text,
+            renderer=Markdown,
+            printer=self.console.print,
+        )
 
     def code(self, code: str, language: str = "python", line_numbers: bool = False) -> None:
         """Display syntax highlighted code.
@@ -64,7 +72,7 @@ class Console:
         json_obj = JSON.from_data(data)
         self.console.print(json_obj)
 
-    def rule(self, title: str = "", style: str = ""):
+    def rule(self, title: str = "", style: str = "") -> None:
         """Print a horizontal rule.
 
         Args:

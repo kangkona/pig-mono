@@ -1,0 +1,264 @@
+"""Tests for safe terminal rendering helpers."""
+
+from pig_tui.rendering import (
+    hyperlink,
+    normalize_markdown_for_terminal,
+    normalize_terminal_output,
+    safe_wrap,
+    strip_terminal_sequences,
+    supports_osc8_hyperlinks,
+    terminal_size,
+    truncate_visible,
+    visible_length,
+)
+
+
+def test_safe_wrap_handles_very_long_ansi_line_without_stack_overflow() -> None:
+    line = "\x1b[31m" + ("x" * 5000) + "\x1b[0m"
+
+    wrapped = safe_wrap(line, 80)
+
+    assert wrapped
+    assert len(wrapped) > 10
+
+
+def test_safe_wrap_respects_display_width_for_wide_unicode() -> None:
+    wrapped = safe_wrap("你好世界", 4)
+
+    assert wrapped == ["你好", "世界"]
+
+
+def test_safe_wrap_preserves_ansi_sequences_while_wrapping() -> None:
+    wrapped = safe_wrap("\x1b[31m你好世界\x1b[0m", 4)
+
+    assert wrapped[0].startswith("\x1b[31m")
+    assert wrapped[-1].endswith("\x1b[0m")
+    stripped_parts = [segment.replace("\x1b[31m", "").replace("\x1b[0m", "") for segment in wrapped]
+    stripped = "".join(stripped_parts)
+    assert stripped == "你好世界"
+
+
+def test_safe_wrap_reopens_osc8_hyperlinks_across_wrapped_lines() -> None:
+    start = "\033]8;;https://example.com/file.py\033\\"
+    end = "\033]8;;\033\\"
+    wrapped = safe_wrap(f"{start}file.py{end}", 4)
+
+    assert len(wrapped) == 2
+    assert wrapped[0].startswith(start)
+    assert wrapped[0].endswith(end)
+    assert wrapped[1].startswith(start)
+    assert wrapped[1].endswith(end)
+    assert "".join(segment.replace(start, "").replace(end, "") for segment in wrapped) == "file.py"
+
+
+def test_safe_wrap_keeps_combining_marks_with_base_character() -> None:
+    wrapped = safe_wrap("e\u0301e\u0301e\u0301", 2)
+
+    assert wrapped == ["e\u0301e\u0301", "e\u0301"]
+
+
+def test_visible_truncate_counts_visible_text_not_ansi_sequences() -> None:
+    text = "\x1b[31mhello world\x1b[0m"
+
+    assert visible_length(text) == 11
+    truncated = truncate_visible(text, 6)
+    assert strip_terminal_sequences(truncated) == "hello…"
+    assert truncated.startswith("\x1b[31m")
+    assert truncated.endswith("\x1b[0m…")
+
+
+def test_visible_truncate_ignores_osc8_hyperlink_sequences() -> None:
+    text = "\033]8;;https://example.com/file.py\033\\file.py\033]8;;\033\\"
+
+    assert visible_length(text) == len("file.py")
+    assert strip_terminal_sequences(truncate_visible(text, 4)) == "fil…"
+
+
+def test_truncate_visible_preserves_osc8_hyperlink_controls_when_truncating() -> None:
+    start = "\033]8;;https://example.com/file.py\033\\"
+    end = "\033]8;;\033\\"
+    text = f"{start}file.py{end}"
+
+    truncated = truncate_visible(text, 4)
+
+    assert truncated.startswith(start)
+    assert truncated.endswith(end + "…")
+    assert visible_length(truncated) == 4
+
+
+def test_visible_length_counts_wide_unicode_cells() -> None:
+    assert visible_length("你好") == 4
+
+
+def test_visible_length_ignores_zero_width_combining_marks() -> None:
+    assert visible_length("e\u0301") == 1
+
+
+def test_normalize_terminal_output_expands_thai_and_lao_am_only_when_present() -> None:
+    assert normalize_terminal_output("ำ") == "ํา"
+    assert normalize_terminal_output("ຳ") == "ໍາ"
+    assert normalize_terminal_output("hello") == "hello"
+    assert visible_length(normalize_terminal_output("ำabc")) == visible_length("ำabc")
+    assert visible_length(normalize_terminal_output("ຳabc")) == visible_length("ຳabc")
+
+
+def test_truncate_visible_preserves_full_wide_character_boundaries() -> None:
+    assert truncate_visible("你好世界", 3) == "你…"
+
+
+def test_visible_length_ignores_generic_osc_sequences() -> None:
+    text = "\033]133;A\033\\hello\033]133;B\033\\"
+
+    assert visible_length(text) == len("hello")
+
+
+def test_truncate_visible_ignores_generic_osc_sequences() -> None:
+    text = "\033]133;A\033\\hello world\033]133;B\033\\"
+
+    assert truncate_visible(text, 6) == "hello…"
+
+
+def test_markdown_normalization_preserves_ordered_markers_and_tasks() -> None:
+    markdown = "10. keep marker\n- [x] shipped\n- [ ] pending"
+
+    normalized = normalize_markdown_for_terminal(markdown)
+
+    assert "10. keep marker" in normalized
+    assert "- [x] shipped" in normalized
+    assert "- [ ] pending" in normalized
+
+
+def test_hyperlink_falls_back_to_text_when_unsupported() -> None:
+    assert hyperlink("file.py", "file:///tmp/file.py", env={}) == "file.py"
+
+
+def test_hyperlink_emits_osc8_when_supported() -> None:
+    linked = hyperlink("file.py", "file:///tmp/file.py", env={"TERM_PROGRAM": "WezTerm"})
+
+    assert linked.startswith("\033]8;;file:///tmp/file.py")
+    assert linked.endswith("\033]8;;\033\\")
+
+
+def test_hyperlink_is_disabled_under_tmux_even_if_terminal_supports_it() -> None:
+    linked = hyperlink(
+        "file.py",
+        "file:///tmp/file.py",
+        env={"TERM_PROGRAM": "WezTerm", "TMUX": "/tmp/tmux-1/default,123,0"},
+    )
+
+    assert linked == "file.py"
+
+
+def test_hyperlink_is_enabled_under_tmux_when_client_supports_it() -> None:
+    linked = hyperlink(
+        "file.py",
+        "file:///tmp/file.py",
+        env={
+            "TERM_PROGRAM": "WezTerm",
+            "TMUX": "/tmp/tmux-1/default,123,0",
+            "TMUX_CLIENT_TERMFEATURES": "clipboard,hyperlinks,RGB",
+        },
+    )
+
+    assert linked.startswith("\033]8;;file:///tmp/file.py")
+    assert linked.endswith("\033]8;;\033\\")
+
+
+def test_hyperlink_uses_tmux_probe_when_client_features_are_not_exported() -> None:
+    linked = hyperlink(
+        "file.py",
+        "file:///tmp/file.py",
+        env={
+            "TERM_PROGRAM": "WezTerm",
+            "TMUX": "/tmp/tmux-1/default,123,0",
+        },
+        tmux_feature_probe=lambda: "clipboard,hyperlinks,RGB",
+    )
+
+    assert linked.startswith("\033]8;;file:///tmp/file.py")
+    assert linked.endswith("\033]8;;\033\\")
+
+
+def test_hyperlink_disables_tmux_links_when_probe_fails_closed() -> None:
+    linked = hyperlink(
+        "file.py",
+        "file:///tmp/file.py",
+        env={
+            "TERM_PROGRAM": "WezTerm",
+            "TMUX": "/tmp/tmux-1/default,123,0",
+        },
+        tmux_feature_probe=lambda: None,
+    )
+
+    assert linked == "file.py"
+
+
+def test_tmux_termname_uses_client_hyperlink_capability() -> None:
+    assert supports_osc8_hyperlinks(
+        {
+            "TERM": "tmux-256color",
+            "TMUX_CLIENT_TERMFEATURES": "hyperlinks",
+        }
+    )
+
+
+def test_tmux_termname_uses_probe_when_client_features_are_not_exported() -> None:
+    assert supports_osc8_hyperlinks(
+        {
+            "TERM": "tmux-256color",
+        },
+        tmux_feature_probe=lambda: "hyperlinks,clipboard",
+    )
+
+
+def test_jetbrains_terminal_disables_hyperlinks_but_keeps_truecolor_detection() -> None:
+    assert not supports_osc8_hyperlinks(
+        {
+            "TERMINAL_EMULATOR": "JetBrains-JediTerm",
+            "COLORTERM": "truecolor",
+        }
+    )
+
+
+def test_alacritty_terminal_supports_hyperlinks() -> None:
+    assert supports_osc8_hyperlinks({"TERM_PROGRAM": "alacritty"})
+
+
+def test_windows_terminal_supports_hyperlinks_without_term_program() -> None:
+    linked = hyperlink("file.py", "file:///tmp/file.py", env={"WT_SESSION": "1"})
+
+    assert linked.startswith("\033]8;;file:///tmp/file.py")
+    assert linked.endswith("\033]8;;\033\\")
+
+
+def test_terminal_size_uses_environment_fallback() -> None:
+    assert terminal_size(default=(1, 1)) in {(1, 1), terminal_size(default=(1, 1))}
+    assert supports_osc8_hyperlinks({"WT_SESSION": "1"})
+
+
+def test_terminal_size_ignores_invalid_environment_values() -> None:
+    import os
+    from unittest.mock import patch
+
+    with (
+        patch.dict(os.environ, {"COLUMNS": "abc", "LINES": "xyz"}, clear=False),
+        patch("os.get_terminal_size", side_effect=OSError()),
+    ):
+        assert terminal_size(default=(3, 2)) == (3, 2)
+
+
+def test_terminal_size_uses_partial_environment_fallbacks() -> None:
+    import os
+    from unittest.mock import patch
+
+    with (
+        patch.dict(os.environ, {"COLUMNS": "123"}, clear=True),
+        patch("os.get_terminal_size", side_effect=OSError()),
+    ):
+        assert terminal_size(default=(80, 24)) == (123, 24)
+
+    with (
+        patch.dict(os.environ, {"LINES": "45"}, clear=True),
+        patch("os.get_terminal_size", side_effect=OSError()),
+    ):
+        assert terminal_size(default=(80, 24)) == (80, 45)

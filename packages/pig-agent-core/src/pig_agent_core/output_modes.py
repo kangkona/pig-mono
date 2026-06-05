@@ -98,6 +98,7 @@ class RPCMode:
     def __init__(self):
         """Initialize RPC mode."""
         self.request_id = 0
+        self.last_shutdown_reason: str | None = None
 
     def read_request(self) -> dict | None:
         """Read a request from stdin.
@@ -111,10 +112,15 @@ class RPCMode:
                 return None
 
             return json.loads(line)
+        except KeyboardInterrupt:
+            self.last_shutdown_reason = "interrupt"
+            return None
         except json.JSONDecodeError as e:
+            self.last_shutdown_reason = "error"
             self.send_error(f"Invalid JSON: {e}")
             return None
         except Exception as e:
+            self.last_shutdown_reason = "error"
             self.send_error(f"Error reading request: {e}")
             return None
 
@@ -178,6 +184,7 @@ class RPCMode:
                 result = handler(method, params)
                 self.send_response(request_id, result)
             except Exception as e:
+                self.last_shutdown_reason = "error"
                 self.send_error(str(e), request_id)
 
 

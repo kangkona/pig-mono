@@ -2,7 +2,8 @@
 
 from unittest.mock import patch
 
-from pig_tui.chat import ChatUI
+from pig_tui.chat import ChatUI, MarkdownStreamWriter
+from pig_tui.rendering import normalize_markdown_for_terminal
 from pig_tui.theme import Theme
 
 
@@ -43,12 +44,76 @@ def test_chat_ui_assistant_message(mock_console):
 
 
 @patch("pig_tui.chat.Console")
+@patch("pig_tui.chat.Markdown")
+def test_chat_ui_normalizes_markdown_before_render(mock_markdown, mock_console):
+    chat = ChatUI()
+
+    chat.assistant("10. keep marker\n- [x] done")
+
+    mock_markdown.assert_called_once_with(
+        normalize_markdown_for_terminal("10. keep marker\n- [x] done")
+    )
+
+
+@patch("pig_tui.chat.Console")
+@patch("pig_tui.chat.Markdown", side_effect=ValueError("markdown exploded"))
+def test_chat_ui_falls_back_to_plain_text_when_markdown_render_fails(mock_markdown, mock_console):
+    chat = ChatUI()
+
+    chat.assistant("# Hello")
+
+    calls = chat.console.print.call_args_list
+    assert calls[0].args[0].endswith("Assistant:[/] ")
+    assert calls[0].kwargs["end"] == ""
+    assert calls[1].args == ("# Hello",)
+
+
+@patch("pig_tui.chat.Console")
+@patch("pig_tui.chat.Markdown", return_value=object())
+def test_chat_ui_falls_back_to_plain_text_when_printing_rendered_markdown_fails(
+    mock_markdown, mock_console
+):
+    chat = ChatUI()
+    chat.console.print.side_effect = [None, RuntimeError("render exploded"), None]
+
+    chat.assistant("# Hello")
+
+    calls = chat.console.print.call_args_list
+    assert calls[0].args[0].endswith("Assistant:[/] ")
+    assert calls[0].kwargs["end"] == ""
+    assert calls[1].args == (mock_markdown.return_value,)
+    assert calls[2].args == ("# Hello",)
+
+
+@patch("pig_tui.chat.Console")
 def test_chat_ui_system_message(mock_console):
     """Test displaying system message."""
     chat = ChatUI()
     chat.system("System ready")
 
     chat.console.print.assert_called()
+
+
+@patch("pig_tui.chat.Console")
+def test_chat_ui_system_message_normalizes_thai_and_lao_am(mock_console):
+    chat = ChatUI()
+    chat.system("ำabc ຳdef")
+
+    rendered = chat.console.print.call_args.args[0]
+    assert "ําabc" in rendered
+    assert "ໍາdef" in rendered
+
+
+@patch("pig_tui.chat.Console")
+def test_assistant_stream_normalizes_thai_and_lao_am(mock_console):
+    chat = ChatUI()
+
+    with chat.assistant_stream() as writer:
+        writer.write("ำabc ຳdef")
+
+    stream_call = chat.console.print.call_args_list[0]
+    assert stream_call.args == ("ําabc ໍາdef",)
+    assert stream_call.kwargs["end"] == ""
 
 
 @patch("pig_tui.chat.Console")
@@ -87,3 +152,67 @@ def test_chat_ui_clear(mock_console):
     chat.clear()
 
     chat.console.clear.assert_called_once()
+
+
+def test_assistant_stream_markdown_renders_accumulated_markdown():
+    """The markdown stream writer accumulates text and live-renders it."""
+    import io
+    import re
+
+    chat = ChatUI()
+    chat.console.file = io.StringIO()
+
+    with chat.assistant_stream_markdown(refresh_per_second=4) as writer:
+        writer.write("# Heading\n")
+        writer.write("- item one\n")
+        writer.write("- item two")
+
+    assert writer.text == "# Heading\n- item one\n- item two"
+    plain = re.sub(r"\x1b\[[0-9;?]*[A-Za-z]", "", chat.console.file.getvalue())
+    assert "Heading" in plain
+    assert "item one" in plain
+
+
+def test_markdown_stream_writer_shows_then_drops_status_spinner():
+    """A spinner + elapsed status shows while busy and is dropped on finalize."""
+    import io
+    import re
+
+    from rich.console import Console
+
+    def render(renderable):
+        buf = io.StringIO()
+        Console(file=buf, force_terminal=True, width=40).print(renderable)
+        return re.sub(r"\x1b\[[0-9;?]*[A-Za-z]", "", buf.getvalue())
+
+    writer = MarkdownStreamWriter()
+    # Busy with no content yet -> status line only.
+    assert "working" in render(writer._renderable())
+    # Busy with content -> content + status.
+    writer.write("# Hi")
+    out = render(writer._renderable())
+    assert "Hi" in out and "working" in out
+    # Finalized -> status dropped.
+    writer.finalize()
+    final = render(writer._renderable())
+    assert "Hi" in final and "working" not in final
+
+
+def test_markdown_stream_writer_shows_input_affordance():
+    """A 'You ›' input line shows the in-progress steering text during a turn."""
+    import io
+    import re
+
+    from rich.console import Console
+
+    def render(r):
+        buf = io.StringIO()
+        Console(file=buf, force_terminal=True, width=50).print(r)
+        return re.sub(r"\x1b\[[0-9;?]*[A-Za-z]", "", buf.getvalue())
+
+    writer = MarkdownStreamWriter()
+    assert "You ›" in render(writer._renderable())
+    writer.set_input("add an AI mode")
+    assert "add an AI mode" in render(writer._renderable())
+    writer.finalize()
+    assert "You ›" not in render(writer._renderable())

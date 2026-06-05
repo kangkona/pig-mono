@@ -1,6 +1,7 @@
 """Configuration management for coding agent."""
 
 import json
+import os
 from pathlib import Path
 from typing import Any
 
@@ -26,6 +27,11 @@ class AgentConfig(BaseModel):
     # Session settings
     auto_save_session: bool = True
     session_cleanup_days: int = 30
+    session_dir: str | None = None
+
+    # Context / compaction settings
+    auto_compact: bool = True
+    auto_compact_threshold: float = Field(default=0.85, ge=0.0, le=1.0)
 
     # Display settings
     verbose: bool = True
@@ -70,9 +76,10 @@ class ConfigManager:
             workspace: Workspace directory
         """
         self.workspace = Path(workspace) if workspace else Path.cwd()
+        home_dir = Path(os.environ.get("HOME", Path.home())).expanduser()
 
         # Config file paths
-        self.global_config = Path.home() / ".agents" / "config.json"
+        self.global_config = home_dir / ".agents" / "config.json"
         self.project_config = self.workspace / ".agents" / "config.json"
 
     def load_config(self) -> AgentConfig:
@@ -138,6 +145,11 @@ class ConfigManager:
         """
         config = self.load_config()
         return getattr(config, key, None)
+
+    def get_session_dir(self) -> str | None:
+        """Get configured session directory if present."""
+        config = self.load_config()
+        return config.session_dir
 
     def set_config_value(self, key: str, value: Any, global_config: bool = False) -> None:
         """Set a specific config value.

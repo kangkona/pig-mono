@@ -1,5 +1,7 @@
 """Coding agent with file operations and code generation."""
 
+import asyncio
+import os
 from pathlib import Path
 
 from pig_agent_core import (
@@ -10,15 +12,21 @@ from pig_agent_core import (
     Session,
     SessionManager,
     SkillManager,
+    assert_valid_session_id,
 )
 from pig_agent_core.tools import Tool
-from pig_llm import LLM
-from pig_tui import ChatUI, InteractivePrompt
+from pig_llm import LLM, Message
+from pig_tui import ChatUI, InteractivePrompt, LiveInputListener, hyperlink
 
 from .billing import CostTracker
+from .config import ConfigManager
 from .file_reference import FileReferenceParser
 from .resilience import create_profile_manager_from_env, get_profile_status
 from .tools import CodeTools, FileTools, ShellTools
+
+
+class SessionExitRequested(Exception):
+    """Raised for explicit user-driven session exits like /exit and /quit."""
 
 
 class CodingAgent:
@@ -30,11 +38,15 @@ class CodingAgent:
         workspace: str = ".",
         verbose: bool = True,
         session_name: str | None = None,
+        session_id: str | None = None,
+        session_dir: str | Path | None = None,
         session_path: Path | None = None,
+        fork_source_path: Path | None = None,
         enable_extensions: bool = True,
         enable_skills: bool = True,
         enable_resilience: bool = True,
         enable_cost_tracking: bool = True,
+        excluded_tools: set[str] | None = None,
     ):
         """Initialize coding agent.
 
@@ -43,15 +55,30 @@ class CodingAgent:
             workspace: Working directory
             verbose: Enable verbose output
             session_name: Session name for auto-save
+            session_id: Explicit session ID for automation
+            session_dir: Explicit session directory override
             session_path: Path to load existing session
+            fork_source_path: Existing session path to fork into a new session
             enable_extensions: Enable extension system
             enable_skills: Enable skills system
             enable_resilience: Enable resilience (API key rotation, fallback)
             enable_cost_tracking: Enable cost tracking
+            excluded_tools: Tool names to disable for this agent
         """
         self.workspace = Path(workspace).resolve()
         self.llm = llm or LLM()
         self.verbose = verbose
+        self.excluded_tools = set(excluded_tools or set())
+        self._extensions_shutdown_done = False
+        self.config_manager = ConfigManager(self.workspace)
+        if session_dir is None and os.environ.get("PIG_CODING_AGENT_SESSION_DIR") is None:
+            session_dir = self.config_manager.get_session_dir()
+        self.sessions_dir = SessionManager(self.workspace, session_dir=session_dir).sessions_dir
+        self._session_start_reason = "startup"
+        self._previous_session_file: str | None = None
+
+        if session_id is not None:
+            assert_valid_session_id(session_id)
 
         # Initialize resilience (ProfileManager)
         self.profile_manager = None
@@ -69,15 +96,50 @@ class CodingAgent:
                 print("✓ Cost tracking enabled")
 
         # Initialize session
-        if session_path and session_path.exists():
+        if fork_source_path and fork_source_path.exists():
+            source_session = Session.load(fork_source_path)
+            conversation = source_session.get_current_conversation()
+            if conversation:
+                fork_name = session_name or f"{source_session.name}-fork"
+                self.session = source_session.fork(conversation[-1].id, fork_name)
+            else:
+                self.session = Session(
+                    name=session_name or f"{source_session.name}-fork",
+                    workspace=str(self.workspace),
+                    auto_save=True,
+                    session_dir=self.sessions_dir,
+                )
+            if session_id:
+                self.session.id = session_id
+            self._session_start_reason = "fork"
+            self._previous_session_file = str(fork_source_path)
+        elif session_path and session_path.exists():
             self.session = Session.load(session_path)
-            print(f"✓ Loaded session: {self.session.name}")
+            self._session_start_reason = "resume"
+            self._previous_session_file = str(session_path)
+            if verbose:
+                print(f"✓ Loaded session: {self.session.name}")
         else:
-            self.session = Session(
-                name=session_name or "coding-session",
-                workspace=str(self.workspace),
-                auto_save=True,
-            )
+            resolved_session_path = None
+            if session_id:
+                session_manager = SessionManager(self.workspace, session_dir=session_dir)
+                resolved_session_path = session_manager.find_session(session_id)
+
+            if resolved_session_path and resolved_session_path.exists():
+                self.session = Session.load(resolved_session_path)
+                self._session_start_reason = "resume"
+                self._previous_session_file = str(resolved_session_path)
+                if verbose:
+                    print(f"✓ Loaded session: {self.session.name}")
+            else:
+                self.session = Session(
+                    name=session_name or "coding-session",
+                    workspace=str(self.workspace),
+                    auto_save=True,
+                    session_dir=self.sessions_dir,
+                )
+                if session_id:
+                    self.session.id = session_id
 
         # Initialize tools
         file_tools = FileTools(str(self.workspace))
@@ -89,7 +151,7 @@ class CodingAgent:
         for tool_instance in [file_tools, code_tools, shell_tools]:
             for attr_name in dir(tool_instance):
                 attr = getattr(tool_instance, attr_name)
-                if isinstance(attr, Tool):
+                if isinstance(attr, Tool) and attr.name not in self.excluded_tools:
                     tools.append(attr)
 
         # Initialize context manager (needed by _get_system_prompt)
@@ -100,7 +162,7 @@ class CodingAgent:
         if enable_skills:
             self.skill_manager = SkillManager()
             self.skill_manager.discover_skills([])
-            if len(self.skill_manager) > 0:
+            if verbose and len(self.skill_manager) > 0:
                 print(f"✓ Loaded {len(self.skill_manager)} skills")
 
         # Create agent
@@ -112,7 +174,19 @@ class CodingAgent:
             verbose=verbose,
             profile_manager=self.profile_manager,
             billing_hook=self.cost_tracker,
+            # No iteration cap (pi-mono parity): turns run until natural
+            # completion, a terminate tool result, or user abort (Esc/Ctrl-C).
+            max_rounds=0,
         )
+        self.agent.session = self.session
+        self.agent.add_tool = self.add_tool
+
+        # When resuming/forking an existing session at startup, replay its
+        # conversation into the agent's LLM context so the model continues with
+        # the prior history (not just the persisted tree). No-op for a fresh
+        # session (empty conversation).
+        if self._session_start_reason in ("resume", "fork"):
+            self._rebuild_history_from_session()
 
         # Initialize extension manager
         self.extension_manager = None
@@ -123,7 +197,7 @@ class CodingAgent:
         # Initialize prompt manager
         self.prompt_manager = PromptManager()
         self.prompt_manager.discover_prompts([])
-        if len(self.prompt_manager) > 0:
+        if verbose and len(self.prompt_manager) > 0:
             print(f"✓ Loaded {len(self.prompt_manager)} prompt templates")
 
         # Initialize file reference parser
@@ -131,6 +205,13 @@ class CodingAgent:
 
         # Create UI
         self.ui = ChatUI(title="Coding Agent", show_timestamps=False)
+        self.agent.ui = self.ui
+
+        if self.extension_manager:
+            event = {"reason": self._session_start_reason}
+            if self._previous_session_file is not None:
+                event["previousSessionFile"] = self._previous_session_file
+            self.extension_manager.emit_event("session_start", event)
 
     def _load_extensions(self):
         """Load extensions from standard directories."""
@@ -147,6 +228,24 @@ class CodingAgent:
         for path in ext_paths:
             if path.exists():
                 self.extension_manager.load_from_directory(path)
+
+    def add_tool(self, tool: Tool) -> None:
+        """Register a tool unless it is excluded for this agent instance."""
+        if tool.name in self.excluded_tools:
+            return
+        Agent.add_tool(self.agent, tool)
+
+    def _shutdown_extensions(self, reason: str) -> None:
+        """Forward shutdown reason into extension cleanup lifecycle."""
+        if not self.extension_manager:
+            return
+        if self._extensions_shutdown_done:
+            return
+        self._extensions_shutdown_done = True
+        try:
+            self.extension_manager.cleanup(reason=reason)
+        except Exception:
+            pass
 
     def _get_system_prompt(self) -> str:
         """Get system prompt for coding agent."""
@@ -203,6 +302,13 @@ When generating code, provide clean, well-documented, production-ready code.
         "/resilience",
         "/cost",
         "/usage",
+        "/new",
+        "/resume",
+        "/clone",
+        "/name",
+        "/import",
+        "/copy",
+        "/settings",
     ]
 
     def _build_commands(self) -> list[str]:
@@ -220,9 +326,17 @@ When generating code, provide clean, well-documented, production-ready code.
         """Run interactive chat session."""
         self.ui.system(f"Workspace: {self.workspace}")
         self.ui.separator()
+        shutdown_reason = "normal"
+
+        # One event loop for the whole session. Per-turn asyncio.run() would
+        # create+close a loop each turn, but some provider SDKs (e.g. google
+        # genai) cache an httpx client bound to the first loop and then fail
+        # with "Event loop is closed" on the next turn.
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
 
         # Set up interactive prompt with completion and history
-        history_file = str(self.workspace / ".sessions" / ".input_history")
+        history_file = str(self.sessions_dir / ".input_history")
         prompt = InteractivePrompt(
             commands=self._build_commands(),
             workspace=str(self.workspace),
@@ -241,8 +355,10 @@ When generating code, provide clean, well-documented, production-ready code.
                 try:
                     user_input = prompt.ask("You> ")
                 except KeyboardInterrupt:
-                    continue
+                    shutdown_reason = "interrupt"
+                    break
                 except EOFError:
+                    shutdown_reason = "eof"
                     break
 
                 if not user_input:
@@ -288,26 +404,114 @@ When generating code, provide clean, well-documented, production-ready code.
                 # Display user message
                 self.ui.user(user_input[:200] + "..." if len(user_input) > 200 else user_input)
 
-                # Get agent response (with queue support)
-                response = self.agent.run(user_input)
+                # Run the turn as a cancellable streaming task (uncapped, live
+                # tokens, Esc to abort, type-to-steer). Ctrl-C during a turn aborts
+                # that turn and returns to the prompt, preserving the session.
+                cost_before = self._total_cost()
+                try:
+                    loop.run_until_complete(self._run_turn(user_input))
+                except KeyboardInterrupt:
+                    self.ui.system("[aborted]")
+                    continue
 
-                # Display response
-                self.ui.assistant(response.content)
+                # Show context-window usage + cost for the turn, and auto-compact
+                # before the context fills up.
+                self._show_turn_status(cost_before)
+                self._maybe_auto_compact()
 
-                # Add to session
-                if self.session:
-                    self.session.add_message("user", user_input)
-                    self.session.add_message("assistant", response.content)
-
+        except SessionExitRequested:
+            shutdown_reason = "normal"
         except KeyboardInterrupt:
-            pass
+            shutdown_reason = "interrupt"
+        except RuntimeError as exc:
+            if "lost terminal" in str(exc).lower():
+                shutdown_reason = "lost_terminal"
+            raise
         finally:
+            self._shutdown_extensions(shutdown_reason)
+
             # Clean up queued messages
             if self.agent.message_queue:
                 cleared = self.agent.message_queue.clear()
                 if cleared:
                     self.ui.system(f"\nCleared {len(cleared)} queued messages")
-            self.ui.system("\nGoodbye!")
+            # Always surface the resume command on exit (however the user left),
+            # like Claude Code — the session is auto-saved as messages arrive.
+            if self.session:
+                session_dir_hint = ""
+                if self.sessions_dir != self.workspace / ".sessions":
+                    session_dir_hint = f" --session-dir {self.sessions_dir}"
+                self.ui.system(
+                    f"💾 Session saved. Resume with:  "
+                    f"pig-code --session-id {self.session.id}{session_dir_hint}"
+                )
+                self.ui.system("(or pig-code --continue to resume the most recent session)")
+            self.ui.system("Goodbye!")
+
+            # Tear down the session event loop (and any provider clients bound
+            # to it) cleanly.
+            try:
+                loop.run_until_complete(loop.shutdown_asyncgens())
+            except Exception:
+                pass
+            asyncio.set_event_loop(None)
+            loop.close()
+
+    async def _run_turn(self, user_input: str) -> None:
+        """Stream one agent turn: live tokens, Esc-abort, type-to-steer.
+
+        Drives the cancellable streaming loop (uncapped). A LiveInputListener
+        watches the keyboard during the turn — Esc sets the cancel event
+        (aborting the turn and killing any in-flight tool), and a typed line is
+        injected as a steering message before the next model call. The session
+        records the user message plus whatever assistant text was produced
+        (including a partial turn on abort).
+        """
+        cancel = asyncio.Event()
+        parts: list[str] = []
+
+        def on_steering(line: str) -> None:
+            self.agent.message_queue.add_steering(line)
+            # Lightweight ack on submit so the typed line isn't lost; the core
+            # loop prints the full "⚡ Steering: …" when it actually injects it.
+            self.ui.system(f"  ↳ queued: {line[:60]}")
+
+        # The Markdown Live owns the screen; render the typed steering buffer
+        # inside it (echo=False) so there's always a visible "You ›" input line
+        # and the user's keystrokes show without fighting the Live cursor.
+        with self.ui.assistant_stream_markdown() as writer:
+            async with LiveInputListener(
+                cancel,
+                on_steering=on_steering,
+                on_change=writer.set_input,
+                completions=self._build_commands(),
+                echo=False,
+            ):
+                # Animate the spinner / elapsed timer while the turn runs so a
+                # long LLM or tool wait with no output still looks alive.
+                async def _tick() -> None:
+                    while True:
+                        await asyncio.sleep(0.4)
+                        writer.tick()
+
+                ticker = asyncio.create_task(_tick())
+                try:
+                    async for chunk in self.agent.respond_stream(
+                        user_input, cancel=cancel, max_iterations=0
+                    ):
+                        parts.append(chunk)
+                        writer.write(chunk)
+                finally:
+                    ticker.cancel()
+
+        if cancel.is_set():
+            self.ui.system("[aborted]")
+
+        if self.session:
+            self.session.add_message("user", user_input)
+            full = "".join(parts)
+            if full:
+                self.session.add_message("assistant", full)
 
     def _handle_command(self, command: str) -> None:
         """Handle slash commands.
@@ -318,7 +522,7 @@ When generating code, provide clean, well-documented, production-ready code.
         cmd = command.lower().strip()
 
         if cmd == "/exit" or cmd == "/quit":
-            raise KeyboardInterrupt()
+            raise SessionExitRequested()
 
         elif cmd == "/clear":
             self.agent.clear_history()
@@ -426,8 +630,37 @@ Tools: {len(self.agent.registry)}
         elif cmd.startswith("/resilience"):
             self._show_resilience_status()
 
-        elif cmd.startswith("/cost") or cmd.startswith("/usage"):
-            self._show_cost_summary()
+        elif cmd.startswith("/cost"):
+            self._show_cost_summary(title="Cost")
+
+        elif cmd.startswith("/usage"):
+            self._show_cost_summary(title="Usage")
+
+        elif cmd.startswith("/new"):
+            self._new_session()
+
+        elif cmd.startswith("/resume"):
+            # case-preserving arg (session name or id)
+            arg = command.strip().split(maxsplit=1)
+            self._resume_session(arg[1].strip() if len(arg) > 1 else None)
+
+        elif cmd.startswith("/clone"):
+            self._clone_session()
+
+        elif cmd.startswith("/name"):
+            arg = command.strip().split(maxsplit=1)
+            self._name_session(arg[1].strip() if len(arg) > 1 else None)
+
+        elif cmd.startswith("/import"):
+            arg = command.strip().split(maxsplit=1)
+            self._import_session(arg[1].strip() if len(arg) > 1 else None)
+
+        elif cmd.startswith("/copy"):
+            self._copy_last_message()
+
+        elif cmd.startswith("/settings"):
+            arg = command.strip().split(maxsplit=1)
+            self._show_settings(arg[1].strip() if len(arg) > 1 else None)
 
         elif cmd.startswith("/"):
             # Check if it's a prompt template
@@ -482,12 +715,370 @@ Tools: {len(self.agent.registry)}
 
         # Fork from last message
         name = fork_name or f"{self.session.name}-fork"
+        previous_session_file = self.session.save()
         fork = self.session.fork(conversation[-1].id, name)
-
         save_path = fork.save()
+        if self.extension_manager:
+            self.extension_manager.cleanup(
+                reason="fork",
+                target_session_file=str(previous_session_file),
+            )
+
+        self.session = fork
+        self.agent.session = self.session
+
+        if self.extension_manager:
+            self._load_extensions()
+            self.extension_manager.emit_event(
+                "session_start",
+                {"reason": "fork", "previousSessionFile": str(previous_session_file)},
+            )
+
         self.ui.system(f"✓ Forked session: {name}")
         self.ui.system(f"  Copied {len(fork.tree.entries)} entries")
         self.ui.system(f"  Saved to: {save_path}")
+
+    def _rebuild_history_from_session(self) -> None:
+        """Replay the active session's conversation into the agent's LLM context.
+
+        The session tree and the agent's in-memory history are separate stores;
+        switching sessions (resume/import/new/clone) must rebuild the context so
+        the model actually sees the loaded conversation.
+        """
+        system = None
+        if self.agent.history and self.agent.history[0].role == "system":
+            system = self.agent.history[0]
+        history: list[Message] = []
+        if system is not None:
+            history.append(system)
+        if self.session:
+            for entry in self.session.get_current_conversation():
+                # Skip plain system entries (the agent's own system prompt is
+                # already first); keep compacted summaries as context.
+                if entry.role == "system" and not (entry.metadata or {}).get("compacted"):
+                    continue
+                history.append(
+                    Message(
+                        role=entry.role,
+                        content=entry.content,
+                        metadata=entry.metadata or None,
+                    )
+                )
+        self.agent.history = history
+
+    def _switch_to_session(self, new_session: Session, reason: str) -> None:
+        """Persist the current session, swap to ``new_session``, and run the
+        extension lifecycle + context rebuild (shared by new/resume/clone/import).
+        """
+        previous_session_file = str(self.session.save()) if self.session else None
+        if self.extension_manager:
+            self.extension_manager.cleanup(reason=reason, target_session_file=previous_session_file)
+        self.session = new_session
+        self.agent.session = self.session
+        self._rebuild_history_from_session()
+        if self.extension_manager:
+            self._load_extensions()
+            self.extension_manager.emit_event(
+                "session_start",
+                {"reason": reason, "previousSessionFile": previous_session_file},
+            )
+
+    def _new_session(self) -> None:
+        """Start a fresh session, leaving the current one saved on disk."""
+        new_session = Session(
+            name="coding-session",
+            workspace=str(self.workspace),
+            auto_save=True,
+            session_dir=self.sessions_dir,
+        )
+        self._switch_to_session(new_session, reason="new")
+        self.ui.system(f"✓ Started a new session: {new_session.id}")
+
+    def _resume_session(self, name_or_id: str | None) -> None:
+        """Switch to a different saved session by name or id."""
+        if not name_or_id:
+            self._list_sessions()
+            self.ui.system("Resume one with: /resume <session-id-or-name>")
+            return
+        session_mgr = SessionManager(self.workspace, session_dir=self.sessions_dir)
+        path = session_mgr.find_session(name_or_id)
+        if not path or not path.exists():
+            self.ui.error(f"Session not found: {name_or_id}")
+            return
+        try:
+            loaded = Session.load(path)
+        except Exception as e:
+            self.ui.error(f"Failed to load session: {e}")
+            return
+        self._switch_to_session(loaded, reason="resume")
+        self.ui.system(f"✓ Resumed session: {loaded.name} ({loaded.id})")
+        self.ui.system(f"  {len(self.agent.history)} messages restored")
+
+    def _clone_session(self) -> None:
+        """Duplicate the current session at its current position."""
+        if not self.session:
+            self.ui.error("No session loaded")
+            return
+        conversation = self.session.get_current_conversation()
+        if not conversation:
+            self.ui.error("No messages to clone")
+            return
+        clone = self.session.fork(conversation[-1].id, f"{self.session.name}-clone")
+        save_path = clone.save()
+        self._switch_to_session(clone, reason="fork")
+        self.ui.system(f"✓ Cloned session: {clone.name} ({clone.id})")
+        self.ui.system(f"  Saved to: {save_path}")
+
+    def _name_session(self, name: str | None) -> None:
+        """Set the current session's display name."""
+        if not self.session:
+            self.ui.error("No session loaded")
+            return
+        if not name:
+            self.ui.system(f"Current session name: {self.session.name}")
+            self.ui.system("Set it with: /name <display name>")
+            return
+        self.session.name = name
+        self.session.save()
+        self.ui.system(f"✓ Session renamed to: {name}")
+
+    def _import_session(self, file_path: str | None) -> None:
+        """Import a session from a JSONL file and resume it."""
+        if not file_path:
+            self.ui.error("Usage: /import <path-to-session.jsonl>")
+            return
+        path = Path(file_path).expanduser()
+        if not path.exists():
+            self.ui.error(f"File not found: {path}")
+            return
+        try:
+            loaded = Session.load(path)
+        except Exception as e:
+            self.ui.error(f"Failed to import session: {e}")
+            return
+        # Re-home into our sessions dir so the import is tracked and resumable.
+        loaded.session_dir = self.sessions_dir
+        loaded._save_path = None
+        save_path = loaded.save()
+        self._switch_to_session(loaded, reason="resume")
+        self.ui.system(f"✓ Imported session: {loaded.name} ({loaded.id})")
+        self.ui.system(f"  Saved to: {save_path}")
+        self.ui.system(f"  {len(self.agent.history)} messages restored")
+
+    def _copy_last_message(self) -> None:
+        """Copy the last assistant reply to the system clipboard."""
+        last = None
+        for msg in reversed(self.agent.history):
+            if msg.role == "assistant" and msg.content:
+                last = msg.content
+                break
+        if not last:
+            self.ui.error("No assistant message to copy")
+            return
+        if self._copy_to_clipboard(last):
+            self.ui.system(f"✓ Copied last reply to clipboard ({len(last)} chars)")
+        else:
+            self.ui.error("Clipboard not available (install pbcopy/xclip/wl-copy)")
+
+    @staticmethod
+    def _copy_to_clipboard(text: str) -> bool:
+        import shutil
+        import subprocess
+        import sys
+
+        if sys.platform == "darwin":
+            candidates = [["pbcopy"]]
+        elif sys.platform == "win32":
+            candidates = [["clip"]]
+        else:
+            candidates = [
+                ["wl-copy"],
+                ["xclip", "-selection", "clipboard"],
+                ["xsel", "--clipboard", "--input"],
+            ]
+        for cmd in candidates:
+            if shutil.which(cmd[0]):
+                try:
+                    subprocess.run(cmd, input=text.encode("utf-8"), check=True)
+                    return True
+                except Exception:
+                    continue
+        return False
+
+    # Config keys settable via `/settings <key> <value>`.
+    _EDITABLE_SETTINGS = (
+        "auto_compact",
+        "auto_compact_threshold",
+        "temperature",
+        "verbose",
+        "show_timestamps",
+        "theme",
+        "auto_save_session",
+        "enable_cost_tracking",
+    )
+
+    def _show_settings(self, args: str | None = None) -> None:
+        """Show settings, or set one with `/settings <key> <value>`."""
+        if args:
+            self._set_setting(args)
+            return
+
+        cfg = self.config_manager.load_config()
+        lines = [
+            "**Settings**",
+            "",
+            f"Model:       {self.agent.llm.config.provider}/{self.agent.llm.config.model}",
+            f"Workspace:   {self.workspace}",
+            f"Session dir: {self.sessions_dir}",
+            f"Skills:      {'on' if self.skill_manager else 'off'}",
+            f"Extensions:  {'on' if self.extension_manager else 'off'}",
+            "",
+            "**Editable** (`/settings <key> <value>`):",
+        ]
+        for key in self._EDITABLE_SETTINGS:
+            lines.append(f"  {key} = {getattr(cfg, key, '?')}")
+        lines += [
+            "",
+            "**Config files:**",
+            f"  project: {self.config_manager.project_config}",
+            f"  global:  {self.config_manager.global_config}",
+            "",
+            "Also: /model <provider/model>, /login, /logout, /name <name>",
+        ]
+        self.ui.panel("\n".join(lines), title="Settings")
+
+    def _set_setting(self, args: str) -> None:
+        """Parse and persist `<key> <value>` into the project config."""
+        parts = args.split(maxsplit=1)
+        if len(parts) < 2:
+            self.ui.error("Usage: /settings <key> <value>")
+            return
+        key, raw = parts[0], parts[1].strip()
+        if key not in self._EDITABLE_SETTINGS:
+            self.ui.error(
+                f"Unknown or read-only setting: {key}. "
+                f"Editable: {', '.join(self._EDITABLE_SETTINGS)}"
+            )
+            return
+
+        current = getattr(self.config_manager.load_config(), key, None)
+        try:
+            if isinstance(current, bool):
+                value: object = raw.lower() in ("1", "true", "yes", "on")
+            elif isinstance(current, int) and not isinstance(current, bool):
+                value = int(raw)
+            elif isinstance(current, float):
+                value = float(raw)
+            else:
+                value = raw
+        except ValueError:
+            self.ui.error(f"Invalid value for {key}: {raw!r}")
+            return
+
+        if key == "auto_compact_threshold" and not (0.0 <= float(value) <= 1.0):
+            self.ui.error("auto_compact_threshold must be between 0.0 and 1.0")
+            return
+
+        self.config_manager.set_config_value(key, value)
+        self.ui.system(f"✓ {key} = {value}  (saved to {self.config_manager.project_config})")
+        if key not in ("auto_compact", "auto_compact_threshold"):
+            self.ui.system("  (applies on next launch)")
+
+    # Approximate context-window sizes by model-name substring (longest match wins).
+    _CONTEXT_WINDOWS = {
+        "gpt-4.1": 1_000_000,
+        "gpt-4o": 128_000,
+        "o1": 200_000,
+        "o3": 200_000,
+        "o4": 200_000,
+        "claude": 200_000,
+        "gemini-1.5": 1_000_000,
+        "gemini-2": 1_000_000,
+        "gemini-3": 1_000_000,
+        "deepseek": 128_000,
+        "llama": 128_000,
+        "mixtral": 32_000,
+        "qwen": 128_000,
+        "grok": 128_000,
+    }
+    _DEFAULT_CONTEXT_WINDOW = 128_000
+
+    def _context_window(self) -> int:
+        model = self.agent.llm.config.model or ""
+        # Prefer the generated model registry (real per-model context windows).
+        from pig_llm import get_model_info
+
+        info = get_model_info(model)
+        if info is not None:
+            return int(info["context_window"])
+        # Fall back to a coarse substring table, then a default.
+        lowered = model.lower()
+        best = None
+        for key, window in self._CONTEXT_WINDOWS.items():
+            if key in lowered and (best is None or len(key) > len(best[0])):
+                best = (key, window)
+        return best[1] if best else self._DEFAULT_CONTEXT_WINDOW
+
+    def _context_tokens(self) -> int | None:
+        usage = self.agent.last_llm_usage
+        if not usage:
+            return None
+        return int(usage.get("input_tokens", 0)) + int(usage.get("output_tokens", 0))
+
+    @staticmethod
+    def _fmt_k(n: int) -> str:
+        return f"{n / 1000:.0f}k" if n >= 1000 else str(n)
+
+    def _total_cost(self) -> float:
+        if not self.cost_tracker:
+            return 0.0
+        try:
+            return float(self.cost_tracker.get_usage_summary().get("total_cost", 0.0))
+        except Exception:
+            return 0.0
+
+    def _show_turn_status(self, cost_before: float) -> None:
+        """After a turn, show context-window usage and cost (delta + total)."""
+        parts: list[str] = []
+        ctx = self._context_tokens()
+        if ctx is not None:
+            window = self._context_window()
+            pct = (ctx / window * 100) if window else 0
+            parts.append(f"context {self._fmt_k(ctx)}/{self._fmt_k(window)} ({pct:.0f}%)")
+        if self.cost_tracker:
+            total = self._total_cost()
+            delta = total - cost_before
+            parts.append(f"+${delta:.4f} (total ${total:.4f})")
+        if parts:
+            self.ui.system(" · ".join(parts))
+
+    def _maybe_auto_compact(self) -> None:
+        """Auto-compact when the context window is nearly full (pi-mono parity).
+
+        Controlled by config: auto_compact (on/off) and auto_compact_threshold
+        (fraction of the context window, default 0.85).
+        """
+        cfg = self.config_manager.load_config()
+        if not cfg.auto_compact:
+            return
+        ctx = self._context_tokens()
+        if ctx is None:
+            return
+        window = self._context_window()
+        if ctx <= int(window * cfg.auto_compact_threshold):
+            return
+        self.ui.system(
+            f"⚠ Context {self._fmt_k(ctx)}/{self._fmt_k(window)} — auto-compacting to free space…"
+        )
+        try:
+            self._compact_session(None)
+            # Rebuild the agent's context from the compacted session so the next
+            # turn actually sends a smaller prompt (sheds old tool-output bloat).
+            self._rebuild_history_from_session()
+            # Reset the stale usage estimate so the indicator reflects the compaction.
+            self.agent.last_llm_usage = None
+        except Exception as e:
+            self.ui.error(f"Auto-compaction failed: {e}")
 
     def _compact_session(self, instructions: str | None):
         """Compact session messages."""
@@ -504,12 +1095,12 @@ Tools: {len(self.agent.registry)}
 
     def _list_sessions(self):
         """List available sessions."""
-        session_mgr = SessionManager(self.workspace)
+        session_mgr = SessionManager(self.workspace, session_dir=self.sessions_dir)
         sessions = session_mgr.list_sessions(limit=20)
 
         if not sessions:
             self.ui.system("No sessions found")
-            self.ui.system(f"Sessions are saved to: {self.workspace}/.sessions/")
+            self.ui.system(f"Sessions are saved to: {self.sessions_dir}")
             return
 
         sessions_text = session_mgr.format_session_list(sessions)
@@ -670,7 +1261,7 @@ Files are automatically read and added to context!
 
 **Features:**
 
-• Sessions auto-save to .sessions/
+• Sessions auto-save to the resolved session directory
 • Extensions auto-load from .agents/extensions/
 • Skills auto-discover from .agents/skills/
 • Prompts auto-load from .agents/prompts/
@@ -779,7 +1370,8 @@ Files are automatically read and added to context!
                 self.session, output_path, title=self.session.name
             )
             self.ui.system(f"✓ Exported to: {exported}")
-            self.ui.system(f"  Open in browser: file://{exported.absolute()}")
+            export_url = f"file://{exported.absolute()}"
+            self.ui.system(f"  Open in browser: {hyperlink(str(exported.absolute()), export_url)}")
         except Exception as e:
             self.ui.error(f"Export failed: {e}")
 
@@ -1009,8 +1601,13 @@ Project: .agents/config.json
         if self.extension_manager:
             # Clear and reload
             old_count = len(self.extension_manager.extensions)
-            self.extension_manager.extensions.clear()
+            session_file = str(self.session.save()) if self.session else None
+            self.extension_manager.cleanup(
+                reason="reload",
+                target_session_file=session_file,
+            )
             self._load_extensions()
+            self.extension_manager.emit_event("session_start", {"reason": "reload"})
             new_count = len(self.extension_manager.extensions)
             reloaded.append(f"Extensions: {new_count} (was {old_count})")
 
@@ -1138,14 +1735,14 @@ In cooldown: {status["cooldown_profiles"]}
 
         self.ui.panel(status_text, title="Resilience")
 
-    def _show_cost_summary(self):
-        """Show cost tracking summary."""
+    def _show_cost_summary(self, title: str = "Usage & Cost"):
+        """Show cost/usage tracking summary."""
         if not self.cost_tracker:
             self.ui.system("Cost tracking not enabled")
             return
 
         summary_text = self.cost_tracker.format_summary()
-        self.ui.panel(summary_text, title="Cost Tracking")
+        self.ui.panel(summary_text, title=title)
 
         # Show usage file location
         self.ui.system(f"\nUsage data: {self.cost_tracker.usage_file}")

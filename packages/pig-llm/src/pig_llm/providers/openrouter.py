@@ -4,6 +4,18 @@ from collections.abc import AsyncIterator, Iterator
 
 import openai
 
+from ..compat import (
+    OPENROUTER_COMPAT,
+    apply_prompt_cache,
+    apply_request_headers,
+    apply_session_affinity_headers,
+    apply_thinking_level,
+    astream_openai_tool_aware,
+    build_token_limit_param,
+    extract_openai_usage,
+    iter_openai_stream_choices,
+    normalize_messages,
+)
 from ..config import Config
 from ..models import Message, Response, StreamChunk
 from ._base import Provider
@@ -84,20 +96,25 @@ class OpenRouterProvider(Provider):
         **kwargs,
     ) -> Response:
         """Generate a completion."""
+        kwargs = apply_thinking_level(kwargs, OPENROUTER_COMPAT)
+        kwargs = apply_prompt_cache(kwargs, OPENROUTER_COMPAT)
+        kwargs = apply_session_affinity_headers(kwargs, OPENROUTER_COMPAT)
+        kwargs = apply_request_headers(kwargs)
+        normalized_messages = normalize_messages(messages, OPENROUTER_COMPAT)
         response = self.client.chat.completions.create(
             model=model,
-            messages=self._convert_messages(messages),
+            messages=self._convert_messages(normalized_messages),
             temperature=temperature,
-            max_tokens=max_tokens,
+            **build_token_limit_param(
+                max_tokens,
+                param_name="max_tokens",
+                compat=OPENROUTER_COMPAT,
+            ),
             **kwargs,
         )
 
         choice = response.choices[0]
-        usage = {
-            "prompt_tokens": response.usage.prompt_tokens if response.usage else 0,
-            "completion_tokens": response.usage.completion_tokens if response.usage else 0,
-            "total_tokens": response.usage.total_tokens if response.usage else 0,
-        }
+        usage = extract_openai_usage(response)
 
         return Response(
             content=choice.message.content or "",
@@ -117,17 +134,26 @@ class OpenRouterProvider(Provider):
         **kwargs,
     ) -> Iterator[StreamChunk]:
         """Stream a completion."""
+        kwargs = apply_thinking_level(kwargs, OPENROUTER_COMPAT)
+        kwargs = apply_prompt_cache(kwargs, OPENROUTER_COMPAT)
+        kwargs = apply_session_affinity_headers(kwargs, OPENROUTER_COMPAT)
+        kwargs = apply_request_headers(kwargs)
+        normalized_messages = normalize_messages(messages, OPENROUTER_COMPAT)
         stream = self.client.chat.completions.create(
             model=model,
-            messages=self._convert_messages(messages),
+            messages=self._convert_messages(normalized_messages),
             temperature=temperature,
-            max_tokens=max_tokens,
             stream=True,
+            stream_options={"include_usage": True},
+            **build_token_limit_param(
+                max_tokens,
+                param_name="max_tokens",
+                compat=OPENROUTER_COMPAT,
+            ),
             **kwargs,
         )
 
-        for chunk in stream:
-            choice = chunk.choices[0]
+        for chunk, choice in iter_openai_stream_choices(stream):
             if choice.delta.content:
                 yield StreamChunk(
                     content=choice.delta.content,
@@ -144,20 +170,25 @@ class OpenRouterProvider(Provider):
         **kwargs,
     ) -> Response:
         """Async generate a completion."""
+        kwargs = apply_thinking_level(kwargs, OPENROUTER_COMPAT)
+        kwargs = apply_prompt_cache(kwargs, OPENROUTER_COMPAT)
+        kwargs = apply_session_affinity_headers(kwargs, OPENROUTER_COMPAT)
+        kwargs = apply_request_headers(kwargs)
+        normalized_messages = normalize_messages(messages, OPENROUTER_COMPAT)
         response = await self.async_client.chat.completions.create(
             model=model,
-            messages=self._convert_messages(messages),
+            messages=self._convert_messages(normalized_messages),
             temperature=temperature,
-            max_tokens=max_tokens,
+            **build_token_limit_param(
+                max_tokens,
+                param_name="max_tokens",
+                compat=OPENROUTER_COMPAT,
+            ),
             **kwargs,
         )
 
         choice = response.choices[0]
-        usage = {
-            "prompt_tokens": response.usage.prompt_tokens if response.usage else 0,
-            "completion_tokens": response.usage.completion_tokens if response.usage else 0,
-            "total_tokens": response.usage.total_tokens if response.usage else 0,
-        }
+        usage = extract_openai_usage(response)
 
         return Response(
             content=choice.message.content or "",
@@ -177,20 +208,24 @@ class OpenRouterProvider(Provider):
         **kwargs,
     ) -> AsyncIterator[StreamChunk]:
         """Async stream a completion."""
+        kwargs = apply_thinking_level(kwargs, OPENROUTER_COMPAT)
+        kwargs = apply_prompt_cache(kwargs, OPENROUTER_COMPAT)
+        kwargs = apply_session_affinity_headers(kwargs, OPENROUTER_COMPAT)
+        kwargs = apply_request_headers(kwargs)
+        normalized_messages = normalize_messages(messages, OPENROUTER_COMPAT)
         stream = await self.async_client.chat.completions.create(
             model=model,
-            messages=self._convert_messages(messages),
+            messages=self._convert_messages(normalized_messages),
             temperature=temperature,
-            max_tokens=max_tokens,
             stream=True,
+            stream_options={"include_usage": True},
+            **build_token_limit_param(
+                max_tokens,
+                param_name="max_tokens",
+                compat=OPENROUTER_COMPAT,
+            ),
             **kwargs,
         )
 
-        async for chunk in stream:
-            choice = chunk.choices[0]
-            if choice.delta.content:
-                yield StreamChunk(
-                    content=choice.delta.content,
-                    finish_reason=choice.finish_reason,
-                    metadata={"id": chunk.id},
-                )
+        async for sc in astream_openai_tool_aware(stream):
+            yield sc

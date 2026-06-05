@@ -8,7 +8,7 @@ from pydantic import BaseModel
 class Message(BaseModel):
     """A message in a conversation."""
 
-    role: Literal["system", "user", "assistant", "tool"]
+    role: Literal["system", "developer", "user", "assistant", "tool"]
     content: str
     metadata: dict[str, Any] | None = None
 
@@ -25,10 +25,18 @@ class Response(BaseModel):
 
 
 class StreamChunk(BaseModel):
-    """A chunk from a streaming response."""
+    """A chunk from a streaming response.
+
+    Text deltas arrive as ``content``. When a streaming response includes tool
+    calls, the provider emits a final chunk carrying the fully-assembled
+    ``tool_calls`` (canonical OpenAI shape: ``{"id","type":"function",
+    "function":{"name","arguments"}}``).
+    """
 
     content: str
     finish_reason: str | None = None
+    tool_calls: list[dict[str, Any]] | None = None
+    usage: dict[str, int] | None = None
     metadata: dict[str, Any] | None = None
 
 

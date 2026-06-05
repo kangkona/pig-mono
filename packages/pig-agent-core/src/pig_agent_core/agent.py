@@ -12,10 +12,10 @@ from .context import SystemPromptBuilder
 from .memory import InMemoryProvider, MemoryProvider
 from .message_queue import MessageQueue
 from .models import AgentState
-from .observability.events import AgentEventCallback, BillingHook
+from .observability.events import AgentEventCallback, BillingHook, emit_agent_end
 from .resilience.profile import ProfileManager
 from .resilience.retry import resilient_streaming_call
-from .tools import Tool
+from .tools import Tool, ToolResult
 from .tools.registry import ToolRegistry
 
 
@@ -41,6 +41,9 @@ class Agent:
         billing_hook: BillingHook | None = None,
         max_rounds: int | None = None,
         max_rounds_with_plan: int | None = None,
+        before_tool_call: Callable[[str, dict[str, Any]], ToolResult | None] | None = None,
+        after_tool_call: Callable[[str, dict[str, Any], ToolResult], ToolResult | None]
+        | None = None,
     ):
         """Initialize agent.
 
@@ -65,7 +68,10 @@ class Agent:
         self.name = name
         self.llm = llm or LLM()
         self.system_prompt = system_prompt
-        self.max_iterations = max_rounds or max_iterations  # max_rounds takes precedence
+        # max_rounds takes precedence over the legacy max_iterations. Use an
+        # explicit None check so an explicit max_rounds=0 (unbounded, pi-mono
+        # style) is honored instead of falling back via `or`.
+        self.max_iterations = max_rounds if max_rounds is not None else max_iterations
         self.max_rounds_with_plan = max_rounds_with_plan
         self.on_tool_start = on_tool_start
         self.on_tool_end = on_tool_end
@@ -78,6 +84,8 @@ class Agent:
         self.memory_provider = memory_provider or InMemoryProvider()
         self.system_prompt_builder = system_prompt_builder
         self.billing_hook = billing_hook
+        self.before_tool_call = before_tool_call
+        self.after_tool_call = after_tool_call
 
         # Use enhanced ToolRegistry from tools/registry.py
         self.registry = ToolRegistry()
@@ -89,6 +97,7 @@ class Agent:
                     name=tool.name,
                     handler=tool.func,
                     schema=schema,
+                    is_core=True,
                 )
 
         self.history: list[Message] = []
@@ -96,18 +105,239 @@ class Agent:
             self.history.append(Message(role="system", content=system_prompt))
 
         self.message_queue = MessageQueue()
+        self.last_llm_usage: dict[str, int] | None = None  # last round's token usage
         self._plan_used = False  # Track if plan tool has been used
         self._rounds_since_plan = 0  # Track rounds since plan tool
+
+    @staticmethod
+    def _as_tool_result(value: Any) -> ToolResult:
+        """Normalize arbitrary tool return values into ToolResult."""
+        if isinstance(value, ToolResult):
+            return value
+        return ToolResult(ok=True, data=value)
+
+    def _execute_sync_tool_call(self, tool_call: dict[str, Any]) -> tuple[dict[str, str], bool]:
+        """Execute one sync tool call.
+
+        Returns the serialized tool message and whether the current tool batch
+        should abort before executing sibling calls.
+        """
+        tool_name = tool_call.get("function", {}).get("name")
+        tool_args = json.loads(tool_call.get("function", {}).get("arguments", "{}"))
+
+        self._log(f"→ Calling tool: {tool_name}({self._format_tool_args(tool_args)})", style="cyan")
+
+        if self.before_tool_call:
+            preflight = self.before_tool_call(tool_name, tool_args)
+            if preflight is not None:
+                result = self._as_tool_result(preflight)
+                return self._tool_message(tool_call, tool_name, result), bool(
+                    result.meta.get("abort_batch")
+                )
+
+        if self.on_tool_start:
+            self.on_tool_start(tool_name, tool_args)
+
+        try:
+            if hasattr(self.registry, "execute_sync"):
+                result = self.registry.execute_sync(tool_name, tool_args)
+            else:
+                raw_result = self.registry.execute(tool_name, **tool_args)
+                result = self._as_tool_result(raw_result)
+            self._log(f"✓ Result: {result.data if result.ok else result.error}", style="green")
+
+            if self.after_tool_call:
+                try:
+                    override = self.after_tool_call(tool_name, tool_args, result)
+                    if override is not None:
+                        result = self._as_tool_result(override)
+                except Exception as exc:
+                    result = ToolResult(ok=False, error=f"Error: {exc}")
+
+            if self.on_tool_end:
+                self.on_tool_end(tool_name, result)
+        except Exception as e:
+            result = ToolResult(ok=False, error=f"Error: {e}")
+            self._log(f"✗ {result.error}", style="red")
+
+        return self._tool_message(tool_call, tool_name, result), False
+
+    @staticmethod
+    def _tool_message(
+        tool_call: dict[str, Any],
+        tool_name: str,
+        result: ToolResult,
+    ) -> dict[str, Any]:
+        """Convert ToolResult into a history-ready tool message."""
+        content = result.data if result.ok else result.error
+        return {
+            "tool_call_id": tool_call.get("id"),
+            "role": "tool",
+            "name": tool_name,
+            "content": str(content),
+            "result": result,
+        }
 
     def _log(self, message: str, style: str = "") -> None:
         """Log message if verbose.
 
+        When a UI is attached, render through its Rich console and apply colour
+        via the ``style`` argument rather than inline markup, printing the
+        message with ``markup=False`` so arbitrary interpolated content (tool
+        output, model text) is never parsed as Rich markup — which would either
+        swallow ``[...]`` substrings or raise ``MarkupError`` on unbalanced
+        tags. Falls back to a plain ``print`` when there is no UI.
+
         Args:
-            message: Message to log
-            style: Style for message (ignored, kept for compatibility)
+            message: Message to log (plain text; no Rich markup)
+            style: Optional Rich style applied to the whole line
         """
-        if self.verbose:
+        if not self.verbose:
+            return
+
+        ui = getattr(self, "ui", None)
+        console = getattr(ui, "console", None) if ui is not None else None
+        if console is not None:
+            console.print(message, style=style or None, markup=False, highlight=False)
+        else:
             print(message)
+
+    @staticmethod
+    def _format_tool_args(args: Any, max_len: int = 80) -> str:
+        """Compactly format tool-call arguments for logging.
+
+        Long string values (e.g. a whole file passed to write_file) are
+        truncated to a short preview plus a char count, so they don't flood
+        the terminal.
+        """
+        if not isinstance(args, dict):
+            text = str(args)
+            return text if len(text) <= max_len else f"{text[:max_len]}… ({len(text)} chars)"
+        parts = []
+        for key, value in args.items():
+            if isinstance(value, str) and len(value) > max_len:
+                preview = value[:max_len].replace("\n", "\\n")
+                parts.append(f"{key}='{preview}… ({len(value)} chars)'")
+            else:
+                parts.append(f"{key}={value!r}")
+        return ", ".join(parts)
+
+    def _log_turn(self, message: str) -> None:
+        """Echo a conversational turn (User/Agent).
+
+        When a UI is attached it owns turn rendering, so the library-level echo
+        is suppressed to avoid printing each message twice.
+        """
+        if getattr(self, "ui", None) is not None:
+            return
+        self._log(message)
+
+    def _drain_followup_messages(
+        self, messages: list[Any], *, check_queue: bool
+    ) -> Response | None:
+        """Process queued follow-up messages in delivery order."""
+        if not check_queue or not messages:
+            return None
+
+        response: Response | None = None
+        for message in messages:
+            self._log(f"→ Follow-up: {message.content}", style="cyan")
+            response = self.run(message.content, check_queue=True)
+        return response
+
+    def _record_llm_usage(
+        self, content_parts: list[str], usage: dict[str, int] | None = None
+    ) -> None:
+        """Record an LLM round's token usage (and bill it if a hook is set).
+
+        Prefers real provider ``usage``; otherwise estimates locally. The result
+        is stored on ``self.last_llm_usage`` so callers can show a context-window
+        indicator regardless of whether billing is enabled.
+        """
+        try:
+            model = self.llm.config.model
+            cached_tokens = 0
+            if usage and usage.get("input_tokens") is not None:
+                input_tokens = int(usage.get("input_tokens", 0))
+                output_tokens = int(usage.get("output_tokens", 0))
+                cached_tokens = int(usage.get("cached_tokens", 0) or 0)
+            else:
+                from .token_counter import count_message_tokens, count_tokens
+
+                messages = [{"role": m.role, "content": m.content} for m in self.history]
+                input_tokens = count_message_tokens(messages, model)
+                output_tokens = count_tokens("".join(content_parts), model)
+            self.last_llm_usage = {
+                "input_tokens": input_tokens,
+                "output_tokens": output_tokens,
+                "cached_tokens": cached_tokens,
+            }
+            if self.billing_hook:
+                # Pass cached_tokens when the hook accepts it (older hooks don't).
+                try:
+                    self.billing_hook.on_llm_call(
+                        model=model,
+                        input_tokens=input_tokens,
+                        output_tokens=output_tokens,
+                        cached_tokens=cached_tokens,
+                    )
+                except TypeError:
+                    self.billing_hook.on_llm_call(
+                        model=model,
+                        input_tokens=input_tokens,
+                        output_tokens=output_tokens,
+                    )
+        except Exception:
+            pass
+
+    def _emit_agent_end(self, *, success: bool, error: str | None = None) -> None:
+        """Emit a terminal agent_end event for the current run."""
+        emit_agent_end(
+            self.event_callback,
+            agent_id=self.name,
+            success=success,
+            error=error,
+        )
+
+    def _can_use_async_batch_execution(self) -> bool:
+        """Return True when async tool batches can bypass per-tool hook handling."""
+        return not any(
+            [
+                self.before_tool_call,
+                self.after_tool_call,
+                self.on_tool_start,
+                self.on_tool_end,
+                self.billing_hook,
+            ]
+        )
+
+    async def _execute_async_batch_tool_calls(
+        self,
+        tool_calls: list[dict[str, Any]],
+        cancel: asyncio.Event | None = None,
+    ) -> tuple[list[dict[str, Any]], bool]:
+        """Execute tool calls via ToolRegistry.execute_batch preserving call order."""
+        from types import SimpleNamespace
+
+        tool_call_objects = [
+            SimpleNamespace(
+                function=SimpleNamespace(
+                    name=tool_call.get("function", {}).get("name"),
+                    arguments=tool_call.get("function", {}).get("arguments", "{}"),
+                )
+            )
+            for tool_call in tool_calls
+        ]
+        results = await self.registry.execute_batch(tool_call_objects, "default", {}, cancel)
+
+        tool_messages: list[dict[str, Any]] = []
+        terminate_all = True
+        for tool_call, result in zip(tool_calls, results, strict=False):
+            tool_name = tool_call.get("function", {}).get("name")
+            tool_messages.append(self._tool_message(tool_call, tool_name, result))
+            terminate_all = terminate_all and bool(result.ok and result.meta.get("terminate"))
+
+        return tool_messages, terminate_all
 
     def add_tool(self, tool: Tool) -> None:
         """Add a tool to the agent.
@@ -120,6 +350,7 @@ class Agent:
             name=tool.name,
             handler=tool.func,
             schema=schema,
+            is_core=True,
         )
 
     def run(self, message: str, check_queue: bool = True) -> Response:
@@ -132,63 +363,39 @@ class Agent:
         Returns:
             Agent response
         """
-        self._log(f"[bold blue]User:[/bold blue] {message}")
+        self._log_turn(f"User: {message}")
         self.history.append(Message(role="user", content=message))
 
         iterations = 0
-        while iterations < self.max_iterations:
+        unbounded = self.max_iterations <= 0
+        while unbounded or iterations < self.max_iterations:
             iterations += 1
-            self._log(f"[dim]Iteration {iterations}[/dim]")
+            self._log(f"Iteration {iterations}", style="dim")
 
             # Get tool schemas
             tools_schema = self.registry.get_schemas() if len(self.registry) > 0 else None
 
             # Call LLM
-            response = self.llm.chat(
-                messages=self.history,
-                tools=tools_schema,
-            )
+            try:
+                response = self.llm.chat(
+                    messages=self.history,
+                    tools=tools_schema,
+                )
+            except Exception as e:
+                self._log(f"LLM call failed: {e}", style="red")
+                self._emit_agent_end(success=False, error=str(e))
+                raise
 
             # Check if tool calls are needed
             if hasattr(response, "tool_calls") and response.tool_calls:
-                self._log(f"[yellow]Tool calls requested: {len(response.tool_calls)}[/yellow]")
+                self._log(f"Tool calls requested: {len(response.tool_calls)}", style="yellow")
 
-                # Execute tools
                 tool_results = []
                 for tool_call in response.tool_calls:
-                    tool_name = tool_call.get("function", {}).get("name")
-                    tool_args = json.loads(tool_call.get("function", {}).get("arguments", "{}"))
-
-                    self._log(f"[cyan]→ Calling tool: {tool_name}({tool_args})[/cyan]")
-
-                    if self.on_tool_start:
-                        self.on_tool_start(tool_name, tool_args)
-
-                    try:
-                        result = self.registry.execute(tool_name, **tool_args)
-                        tool_results.append(
-                            {
-                                "tool_call_id": tool_call.get("id"),
-                                "role": "tool",
-                                "name": tool_name,
-                                "content": str(result),
-                            }
-                        )
-                        self._log(f"[green]✓ Result: {result}[/green]")
-
-                        if self.on_tool_end:
-                            self.on_tool_end(tool_name, result)
-                    except Exception as e:
-                        error_msg = f"Error: {e}"
-                        tool_results.append(
-                            {
-                                "tool_call_id": tool_call.get("id"),
-                                "role": "tool",
-                                "name": tool_name,
-                                "content": error_msg,
-                            }
-                        )
-                        self._log(f"[red]✗ {error_msg}[/red]")
+                    tool_result, abort_batch = self._execute_sync_tool_call(tool_call)
+                    tool_results.append(tool_result)
+                    if abort_batch:
+                        break
 
                 # Add assistant message and tool results to history
                 self.history.append(
@@ -210,11 +417,26 @@ class Agent:
                         )
                     )
 
+                if tool_results and all(
+                    tr.get("result") and tr["result"].ok and tr["result"].meta.get("terminate")
+                    for tr in tool_results
+                ):
+                    final_content = "\n".join(str(tr["content"]) for tr in tool_results)
+                    final_response = Response(content=final_content, model=self.llm.config.model)
+                    self.history.append(Message(role="assistant", content=final_response.content))
+                    self._emit_agent_end(success=True)
+                    if check_queue and self.message_queue.has_followup():
+                        followup = self.message_queue.get_followup_messages()
+                        response = self._drain_followup_messages(followup, check_queue=check_queue)
+                        if response is not None:
+                            return response
+                    return final_response
+
                 # Check for steering messages after tool execution
                 if check_queue and self.message_queue.has_steering():
                     steering = self.message_queue.get_steering_messages()
                     for msg in steering:
-                        self._log(f"[yellow]⚡ Steering: {msg.content}[/yellow]")
+                        self._log(f"⚡ Steering: {msg.content}", style="yellow")
                         self.history.append(Message(role="user", content=msg.content))
 
                 # Continue loop to get final response
@@ -222,15 +444,21 @@ class Agent:
             else:
                 # No tool calls, we have final response
                 self.history.append(Message(role="assistant", content=response.content))
-                self._log(f"[bold green]Agent:[/bold green] {response.content}")
+                self._log_turn(f"Agent: {response.content}")
 
                 # Check for follow-up messages
                 if check_queue and self.message_queue.has_followup():
                     followup = self.message_queue.get_followup_messages()
-                    if followup:
-                        # Process first follow-up recursively
-                        self._log(f"[cyan]→ Follow-up: {followup[0].content}[/cyan]")
-                        return self.run(followup[0].content, check_queue=True)
+                    response = self._drain_followup_messages(followup, check_queue=check_queue)
+                    if response is not None:
+                        return response
+
+                self._emit_agent_end(success=True)
+                if check_queue and self.message_queue.has_followup():
+                    followup = self.message_queue.get_followup_messages()
+                    response = self._drain_followup_messages(followup, check_queue=check_queue)
+                    if response is not None:
+                        return response
 
                 return response
 
@@ -240,9 +468,15 @@ class Agent:
             model=self.llm.config.model,
         )
         self.history.append(Message(role="assistant", content=final_response.content))
+        self._emit_agent_end(success=False, error=final_response.content)
         return final_response
 
-    async def arun(self, message: str, check_queue: bool = True) -> Response:
+    async def arun(
+        self,
+        message: str,
+        check_queue: bool = True,
+        cancel: asyncio.Event | None = None,
+    ) -> Response:
         """Async run agent with a user message using enhanced subsystems.
 
         Uses resilient_streaming_call for LLM calls with retry and fallback.
@@ -251,15 +485,18 @@ class Agent:
         Args:
             message: User message
             check_queue: Check message queue for interrupts
+            cancel: Optional cancellation event (abort between rounds, mid-stream,
+                and during tool execution)
 
         Returns:
             Agent response
         """
-        self._log(f"User: {message}")
+        self._log_turn(f"User: {message}")
         self.history.append(Message(role="user", content=message))
 
         iterations = 0
         max_iters = self.max_iterations
+        unbounded = max_iters <= 0
 
         # Check if plan tool was used and apply max_rounds_with_plan
         if self._plan_used and self.max_rounds_with_plan:
@@ -273,9 +510,14 @@ class Agent:
                 self._log(f"Plan nag: {nag_message}")
                 self.history.append(Message(role="user", content=nag_message))
 
-        while iterations < max_iters:
+        while unbounded or iterations < max_iters:
             iterations += 1
             self._log(f"Iteration {iterations}")
+
+            # Abort between rounds.
+            if cancel and cancel.is_set():
+                self._emit_agent_end(success=False, error="aborted")
+                return Response(content="", model=self.llm.config.model)
 
             # Get tool schemas
             tools_schema = self.registry.get_schemas() if len(self.registry) > 0 else None
@@ -283,6 +525,8 @@ class Agent:
             # Use resilient_streaming_call for LLM call
             response_content = ""
             response_tool_calls = None
+            response_usage = None
+            aborted = False
 
             try:
                 async for chunk in resilient_streaming_call(
@@ -293,89 +537,142 @@ class Agent:
                     event_callback=self.event_callback,
                     tools=tools_schema,
                 ):
+                    if cancel and cancel.is_set():
+                        aborted = True
+                        break
                     if chunk.content:
                         response_content += chunk.content
                     if hasattr(chunk, "tool_calls") and chunk.tool_calls:
                         response_tool_calls = chunk.tool_calls
+                    if getattr(chunk, "usage", None):
+                        response_usage = chunk.usage
 
-                # Track billing if hook provided
-                if self.billing_hook and hasattr(chunk, "usage"):
-                    self.billing_hook.on_llm_call(
-                        model=self.llm.config.model,
-                        input_tokens=chunk.usage.get("input_tokens", 0),
-                        output_tokens=chunk.usage.get("output_tokens", 0),
-                    )
+                # Record usage — prefer real provider usage, else estimate.
+                self._record_llm_usage([response_content], response_usage)
 
             except Exception as e:
                 self._log(f"LLM call failed: {e}")
+                self._emit_agent_end(success=False, error=str(e))
                 raise
+
+            # Aborted mid-stream: record partial text and stop cleanly.
+            if aborted or (cancel and cancel.is_set()):
+                if response_content:
+                    self.history.append(Message(role="assistant", content=response_content))
+                self._emit_agent_end(success=False, error="aborted")
+                return Response(content=response_content, model=self.llm.config.model)
 
             # Check if tool calls are needed
             if response_tool_calls:
                 self._log(f"Tool calls requested: {len(response_tool_calls)}")
 
-                # Execute tools
-                tool_results = []
                 for tool_call in response_tool_calls:
                     tool_name = tool_call.get("function", {}).get("name")
-                    tool_args_str = tool_call.get("function", {}).get("arguments", "{}")
-                    tool_args = json.loads(tool_args_str)
-
-                    self._log(f"→ Calling tool: {tool_name}({tool_args})")
-
-                    # Check if this is the plan tool
                     if tool_name == "plan":
                         self._plan_used = True
                         self._rounds_since_plan = 0
 
-                    if self.on_tool_start:
-                        self.on_tool_start(tool_name, tool_args)
+                if self._can_use_async_batch_execution():
+                    tool_results, terminate_all = await self._execute_async_batch_tool_calls(
+                        response_tool_calls, cancel
+                    )
+                else:
+                    terminate_all = False
 
-                    # Track billing for tool call
-                    if self.billing_hook:
-                        self.billing_hook.on_tool_call(tool_name=tool_name)
+                if not self._can_use_async_batch_execution():
+                    # Execute tools
+                    tool_results = []
+                    for tool_call in response_tool_calls:
+                        tool_name = tool_call.get("function", {}).get("name")
+                        tool_args_str = tool_call.get("function", {}).get("arguments", "{}")
+                        tool_args = json.loads(tool_args_str)
 
-                    try:
-                        # Create tool_call object for enhanced registry
-                        from types import SimpleNamespace
+                        self._log(
+                            f"→ Calling tool: {tool_name}({self._format_tool_args(tool_args)})"
+                        )
 
-                        tool_call_obj = SimpleNamespace(
-                            function=SimpleNamespace(
-                                name=tool_name,
-                                arguments=tool_args_str,
+                        if self.before_tool_call:
+                            preflight = self.before_tool_call(tool_name, tool_args)
+                            if preflight is not None:
+                                result = self._as_tool_result(preflight)
+                                tool_results.append(
+                                    {
+                                        "tool_call_id": tool_call.get("id"),
+                                        "role": "tool",
+                                        "name": tool_name,
+                                        "content": str(result.data if result.ok else result.error),
+                                        "result": result,
+                                    }
+                                )
+                                if result.meta.get("abort_batch"):
+                                    break
+                                continue
+
+                        if self.on_tool_start:
+                            self.on_tool_start(tool_name, tool_args)
+
+                        if self.billing_hook:
+                            self.billing_hook.on_tool_call(tool_name=tool_name)
+
+                        try:
+                            from types import SimpleNamespace
+
+                            tool_call_obj = SimpleNamespace(
+                                function=SimpleNamespace(
+                                    name=tool_name,
+                                    arguments=tool_args_str,
+                                )
                             )
-                        )
 
-                        # Use enhanced registry execute
-                        result = await self.registry.execute(
-                            tool_call=tool_call_obj,
-                            user_id="default",  # TODO: Make configurable
-                            meta={},
-                        )
+                            if hasattr(self.registry, "execute"):
+                                result = await self.registry.execute(
+                                    tool_call=tool_call_obj,
+                                    user_id="default",  # TODO: Make configurable
+                                    meta={},
+                                    cancel=cancel,
+                                )
+                            else:
+                                result = self.registry.execute_sync(tool_name, tool_args)
 
-                        tool_results.append(
-                            {
-                                "tool_call_id": tool_call.get("id"),
-                                "role": "tool",
-                                "name": tool_name,
-                                "content": str(result.data if result.ok else result.error),
-                            }
-                        )
-                        self._log(f"✓ Result: {result.data if result.ok else result.error}")
+                            tool_results.append(
+                                {
+                                    "tool_call_id": tool_call.get("id"),
+                                    "role": "tool",
+                                    "name": tool_name,
+                                    "content": str(result.data if result.ok else result.error),
+                                    "result": result,
+                                }
+                            )
+                            self._log(f"✓ Result: {result.data if result.ok else result.error}")
 
-                        if self.on_tool_end:
-                            self.on_tool_end(tool_name, result)
-                    except Exception as e:
-                        error_msg = f"Error: {e}"
-                        tool_results.append(
-                            {
-                                "tool_call_id": tool_call.get("id"),
-                                "role": "tool",
-                                "name": tool_name,
-                                "content": error_msg,
-                            }
-                        )
-                        self._log(f"✗ {error_msg}")
+                            if self.after_tool_call:
+                                try:
+                                    override = self.after_tool_call(tool_name, tool_args, result)
+                                    if override is not None:
+                                        result = self._as_tool_result(override)
+                                        tool_results[-1]["content"] = str(
+                                            result.data if result.ok else result.error
+                                        )
+                                        tool_results[-1]["result"] = result
+                                except Exception as exc:
+                                    result = ToolResult(ok=False, error=f"Error: {exc}")
+                                    tool_results[-1]["content"] = result.error
+                                    tool_results[-1]["result"] = result
+
+                            if self.on_tool_end:
+                                self.on_tool_end(tool_name, result)
+                        except Exception as e:
+                            error_msg = f"Error: {e}"
+                            tool_results.append(
+                                {
+                                    "tool_call_id": tool_call.get("id"),
+                                    "role": "tool",
+                                    "name": tool_name,
+                                    "content": error_msg,
+                                    "result": ToolResult(ok=False, error=error_msg),
+                                }
+                            )
+                            self._log(f"✗ {error_msg}")
 
                 # Add assistant message and tool results to history
                 self.history.append(
@@ -397,6 +694,29 @@ class Agent:
                         )
                     )
 
+                if tool_results and (
+                    terminate_all
+                    if self._can_use_async_batch_execution()
+                    else all(
+                        tr.get("result") and tr["result"].ok and tr["result"].meta.get("terminate")
+                        for tr in tool_results
+                    )
+                ):
+                    final_content = "\n".join(str(tr["content"]) for tr in tool_results)
+                    final_response = Response(content=final_content, model=self.llm.config.model)
+                    self.history.append(Message(role="assistant", content=final_response.content))
+                    self._emit_agent_end(success=True)
+                    if check_queue and self.message_queue.has_followup():
+                        followup = self.message_queue.get_followup_messages()
+                        if followup:
+                            response: Response | None = None
+                            for queued in followup:
+                                self._log(f"→ Follow-up: {queued.content}")
+                                response = await self.arun(queued.content, check_queue=True)
+                            if response is not None:
+                                return response
+                    return final_response
+
                 # Check for steering messages after tool execution
                 if check_queue and self.message_queue.has_steering():
                     steering = self.message_queue.get_steering_messages()
@@ -409,15 +729,29 @@ class Agent:
             else:
                 # No tool calls, we have final response
                 self.history.append(Message(role="assistant", content=response_content))
-                self._log(f"Agent: {response_content}")
+                self._log_turn(f"Agent: {response_content}")
 
                 # Check for follow-up messages
                 if check_queue and self.message_queue.has_followup():
                     followup = self.message_queue.get_followup_messages()
                     if followup:
-                        # Process first follow-up recursively
-                        self._log(f"→ Follow-up: {followup[0].content}")
-                        return await self.arun(followup[0].content, check_queue=True)
+                        response: Response | None = None
+                        for queued in followup:
+                            self._log(f"→ Follow-up: {queued.content}")
+                            response = await self.arun(queued.content, check_queue=True)
+                        if response is not None:
+                            return response
+
+                self._emit_agent_end(success=True)
+                if check_queue and self.message_queue.has_followup():
+                    followup = self.message_queue.get_followup_messages()
+                    if followup:
+                        response: Response | None = None
+                        for queued in followup:
+                            self._log(f"→ Follow-up: {queued.content}")
+                            response = await self.arun(queued.content, check_queue=True)
+                        if response is not None:
+                            return response
 
                 return Response(
                     content=response_content,
@@ -430,6 +764,7 @@ class Agent:
             model=self.llm.config.model,
         )
         self.history.append(Message(role="assistant", content=final_response.content))
+        self._emit_agent_end(success=False, error=final_response.content)
         return final_response
 
     def get_state(self) -> AgentState:
@@ -508,123 +843,128 @@ class Agent:
         self,
         message: str,
         cancel: asyncio.Event | None = None,
+        max_iterations: int | None = None,
     ) -> AsyncIterator[str]:
         """Streaming respond method that yields text chunks.
 
         Args:
             message: User message
             cancel: Optional cancellation event
+            max_iterations: Per-call round cap. None uses the agent default;
+                a value <= 0 means unbounded (loop until natural completion,
+                a terminate tool result, or cancellation) — pi-mono parity.
 
         Yields:
             Text chunks from the agent response
         """
-        self._log(f"[bold blue]User:[/bold blue] {message}")
+        self._log_turn(f"User: {message}")
         self.history.append(Message(role="user", content=message))
 
-        async for chunk in self._master_loop(cancel):
+        async for chunk in self._master_loop(cancel, max_iterations):
             yield chunk
 
     async def _master_loop(
         self,
         cancel: asyncio.Event | None = None,
+        max_iterations: int | None = None,
     ) -> AsyncIterator[str]:
         """Unified streaming master loop with tool calling support.
 
         Args:
             cancel: Optional cancellation event
+            max_iterations: Per-call round cap (None = agent default, <= 0 = unbounded)
 
         Yields:
             Text chunks from the final agent response
         """
-        iterations = 0
-        while iterations < self.max_iterations:
-            iterations += 1
-            self._log(f"[dim]Iteration {iterations}[/dim]")
+        effective_max = self.max_iterations if max_iterations is None else max_iterations
+        unbounded = effective_max <= 0
 
-            # Check for cancellation
+        iterations = 0
+        while unbounded or iterations < effective_max:
+            iterations += 1
+            self._log(f"Iteration {iterations}", style="dim")
+
+            # Check for cancellation before starting the next round
             if cancel and cancel.is_set():
-                yield "Request was cancelled."
+                self._emit_agent_end(success=False, error="aborted")
                 return
 
             # Get tool schemas
             tools_schema = self.registry.get_schemas() if len(self.registry) > 0 else None
 
-            # Call LLM with streaming
-            # achat_stream may be an async generator function (returns generator directly)
-            # or an AsyncMock in tests (returns a coroutine that must be awaited first)
+            # Call LLM with streaming. achat_stream yields StreamChunks: text
+            # deltas (content) and, on completion, a chunk carrying the fully
+            # assembled tool_calls.
             stream_call = self.llm.achat_stream(
                 messages=self.history,
                 tools=tools_schema,
             )
-            if asyncio.iscoroutine(stream_call):
-                response_stream = await stream_call
-            else:
-                response_stream = stream_call
+            try:
+                if asyncio.iscoroutine(stream_call):
+                    response_stream = await stream_call
+                else:
+                    response_stream = stream_call
+            except Exception as e:
+                self._log(f"Streaming LLM call failed: {e}", style="red")
+                self._emit_agent_end(success=False, error=str(e))
+                raise
 
-            # Accumulate streaming response
-            content_parts = []
-            tool_calls_acc: dict[int, dict[str, str]] = {}
-            has_tool_calls = False
-            buffered = []
+            # Consume the stream: yield text tokens live, capture tool calls + usage.
+            content_parts: list[str] = []
+            streamed_tool_calls: list[dict[str, Any]] | None = None
+            streamed_usage: dict[str, int] | None = None
+            aborted = False
 
             async for chunk in response_stream:
-                if not hasattr(chunk, "choices") or not chunk.choices:
-                    continue
+                if cancel and cancel.is_set():
+                    aborted = True
+                    break
+                if chunk.content:
+                    content_parts.append(chunk.content)
+                    yield chunk.content
+                if getattr(chunk, "tool_calls", None):
+                    streamed_tool_calls = chunk.tool_calls
+                if getattr(chunk, "usage", None):
+                    streamed_usage = chunk.usage
 
-                delta = chunk.choices[0].delta
+            # Record this LLM round's usage (for the context indicator + billing).
+            self._record_llm_usage(content_parts, streamed_usage)
 
-                # Accumulate content
-                if hasattr(delta, "content") and delta.content:
-                    content_parts.append(delta.content)
-                    if not has_tool_calls:
-                        buffered.append(delta.content)
-
-                # Accumulate tool calls
-                if hasattr(delta, "tool_calls") and delta.tool_calls:
-                    if not has_tool_calls:
-                        has_tool_calls = True
-                        buffered.clear()
-
-                    for tc_delta in delta.tool_calls:
-                        idx = tc_delta.index if hasattr(tc_delta, "index") else 0
-                        if idx not in tool_calls_acc:
-                            tool_calls_acc[idx] = {"id": "", "name": "", "arguments": ""}
-
-                        if hasattr(tc_delta, "id") and tc_delta.id:
-                            tool_calls_acc[idx]["id"] = tc_delta.id
-
-                        if hasattr(tc_delta, "function") and tc_delta.function:
-                            if hasattr(tc_delta.function, "name") and tc_delta.function.name:
-                                tool_calls_acc[idx]["name"] = tc_delta.function.name
-                            if (
-                                hasattr(tc_delta.function, "arguments")
-                                and tc_delta.function.arguments
-                            ):
-                                tool_calls_acc[idx]["arguments"] += tc_delta.function.arguments
-
-            # If no tool calls, yield buffered content and return
-            if not tool_calls_acc:
-                final_content = "".join(buffered)
-                self.history.append(Message(role="assistant", content=final_content))
-                self._log(f"[bold green]Agent:[/bold green] {final_content}")
-                for part in buffered:
-                    yield part
+            # Aborted mid-stream: the partial text already streamed; record it so the
+            # session reflects it, then stop cleanly (no dangling tool message).
+            if aborted or (cancel and cancel.is_set()):
+                partial = "".join(content_parts)
+                if partial:
+                    self.history.append(Message(role="assistant", content=partial))
+                self._emit_agent_end(success=False, error="aborted")
                 return
 
-            # Process tool calls
-            assistant_content = "".join(content_parts) or None
-            assistant_tool_calls = []
-            for idx in sorted(tool_calls_acc):
-                tc = tool_calls_acc[idx]
-                assistant_tool_calls.append(
-                    {
-                        "id": tc["id"],
-                        "type": "function",
-                        "function": {"name": tc["name"], "arguments": tc["arguments"]},
-                    }
-                )
+            # No tool calls: the final text already streamed; record it.
+            if not streamed_tool_calls:
+                final_content = "".join(content_parts)
+                self.history.append(Message(role="assistant", content=final_content))
+                self._log_turn(f"Agent: {final_content}")
 
-            # Add assistant message with tool calls to history
+                # If the user steered while we were answering, keep going so the
+                # steering is acted on in this same turn instead of being stranded.
+                if self.message_queue.has_steering():
+                    for msg in self.message_queue.get_steering_messages():
+                        self._log(f"⚡ Steering: {msg.content}", style="yellow")
+                        self.history.append(Message(role="user", content=msg.content))
+                    continue
+
+                self._emit_agent_end(success=True)
+                if self.message_queue.has_followup():
+                    followup = self.message_queue.get_followup_messages()
+                    for queued in followup:
+                        async for chunk in self.respond_stream(queued.content, cancel):
+                            yield chunk
+                return
+
+            # Tool calls: record the assistant turn (with tool_calls) and execute.
+            assistant_content = "".join(content_parts) or None
+            assistant_tool_calls = streamed_tool_calls
             self.history.append(
                 Message(
                     role="assistant",
@@ -634,27 +974,76 @@ class Agent:
             )
 
             # Execute tool calls
-            await self._execute_tool_calls_from_dict(assistant_tool_calls, cancel)
+            tool_history_start = len(self.history)
+            terminate_all = await self._execute_tool_calls_from_dict(assistant_tool_calls, cancel)
+            if terminate_all:
+                current_tool_call_ids = {tool_call["id"] for tool_call in assistant_tool_calls}
+                final_content = "\n".join(
+                    message.content
+                    for message in self.history[tool_history_start:]
+                    if message.role == "tool"
+                    and message.metadata.get("tool_call_id") in current_tool_call_ids
+                )
+                self.history.append(Message(role="assistant", content=final_content))
+                self._emit_agent_end(success=True)
+                if self.message_queue.has_followup():
+                    followup = self.message_queue.get_followup_messages()
+                    for queued in followup:
+                        async for chunk in self.respond_stream(queued.content, cancel):
+                            yield chunk
+                return
+
+            # Inject steering messages queued during this turn (e.g. typed while
+            # the agent was streaming) before the next LLM call. Mirrors run().
+            if self.message_queue.has_steering():
+                for msg in self.message_queue.get_steering_messages():
+                    self._log(f"⚡ Steering: {msg.content}", style="yellow")
+                    self.history.append(Message(role="user", content=msg.content))
 
             # Continue loop for next iteration
 
-        # Max iterations reached
+        # Bounded loop exhausted its round budget (unreachable when unbounded).
+        self._emit_agent_end(
+            success=False,
+            error="Maximum iterations reached without completion.",
+        )
         yield "Maximum iterations reached without completion."
 
     async def _execute_tool_calls_from_dict(
         self,
         tool_calls: list[dict[str, Any]],
         cancel: asyncio.Event | None = None,
-    ) -> None:
+    ) -> bool:
         """Execute tool calls from dictionary format.
 
         Args:
             tool_calls: List of tool call dictionaries
             cancel: Optional cancellation event
+
+        Returns:
+            True when every tool result requested early termination.
         """
+        if self._can_use_async_batch_execution():
+            tool_messages, terminate_all = await self._execute_async_batch_tool_calls(
+                tool_calls, cancel
+            )
+            for tool_result in tool_messages:
+                self.history.append(
+                    Message(
+                        role="tool",
+                        content=tool_result["content"],
+                        metadata={
+                            "tool_call_id": tool_result["tool_call_id"],
+                            "name": tool_result["name"],
+                        },
+                    )
+                )
+            return terminate_all
+
+        terminate_all = True
         for tool_call in tool_calls:
             if cancel and cancel.is_set():
-                return
+                return False
 
             tool_name = tool_call.get("function", {}).get("name")
             tool_args_str = tool_call.get("function", {}).get("arguments", "{}")
@@ -665,27 +1054,77 @@ class Agent:
             except json.JSONDecodeError:
                 tool_args = {}
 
-            self._log(f"[cyan]→ Calling tool: {tool_name}({tool_args})[/cyan]")
+            self._log(
+                f"→ Calling tool: {tool_name}({self._format_tool_args(tool_args)})", style="cyan"
+            )
+
+            if self.billing_hook:
+                self.billing_hook.on_tool_call(tool_name=tool_name)
+
+            if self.before_tool_call:
+                preflight = self.before_tool_call(tool_name, tool_args)
+                if preflight is not None:
+                    result = self._as_tool_result(preflight)
+                    self.history.append(
+                        Message(
+                            role="tool",
+                            content=str(result.data if result.ok else result.error),
+                            metadata={
+                                "tool_call_id": tool_call_id,
+                                "name": tool_name,
+                            },
+                        )
+                    )
+                    terminate_all = terminate_all and bool(
+                        result.ok and result.meta.get("terminate")
+                    )
+                    if result.meta.get("abort_batch"):
+                        return False
+                    continue
 
             if self.on_tool_start:
                 self.on_tool_start(tool_name, tool_args)
 
             try:
-                result = self.registry.execute(tool_name, **tool_args)
+                if hasattr(self.registry, "execute"):
+                    from types import SimpleNamespace
+
+                    tool_call_obj = SimpleNamespace(
+                        function=SimpleNamespace(
+                            name=tool_name,
+                            arguments=tool_args_str,
+                        )
+                    )
+                    result = await self.registry.execute(tool_call_obj, "default", {}, cancel)
+                else:
+                    result = self.registry.execute_sync(tool_name, tool_args)
                 self.history.append(
                     Message(
                         role="tool",
-                        content=str(result),
+                        content=str(result.data if result.ok else result.error),
                         metadata={
                             "tool_call_id": tool_call_id,
                             "name": tool_name,
                         },
                     )
                 )
-                self._log(f"[green]✓ Result: {result}[/green]")
+                self._log(f"✓ Result: {result.data if result.ok else result.error}", style="green")
+
+                if self.after_tool_call:
+                    try:
+                        override = self.after_tool_call(tool_name, tool_args, result)
+                        if override is not None:
+                            result = self._as_tool_result(override)
+                            self.history[-1].content = str(
+                                result.data if result.ok else result.error
+                            )
+                    except Exception as exc:
+                        result = ToolResult(ok=False, error=f"Error: {exc}")
+                        self.history[-1].content = result.error
 
                 if self.on_tool_end:
                     self.on_tool_end(tool_name, result)
+                terminate_all = terminate_all and bool(result.ok and result.meta.get("terminate"))
             except Exception as e:
                 error_msg = f"Error: {e}"
                 self.history.append(
@@ -698,7 +1137,10 @@ class Agent:
                         },
                     )
                 )
-                self._log(f"[red]✗ {error_msg}[/red]")
+                self._log(f"✗ {error_msg}", style="red")
+                terminate_all = False
+
+        return terminate_all
 
     async def _execute_tool_calls(self, tool_calls: list[dict[str, Any]]) -> None:
         """Execute tool calls (backward compatibility wrapper).

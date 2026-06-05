@@ -4,6 +4,16 @@ from collections.abc import AsyncIterator, Iterator
 
 from groq import AsyncGroq, Groq
 
+from ..compat import (
+    GROQ_COMPAT,
+    apply_prompt_cache,
+    apply_request_headers,
+    apply_session_affinity_headers,
+    apply_thinking_level,
+    astream_openai_tool_aware,
+    iter_openai_stream_choices,
+    normalize_messages,
+)
 from ..config import Config
 from ..models import Message, Response, StreamChunk
 from ._base import Provider
@@ -11,6 +21,14 @@ from ._base import Provider
 
 class GroqProvider(Provider):
     """Groq provider implementation (fast LLM inference)."""
+
+    @staticmethod
+    def _apply_reasoning_effort_override(model: str, kwargs: dict) -> dict:
+        """Apply known model-specific reasoning-effort overrides."""
+        next_kwargs = dict(kwargs)
+        if model.lower() == "qwen/qwen3-32b" and next_kwargs.get("reasoning_effort") == "medium":
+            next_kwargs["reasoning_effort"] = "default"
+        return next_kwargs
 
     def __init__(self, config: Config):
         """Initialize Groq provider."""
@@ -76,9 +94,19 @@ class GroqProvider(Provider):
         **kwargs,
     ) -> Response:
         """Generate a completion."""
+        kwargs = apply_thinking_level(kwargs, GROQ_COMPAT)
+        kwargs = self._apply_reasoning_effort_override(model, kwargs)
+        kwargs = apply_prompt_cache(kwargs, GROQ_COMPAT)
+        kwargs = apply_session_affinity_headers(kwargs, GROQ_COMPAT)
+        kwargs = apply_request_headers(kwargs)
+        normalized_messages = normalize_messages(
+            messages,
+            GROQ_COMPAT,
+            supports_developer_role=True,
+        )
         response = self.client.chat.completions.create(
             model=model,
-            messages=self._convert_messages(messages),
+            messages=self._convert_messages(normalized_messages),
             temperature=temperature,
             max_tokens=max_tokens,
             **kwargs,
@@ -109,17 +137,27 @@ class GroqProvider(Provider):
         **kwargs,
     ) -> Iterator[StreamChunk]:
         """Stream a completion."""
+        kwargs = apply_thinking_level(kwargs, GROQ_COMPAT)
+        kwargs = self._apply_reasoning_effort_override(model, kwargs)
+        kwargs = apply_prompt_cache(kwargs, GROQ_COMPAT)
+        kwargs = apply_session_affinity_headers(kwargs, GROQ_COMPAT)
+        kwargs = apply_request_headers(kwargs)
+        normalized_messages = normalize_messages(
+            messages,
+            GROQ_COMPAT,
+            supports_developer_role=True,
+        )
         stream = self.client.chat.completions.create(
             model=model,
-            messages=self._convert_messages(messages),
+            messages=self._convert_messages(normalized_messages),
             temperature=temperature,
             max_tokens=max_tokens,
             stream=True,
+            stream_options={"include_usage": True},
             **kwargs,
         )
 
-        for chunk in stream:
-            choice = chunk.choices[0]
+        for chunk, choice in iter_openai_stream_choices(stream):
             if choice.delta.content:
                 yield StreamChunk(
                     content=choice.delta.content,
@@ -136,9 +174,19 @@ class GroqProvider(Provider):
         **kwargs,
     ) -> Response:
         """Async generate a completion."""
+        kwargs = apply_thinking_level(kwargs, GROQ_COMPAT)
+        kwargs = self._apply_reasoning_effort_override(model, kwargs)
+        kwargs = apply_prompt_cache(kwargs, GROQ_COMPAT)
+        kwargs = apply_session_affinity_headers(kwargs, GROQ_COMPAT)
+        kwargs = apply_request_headers(kwargs)
+        normalized_messages = normalize_messages(
+            messages,
+            GROQ_COMPAT,
+            supports_developer_role=True,
+        )
         response = await self.async_client.chat.completions.create(
             model=model,
-            messages=self._convert_messages(messages),
+            messages=self._convert_messages(normalized_messages),
             temperature=temperature,
             max_tokens=max_tokens,
             **kwargs,
@@ -169,20 +217,25 @@ class GroqProvider(Provider):
         **kwargs,
     ) -> AsyncIterator[StreamChunk]:
         """Async stream a completion."""
+        kwargs = apply_thinking_level(kwargs, GROQ_COMPAT)
+        kwargs = self._apply_reasoning_effort_override(model, kwargs)
+        kwargs = apply_prompt_cache(kwargs, GROQ_COMPAT)
+        kwargs = apply_session_affinity_headers(kwargs, GROQ_COMPAT)
+        kwargs = apply_request_headers(kwargs)
+        normalized_messages = normalize_messages(
+            messages,
+            GROQ_COMPAT,
+            supports_developer_role=True,
+        )
         stream = await self.async_client.chat.completions.create(
             model=model,
-            messages=self._convert_messages(messages),
+            messages=self._convert_messages(normalized_messages),
             temperature=temperature,
             max_tokens=max_tokens,
             stream=True,
+            stream_options={"include_usage": True},
             **kwargs,
         )
 
-        async for chunk in stream:
-            choice = chunk.choices[0]
-            if choice.delta.content:
-                yield StreamChunk(
-                    content=choice.delta.content,
-                    finish_reason=choice.finish_reason,
-                    metadata={"id": chunk.id},
-                )
+        async for sc in astream_openai_tool_aware(stream):
+            yield sc

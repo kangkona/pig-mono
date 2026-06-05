@@ -1,5 +1,6 @@
 """Share sessions via GitHub Gist."""
 
+import tempfile
 from pathlib import Path
 
 from .export import SessionExporter
@@ -40,6 +41,14 @@ class GistSharer:
             ValueError: If no GitHub token provided
             httpx.HTTPError: If GitHub API fails
         """
+        try:
+            import httpx
+        except ModuleNotFoundError as exc:
+            raise ModuleNotFoundError(
+                "httpx is required for session sharing. "
+                "Install pig-agent-core with share dependencies."
+            ) from exc
+
         if not self.github_token:
             raise ValueError(
                 "GitHub token required. Set GITHUB_TOKEN env var or pass to constructor.\n"
@@ -47,13 +56,14 @@ class GistSharer:
             )
 
         # Export session to HTML (in-memory)
-        html_path = Path(f"/tmp/{session.name}.html")
+        temp_dir = Path(tempfile.gettempdir())
+        html_path = temp_dir / f"{session.name}.html"
         SessionExporter.export_to_html(session, html_path, title=session.name)
         html_content = html_path.read_text()
         html_path.unlink()  # Clean up
 
         # Also export as markdown
-        md_path = Path(f"/tmp/{session.name}.md")
+        md_path = temp_dir / f"{session.name}.md"
         SessionExporter.export_to_markdown(session, md_path)
         md_content = md_path.read_text()
         md_path.unlink()  # Clean up
@@ -75,9 +85,6 @@ class GistSharer:
             "Authorization": f"token {self.github_token}",
             "Accept": "application/vnd.github.v3+json",
         }
-
-        # Import lazily so pig_agent_core can be imported without optional share deps.
-        import httpx
 
         response = httpx.post(self.GIST_API, json=payload, headers=headers, timeout=30)
 

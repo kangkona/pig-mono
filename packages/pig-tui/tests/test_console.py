@@ -28,12 +28,49 @@ def test_console_print(mock_rich_console):
 
 
 @patch("pig_tui.console.RichConsole")
+def test_console_print_normalizes_thai_and_lao_am(mock_rich_console):
+    console = Console()
+
+    console.print("ำabc", "ຳdef")
+
+    args = console.console.print.call_args.args
+    assert args == ("ําabc", "ໍາdef")
+
+
+@patch("pig_tui.console.RichConsole")
 def test_console_markdown(mock_rich_console):
     """Test markdown rendering."""
     console = Console()
     console.markdown("# Hello")
 
     console.console.print.assert_called_once()
+
+
+@patch("pig_tui.console.RichConsole")
+@patch("pig_tui.console.Markdown", side_effect=ValueError("markdown exploded"))
+def test_console_markdown_falls_back_to_plain_text_on_render_error(
+    mock_markdown, mock_rich_console
+):
+    console = Console()
+
+    console.markdown("# Hello")
+
+    console.console.print.assert_called_once_with("# Hello")
+
+
+@patch("pig_tui.console.RichConsole")
+@patch("pig_tui.console.Markdown", return_value=object())
+def test_console_markdown_falls_back_to_plain_text_when_printing_rendered_markdown_fails(
+    mock_markdown, mock_rich_console
+):
+    console = Console()
+    console.console.print.side_effect = [RuntimeError("render exploded"), None]
+
+    console.markdown("# Hello")
+
+    calls = console.console.print.call_args_list
+    assert calls[0].args == (mock_markdown.return_value,)
+    assert calls[1].args == ("# Hello",)
 
 
 @patch("pig_tui.console.RichConsole")

@@ -4,6 +4,17 @@ from collections.abc import AsyncIterator, Iterator
 
 import openai
 
+from ..compat import (
+    OPENAI_COMPAT,
+    _OpenAIToolCallAccumulator,
+    _stream_usage_to_dict,
+    apply_prompt_cache,
+    apply_request_headers,
+    apply_thinking_level,
+    build_token_limit_param,
+    iter_openai_stream_choices,
+    normalize_messages,
+)
 from ..config import Config
 from ..models import Message, Response, StreamChunk
 from ._base import Provider
@@ -83,11 +94,23 @@ class PerplexityProvider(Provider):
         **kwargs,
     ) -> Response:
         """Generate a completion with online search."""
+        kwargs = apply_thinking_level(kwargs, OPENAI_COMPAT)
+        kwargs = apply_prompt_cache(kwargs, OPENAI_COMPAT)
+        kwargs = apply_request_headers(kwargs)
+        normalized_messages = normalize_messages(
+            messages,
+            OPENAI_COMPAT,
+            supports_developer_role=True,
+        )
         response = self.client.chat.completions.create(
             model=model,
-            messages=self._convert_messages(messages),
+            messages=self._convert_messages(normalized_messages),
             temperature=temperature,
-            max_tokens=max_tokens,
+            **build_token_limit_param(
+                max_tokens,
+                param_name="max_tokens",
+                compat=OPENAI_COMPAT,
+            ),
             **kwargs,
         )
 
@@ -121,17 +144,29 @@ class PerplexityProvider(Provider):
         **kwargs,
     ) -> Iterator[StreamChunk]:
         """Stream a completion with online search."""
+        kwargs = apply_thinking_level(kwargs, OPENAI_COMPAT)
+        kwargs = apply_prompt_cache(kwargs, OPENAI_COMPAT)
+        kwargs = apply_request_headers(kwargs)
+        normalized_messages = normalize_messages(
+            messages,
+            OPENAI_COMPAT,
+            supports_developer_role=True,
+        )
         stream = self.client.chat.completions.create(
             model=model,
-            messages=self._convert_messages(messages),
+            messages=self._convert_messages(normalized_messages),
             temperature=temperature,
-            max_tokens=max_tokens,
             stream=True,
+            stream_options={"include_usage": True},
+            **build_token_limit_param(
+                max_tokens,
+                param_name="max_tokens",
+                compat=OPENAI_COMPAT,
+            ),
             **kwargs,
         )
 
-        for chunk in stream:
-            choice = chunk.choices[0]
+        for chunk, choice in iter_openai_stream_choices(stream):
             if choice.delta.content:
                 metadata = {"id": chunk.id}
                 # Include citations if available
@@ -153,11 +188,23 @@ class PerplexityProvider(Provider):
         **kwargs,
     ) -> Response:
         """Async generate a completion with online search."""
+        kwargs = apply_thinking_level(kwargs, OPENAI_COMPAT)
+        kwargs = apply_prompt_cache(kwargs, OPENAI_COMPAT)
+        kwargs = apply_request_headers(kwargs)
+        normalized_messages = normalize_messages(
+            messages,
+            OPENAI_COMPAT,
+            supports_developer_role=True,
+        )
         response = await self.async_client.chat.completions.create(
             model=model,
-            messages=self._convert_messages(messages),
+            messages=self._convert_messages(normalized_messages),
             temperature=temperature,
-            max_tokens=max_tokens,
+            **build_token_limit_param(
+                max_tokens,
+                param_name="max_tokens",
+                compat=OPENAI_COMPAT,
+            ),
             **kwargs,
         )
 
@@ -191,17 +238,38 @@ class PerplexityProvider(Provider):
         **kwargs,
     ) -> AsyncIterator[StreamChunk]:
         """Async stream a completion with online search."""
+        kwargs = apply_thinking_level(kwargs, OPENAI_COMPAT)
+        kwargs = apply_prompt_cache(kwargs, OPENAI_COMPAT)
+        kwargs = apply_request_headers(kwargs)
+        normalized_messages = normalize_messages(
+            messages,
+            OPENAI_COMPAT,
+            supports_developer_role=True,
+        )
         stream = await self.async_client.chat.completions.create(
             model=model,
-            messages=self._convert_messages(messages),
+            messages=self._convert_messages(normalized_messages),
             temperature=temperature,
-            max_tokens=max_tokens,
             stream=True,
+            stream_options={"include_usage": True},
+            **build_token_limit_param(
+                max_tokens,
+                param_name="max_tokens",
+                compat=OPENAI_COMPAT,
+            ),
             **kwargs,
         )
 
+        accumulator = _OpenAIToolCallAccumulator()
+        usage = None
         async for chunk in stream:
-            choice = chunk.choices[0]
+            chunk_usage = _stream_usage_to_dict(getattr(chunk, "usage", None))
+            if chunk_usage:
+                usage = chunk_usage
+            choices = getattr(chunk, "choices", None) or []
+            if not choices:
+                continue
+            choice = choices[0]
             if choice.delta.content:
                 metadata = {"id": chunk.id}
                 # Include citations if available
@@ -213,3 +281,7 @@ class PerplexityProvider(Provider):
                     finish_reason=choice.finish_reason,
                     metadata=metadata,
                 )
+            accumulator.add(choice)
+        tool_calls = accumulator.finish()
+        if tool_calls or usage:
+            yield StreamChunk(content="", tool_calls=tool_calls, usage=usage)

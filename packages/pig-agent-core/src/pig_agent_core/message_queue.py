@@ -53,13 +53,15 @@ class MessageQueue:
             List of steering messages
         """
         steering = [m for m in self.queue if m.type == MessageType.STEERING]
+        if not steering:
+            return []
 
-        # Remove from queue
+        if self.steering_mode == "one-at-a-time":
+            first = steering[0]
+            self.queue.remove(first)
+            return [first]
+
         self.queue = [m for m in self.queue if m.type != MessageType.STEERING]
-
-        # Apply mode
-        if self.steering_mode == "one-at-a-time" and steering:
-            return [steering[0]]
         return steering
 
     def get_followup_messages(self) -> list[QueuedMessage]:
@@ -69,13 +71,15 @@ class MessageQueue:
             List of follow-up messages
         """
         followup = [m for m in self.queue if m.type == MessageType.FOLLOWUP]
+        if not followup:
+            return []
 
-        # Remove from queue
+        if self.followup_mode == "one-at-a-time":
+            first = followup[0]
+            self.queue.remove(first)
+            return [first]
+
         self.queue = [m for m in self.queue if m.type != MessageType.FOLLOWUP]
-
-        # Apply mode
-        if self.followup_mode == "one-at-a-time" and followup:
-            return [followup[0]]
         return followup
 
     def peek(self) -> QueuedMessage | None:

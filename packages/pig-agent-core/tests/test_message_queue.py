@@ -46,9 +46,10 @@ def test_queue_get_steering():
     assert len(steering) == 1
     assert steering[0].content == "Steering 1"
 
-    # Steering removed, followup remains
-    assert len(queue) == 1
-    assert not queue.has_steering()
+    # One steering message consumed, later steering + followup remain
+    assert len(queue) == 2
+    assert queue.has_steering()
+    assert queue.has_followup()
 
 
 def test_queue_get_followup():
@@ -65,9 +66,44 @@ def test_queue_get_followup():
     assert len(followup) == 1
     assert followup[0].content == "Followup 1"
 
-    # Followup removed, steering remains
-    assert len(queue) == 1
+    # One followup consumed, later followup + steering remain
+    assert len(queue) == 2
     assert queue.has_steering()
+    assert queue.has_followup()
+
+
+def test_followup_queue_remains_fifo_across_multiple_drains():
+    """Follow-up messages should preserve insertion order across repeated drains."""
+    queue = MessageQueue()
+
+    queue.add_followup("Followup 1")
+    queue.add_followup("Followup 2")
+    queue.add_followup("Followup 3")
+
+    first = queue.get_followup_messages()
+    second = queue.get_followup_messages()
+    third = queue.get_followup_messages()
+
+    assert [m.content for m in first] == ["Followup 1"]
+    assert [m.content for m in second] == ["Followup 2"]
+    assert [m.content for m in third] == ["Followup 3"]
+
+
+def test_steering_queue_remains_fifo_across_multiple_drains():
+    """Steering messages should preserve insertion order across repeated drains."""
+    queue = MessageQueue()
+
+    queue.add_steering("Steering 1")
+    queue.add_steering("Steering 2")
+    queue.add_steering("Steering 3")
+
+    first = queue.get_steering_messages()
+    second = queue.get_steering_messages()
+    third = queue.get_steering_messages()
+
+    assert [m.content for m in first] == ["Steering 1"]
+    assert [m.content for m in second] == ["Steering 2"]
+    assert [m.content for m in third] == ["Steering 3"]
 
 
 def test_queue_mode_all():

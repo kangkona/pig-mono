@@ -238,6 +238,21 @@ class ExtensionManager:
 
         return extensions
 
+    def cleanup(self, reason: str = "normal", target_session_file: str | None = None) -> None:
+        """Tear down loaded extensions for shutdown paths.
+
+        Current extensions are plain Python modules without an explicit unload
+        hook, so cleanup is intentionally conservative: clear the loaded-module
+        registry and command/event handler state.
+        """
+        event = {"reason": reason}
+        if target_session_file is not None:
+            event["targetSessionFile"] = target_session_file
+        self.emit_event("session_shutdown", event)
+        self.extensions.clear()
+        self.api._commands.clear()
+        self.api._event_handlers.clear()
+
     def load_from_directory(self, directory: Path | str) -> None:
         """Load all extensions from a directory.
 
