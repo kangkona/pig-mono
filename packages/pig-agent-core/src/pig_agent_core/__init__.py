@@ -39,7 +39,7 @@ from .tools.base import ToolResult as EnhancedToolResult
 from .tools.metrics import ToolMetrics, ToolMetricsCollector
 from .tools.registry import ToolRegistry as EnhancedToolRegistry
 
-__version__ = "0.0.4"
+__version__ = "0.1.0"
 
 __all__ = [
     # Core

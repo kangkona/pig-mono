@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "pig-agent-core"
-version = "0.0.4"
+version = "0.1.0"
 description = "Agent runtime with tool calling and state management"
 readme = "README.md"
 license = { text = "MIT" }
@@ -14,7 +14,7 @@ authors = [
 ]
 
 dependencies = [
-    "pig-llm>=0.0.1",
+    "pig-llm>=0.1.0",
     "pydantic>=2.6.0",
     "rich>=13.7.0",
     "typing-extensions>=4.9.0",

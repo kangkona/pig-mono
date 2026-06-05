@@ -26,7 +26,7 @@ except ImportError:
     PyCodeCompleter = None
     prompt_with_autocomplete = None
 
-__version__ = "0.0.1"
+__version__ = "0.1.0"
 
 __all__ = [
     "ChatUI",

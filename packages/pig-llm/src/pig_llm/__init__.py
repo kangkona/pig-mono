@@ -6,7 +6,7 @@ from .model_info import get_model_info
 from .models import Message, Response, StreamChunk
 from .providers import Provider
 
-__version__ = "0.0.1"
+__version__ = "0.1.0"
 
 __all__ = [
     "LLM",
