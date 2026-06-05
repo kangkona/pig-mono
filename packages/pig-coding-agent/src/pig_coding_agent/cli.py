@@ -174,7 +174,7 @@ def _validate_startup_name(name: str | None) -> None:
 def main(
     ctx: typer.Context,
     model: str | None = typer.Option(None, "--model", "-m", help="LLM model to use"),
-    provider: str = typer.Option("openai", "--provider", "-p", help="LLM provider"),
+    provider: str | None = typer.Option(None, "--provider", "-p", help="LLM provider"),
     workspace: Path = typer.Option(".", "--path", "-w", help="Workspace directory"),
     verbose: bool = typer.Option(True, "--verbose/--quiet", "-v/-q", help="Verbose output"),
     resume: bool = typer.Option(False, "--resume", "-r", help="Resume last session"),
@@ -248,16 +248,22 @@ def main(
         if configured_session_dir:
             resolved_session_dir = Path(configured_session_dir).expanduser()
 
+    # Prompt for provider and model interactively when not supplied via flags.
+    # In protocol/json/rpc modes we can't prompt, so require explicit flags.
+    if not provider:
+        if protocol_mode:
+            console.print(f"[red]Error: --provider / -p is required in {mode} mode[/red]")
+            raise typer.Exit(1)
+        provider = typer.prompt("Provider (e.g. anthropic, openai, openrouter)")
+
     # Get API key
     api_key = os.getenv(f"{provider.upper()}_API_KEY")
     if not api_key:
         console.print(f"[red]Error: {provider.upper()}_API_KEY not set[/red]")
         console.print(f"  Set your API key:   export {provider.upper()}_API_KEY=your-key")
-        console.print("  Or use a different provider: pig-code -p <provider> -m <model>")
         raise typer.Exit(1)
 
-    # Create LLM — prompt for model interactively when not supplied via -m.
-    # In protocol/json/rpc modes we can't prompt, so error there instead.
+    # Prompt for model interactively when not supplied via -m.
     resolved_model = model
     if not resolved_model:
         if protocol_mode:
