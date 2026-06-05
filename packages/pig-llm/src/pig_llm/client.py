@@ -38,15 +38,15 @@ class LLM:
             config_dict.update(kwargs)
             config = Config(**config_dict)
 
+        self.config = config
+        self.enable_web_search = enable_web_search
+        self.web_search_max_uses = web_search_max_uses
+        self._provider = self._init_provider()
         if not config.model:
             raise ValueError(
                 f"No model specified for provider '{config.provider}'. "
                 "Pass --model / -m or set the model in your config."
             )
-        self.config = config
-        self.enable_web_search = enable_web_search
-        self.web_search_max_uses = web_search_max_uses
-        self._provider = self._init_provider()
 
     def _inject_web_search(self, kwargs: dict) -> None:
         """Add the native web-search intent for providers that support it.
