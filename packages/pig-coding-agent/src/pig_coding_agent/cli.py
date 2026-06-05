@@ -255,22 +255,23 @@ def main(
         console.print(f"Please set your API key: export {provider.upper()}_API_KEY=your-key")
         raise typer.Exit(1)
 
-    # Create LLM — only pass model when the user explicitly set it; passing
-    # None would fail Pydantic validation and Config already has a default.
-    llm_kwargs: dict = {
-        "provider": provider,
-        "api_key": api_key,
-        "base_url": resolved_base_url,
-        "compat_mode": resolved_compat_mode,
-        "enable_web_search": resolved_web_search,
-    }
-    if model:
-        llm_kwargs["model"] = model
-    try:
-        llm = LLM(**llm_kwargs)
-    except ValueError as exc:
-        console.print(f"[red]Error: {exc}[/red]")
-        raise typer.Exit(1) from exc
+    # Create LLM — prompt for model interactively when not supplied via -m.
+    # In protocol/json/rpc modes we can't prompt, so error there instead.
+    resolved_model = model
+    if not resolved_model:
+        if protocol_mode:
+            console.print(f"[red]Error: --model / -m is required in {mode} mode[/red]")
+            raise typer.Exit(1)
+        resolved_model = typer.prompt(f"Model for {provider}")
+
+    llm = LLM(
+        provider=provider,
+        api_key=api_key,
+        model=resolved_model,
+        base_url=resolved_base_url,
+        compat_mode=resolved_compat_mode,
+        enable_web_search=resolved_web_search,
+    )
 
     # Handle session loading
     session_path = None
