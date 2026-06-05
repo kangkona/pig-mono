@@ -252,7 +252,8 @@ def main(
     api_key = os.getenv(f"{provider.upper()}_API_KEY")
     if not api_key:
         console.print(f"[red]Error: {provider.upper()}_API_KEY not set[/red]")
-        console.print(f"Please set your API key: export {provider.upper()}_API_KEY=your-key")
+        console.print(f"  Set your API key:   export {provider.upper()}_API_KEY=your-key")
+        console.print("  Or use a different provider: pig-code -p anthropic -m <model>")
         raise typer.Exit(1)
 
     # Create LLM — prompt for model interactively when not supplied via -m.
