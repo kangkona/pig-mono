@@ -266,7 +266,11 @@ def main(
     }
     if model:
         llm_kwargs["model"] = model
-    llm = LLM(**llm_kwargs)
+    try:
+        llm = LLM(**llm_kwargs)
+    except ValueError as exc:
+        console.print(f"[red]Error: {exc}[/red]")
+        raise typer.Exit(1) from exc
 
     # Handle session loading
     session_path = None
