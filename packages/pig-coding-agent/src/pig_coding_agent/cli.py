@@ -255,14 +255,8 @@ def main(
         console.print(f"Please set your API key: export {provider.upper()}_API_KEY=your-key")
         raise typer.Exit(1)
 
-    # Create LLM — only pass model when explicitly set; Config has a default
-    # per-provider fallback, and passing None would fail Pydantic validation.
-    _DEFAULT_MODELS: dict[str, str] = {
-        "openai": "gpt-3.5-turbo",
-        "anthropic": "claude-haiku-4-5-20251001",
-        "google": "gemini-3.0-flash",
-    }
-    resolved_model = model or _DEFAULT_MODELS.get(provider)
+    # Create LLM — only pass model when the user explicitly set it; passing
+    # None would fail Pydantic validation and Config already has a default.
     llm_kwargs: dict = {
         "provider": provider,
         "api_key": api_key,
@@ -270,8 +264,8 @@ def main(
         "compat_mode": resolved_compat_mode,
         "enable_web_search": resolved_web_search,
     }
-    if resolved_model:
-        llm_kwargs["model"] = resolved_model
+    if model:
+        llm_kwargs["model"] = model
     llm = LLM(**llm_kwargs)
 
     # Handle session loading
