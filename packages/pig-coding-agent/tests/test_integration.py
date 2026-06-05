@@ -1177,7 +1177,7 @@ def test_auto_compact_triggers_only_when_context_nearly_full(mock_llm, temp_work
 
 
 def test_startup_session_id_resume_restores_llm_context(mock_llm, temp_workspace):
-    """pig-code --session-id at startup must replay the conversation into context."""
+    """piggy --session-id at startup must replay the conversation into context."""
     src = _agent(mock_llm, temp_workspace, session_name="ctx")
     src.session.add_message("user", "the secret is 1234")
     src.session.add_message("assistant", "noted: 1234")

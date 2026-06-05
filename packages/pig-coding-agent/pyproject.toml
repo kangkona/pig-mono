@@ -33,7 +33,7 @@ dev = [
 ]
 
 [project.scripts]
-pig-code = "pig_coding_agent.cli:app"
+piggy = "pig_coding_agent.cli:app"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/pig_coding_agent"]

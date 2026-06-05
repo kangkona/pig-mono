@@ -28,29 +28,29 @@ pip install pig-coding-agent
 
 ```bash
 # Start coding agent
-pig-code
+piggy
 
 # With specific model
-pig-code --model gpt-4
+piggy --model gpt-4
 
 # In a specific directory
-pig-code --path /path/to/project
+piggy --path /path/to/project
 ```
 
 ### Command Line Usage
 
 ```bash
 # Generate code
-pig-code gen "Create a FastAPI hello world app"
+piggy gen "Create a FastAPI hello world app"
 
 # Analyze file
-pig-code analyze main.py
+piggy analyze main.py
 
 # Refactor code
-pig-code refactor main.py "Add type hints"
+piggy refactor main.py "Add type hints"
 
 # Chat mode
-pig-code chat
+piggy chat
 ```
 
 ## Built-in Tools
@@ -82,7 +82,7 @@ The coding agent comes with these tools:
 ### Generate a Python Module
 
 ```bash
-$ pig-code
+$ piggy
 > Create a Python module for handling JSON files with read/write functions
 
 Agent will:
@@ -94,7 +94,7 @@ Agent will:
 ### Analyze Codebase
 
 ```bash
-$ pig-code analyze
+$ piggy analyze
 > Analyze this codebase and suggest improvements
 
 Agent will:
@@ -106,7 +106,7 @@ Agent will:
 ### Interactive Refactoring
 
 ```bash
-$ pig-code
+$ piggy
 > Refactor main.py to use async/await
 
 Agent will:
@@ -119,7 +119,7 @@ Agent will:
 
 ## Configuration
 
-Create `.pig-code-config.json`:
+Create `.piggy-config.json`:
 
 ```json
 {
@@ -176,7 +176,7 @@ The agent will automatically:
 ### Check Resilience Status
 
 ```bash
-$ pig-code
+$ piggy
 > /resilience
 
 Resilience Status
@@ -196,7 +196,7 @@ Profiles:
 ### Disable Resilience
 
 ```bash
-pig-code --no-resilience
+piggy --no-resilience
 ```
 
 ## Cost Tracking (v0.0.4)
@@ -206,7 +206,7 @@ Track LLM and tool usage costs automatically:
 ### View Cost Summary
 
 ```bash
-$ pig-code
+$ piggy
 > /cost
 
 Usage Summary
@@ -233,7 +233,7 @@ Cost data is saved to `.agents/usage.json` in your workspace.
 ### Disable Cost Tracking
 
 ```bash
-pig-code --no-cost-tracking
+piggy --no-cost-tracking
 ```
 
 ## Safety Features
