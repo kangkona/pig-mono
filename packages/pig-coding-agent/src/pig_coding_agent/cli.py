@@ -209,6 +209,11 @@ def main(
         "--compat-mode",
         help="Explicit OpenAI-compatible request normalization mode",
     ),
+    web_search: bool = typer.Option(
+        False,
+        "--web-search/--no-web-search",
+        help="Enable the model provider's native web search (Anthropic)",
+    ),
 ):
     """Start interactive coding agent."""
     if ctx.invoked_subcommand is not None:
@@ -227,6 +232,7 @@ def main(
     resolved_exclude_tools = _resolve_option_value(exclude_tools)
     resolved_base_url = _resolve_option_value(base_url)
     resolved_compat_mode = _resolve_option_value(compat_mode)
+    resolved_web_search = bool(_resolve_option_value(web_search))
 
     _validate_session_selector_flags(
         fork=resolved_fork,
@@ -256,6 +262,7 @@ def main(
         model=model or ("gpt-3.5-turbo" if provider == "openai" else None),
         base_url=resolved_base_url,
         compat_mode=resolved_compat_mode,
+        enable_web_search=resolved_web_search,
     )
 
     # Handle session loading

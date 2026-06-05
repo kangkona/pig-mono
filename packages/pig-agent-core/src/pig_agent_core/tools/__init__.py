@@ -7,7 +7,6 @@ from .base import CancelledError, ToolResult
 from .handlers_core import HANDLERS
 from .registry import ToolRegistry
 from .schemas import CORE_TOOL_NAMES, TOOL_BUDGETS, TOOL_PERMISSIONS, TOOL_SCHEMAS
-from .web import register_web_tools
 
 # Global registry for external tool registration
 # External packages can import this and register their tools
@@ -47,5 +46,4 @@ __all__ = [
     "TOOL_SCHEMAS",
     "TOOL_PERMISSIONS",
     "TOOL_BUDGETS",
-    "register_web_tools",
 ]

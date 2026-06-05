@@ -14,6 +14,8 @@ class LLM:
         provider: str | None = None,
         api_key: str | None = None,
         config: Config | None = None,
+        enable_web_search: bool = False,
+        web_search_max_uses: int = 5,
         **kwargs,
     ):
         """Initialize LLM client.
@@ -22,6 +24,11 @@ class LLM:
             provider: Provider name (openai, anthropic, google)
             api_key: API key for the provider
             config: Configuration object
+            enable_web_search: Enable the model provider's native server-side web
+                search. Provider-neutral intent — only forwarded to providers that
+                support it (currently Anthropic), which translate it into their
+                native tool spec.
+            web_search_max_uses: Max distinct searches per request (Anthropic).
             **kwargs: Additional config parameters
         """
         if config is None:
@@ -32,7 +39,20 @@ class LLM:
             config = Config(**config_dict)
 
         self.config = config
+        self.enable_web_search = enable_web_search
+        self.web_search_max_uses = web_search_max_uses
         self._provider = self._init_provider()
+
+    def _inject_web_search(self, kwargs: dict) -> None:
+        """Add the native web-search intent for providers that support it.
+
+        Gated by provider so the control flags never reach an SDK that would
+        reject them as unknown kwargs. The provider pops the flags and emits its
+        own native server-tool spec.
+        """
+        if self.enable_web_search and self.config.provider == "anthropic":
+            kwargs.setdefault("enable_web_search", True)
+            kwargs.setdefault("web_search_max_uses", self.web_search_max_uses)
 
     # Maps provider name to (module, class_name) for lazy import
     _PROVIDER_MAP = {
@@ -96,6 +116,7 @@ class LLM:
             messages.append(Message(role="system", content=system))
         messages.append(Message(role="user", content=prompt))
 
+        self._inject_web_search(kwargs)
         return self._provider.complete(
             messages=messages,
             model=kwargs.get("model", self.config.model),
@@ -125,6 +146,7 @@ class LLM:
             messages.append(Message(role="system", content=system))
         messages.append(Message(role="user", content=prompt))
 
+        self._inject_web_search(kwargs)
         yield from self._provider.stream(
             messages=messages,
             model=kwargs.get("model", self.config.model),
@@ -150,6 +172,7 @@ class LLM:
         model = kwargs.pop("model", self.config.model)
         temperature = kwargs.pop("temperature", self.config.temperature)
         max_tokens = kwargs.pop("max_tokens", self.config.max_tokens)
+        self._inject_web_search(kwargs)
 
         return self._provider.complete(
             messages=messages,
@@ -176,6 +199,7 @@ class LLM:
         model = kwargs.pop("model", self.config.model)
         temperature = kwargs.pop("temperature", self.config.temperature)
         max_tokens = kwargs.pop("max_tokens", self.config.max_tokens)
+        self._inject_web_search(kwargs)
 
         return await self._provider.acomplete(
             messages=messages,
@@ -202,6 +226,7 @@ class LLM:
         model = kwargs.pop("model", self.config.model)
         temperature = kwargs.pop("temperature", self.config.temperature)
         max_tokens = kwargs.pop("max_tokens", self.config.max_tokens)
+        self._inject_web_search(kwargs)
 
         async for chunk in self._provider.astream(
             messages=messages,

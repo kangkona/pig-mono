@@ -169,19 +169,10 @@ class CodingAgent:
             max_rounds=0,
         )
 
-        # Register the coding tools on the agent's registry. Web tools
-        # (pig-agent-core[web]) are added only when a search backend is
-        # configured, so we never advertise tools that fail without an API key.
-        # Finally drop any tools excluded for this agent instance.
+        # Register the coding tools on the agent's registry, then drop any tools
+        # excluded for this agent instance. (Web search is handled natively by
+        # the model provider when enabled, not as a locally-dispatched tool.)
         self.agent.registry.register_package(coding_schemas, coding_handlers, is_core=True)
-        try:
-            from pig_agent_core.tools import register_web_tools
-            from pig_agent_core.tools.web import get_default_provider
-
-            get_default_provider()  # raises if no TAVILY_API_KEY / EXA_API_KEY
-            register_web_tools(self.agent.registry)
-        except Exception:
-            pass  # web extra not installed or no search backend configured
         for name in self.excluded_tools:
             self.agent.registry.unregister(name)
 

@@ -131,6 +131,25 @@ class AnthropicProvider(Provider):
 
         return anthropic_tools if anthropic_tools else None
 
+    def _resolve_tools_with_web_search(self, kwargs: dict) -> list[dict] | None:
+        """Build the Anthropic tools list from function tools + optional native search.
+
+        Pops the provider-neutral control flags (``enable_web_search`` /
+        ``web_search_max_uses``) so they never reach the SDK, and when enabled
+        appends Anthropic's native server-side web search tool. The model invokes
+        it server-side; results come back as ``web_search_tool_result`` content
+        (not ``tool_use``), so they are never dispatched as local tool calls.
+        """
+        enable_web = kwargs.pop("enable_web_search", False)
+        max_uses = kwargs.pop("web_search_max_uses", 5)
+        tools = self._convert_tools(kwargs.get("tools")) or []
+        if enable_web:
+            tools = list(tools)
+            tools.append(
+                {"type": "web_search_20250305", "name": "web_search", "max_uses": max_uses}
+            )
+        return tools or None
+
     def complete(
         self,
         messages: list[Message],
@@ -143,11 +162,11 @@ class AnthropicProvider(Provider):
         normalized_messages = normalize_messages(messages, ANTHROPIC_COMPAT)
         system, anthropic_messages = self._convert_messages(normalized_messages)
 
-        # Convert tools if present
+        # Convert tools (+ optional native web search) if present
         kwargs = apply_thinking_level(kwargs, ANTHROPIC_COMPAT)
-        tools = self._convert_tools(kwargs.get("tools"))
+        tools = self._resolve_tools_with_web_search(kwargs)
+        kwargs = {k: v for k, v in kwargs.items() if k != "tools"}
         if tools:
-            kwargs = {k: v for k, v in kwargs.items() if k != "tools"}
             kwargs["tools"] = tools
 
         request_kwargs = dict(kwargs)
@@ -224,11 +243,11 @@ class AnthropicProvider(Provider):
         normalized_messages = normalize_messages(messages, ANTHROPIC_COMPAT)
         system, anthropic_messages = self._convert_messages(normalized_messages)
 
-        # Convert tools if present
+        # Convert tools (+ optional native web search) if present
         kwargs = apply_thinking_level(kwargs, ANTHROPIC_COMPAT)
-        tools = self._convert_tools(kwargs.get("tools"))
+        tools = self._resolve_tools_with_web_search(kwargs)
+        kwargs = {k: v for k, v in kwargs.items() if k != "tools"}
         if tools:
-            kwargs = {k: v for k, v in kwargs.items() if k != "tools"}
             kwargs["tools"] = tools
 
         request_kwargs = dict(kwargs)
@@ -280,9 +299,10 @@ class AnthropicProvider(Provider):
         system, anthropic_messages = self._convert_messages(normalized_messages)
         kwargs = apply_thinking_level(kwargs, ANTHROPIC_COMPAT)
         request_kwargs = dict(kwargs)
-        request_kwargs["tools"] = self._convert_tools(request_kwargs.get("tools"))
-        if request_kwargs["tools"] is None:
-            request_kwargs.pop("tools")
+        tools = self._resolve_tools_with_web_search(request_kwargs)
+        request_kwargs.pop("tools", None)
+        if tools:
+            request_kwargs["tools"] = tools
         if self._supports_temperature(model):
             request_kwargs["temperature"] = temperature
         async with self.async_client.messages.stream(
