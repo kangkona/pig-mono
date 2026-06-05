@@ -256,12 +256,14 @@ def main(
             raise typer.Exit(1)
         provider = typer.prompt("Provider (e.g. anthropic, openai, openrouter)")
 
-    # Get API key
+    # Get API key — prompt interactively when missing (non-protocol modes only).
     api_key = os.getenv(f"{provider.upper()}_API_KEY")
     if not api_key:
-        console.print(f"[red]Error: {provider.upper()}_API_KEY not set[/red]")
-        console.print(f"  Set your API key:   export {provider.upper()}_API_KEY=your-key")
-        raise typer.Exit(1)
+        if protocol_mode:
+            console.print(f"[red]Error: {provider.upper()}_API_KEY not set[/red]")
+            console.print(f"  Set your API key:   export {provider.upper()}_API_KEY=your-key")
+            raise typer.Exit(1)
+        api_key = typer.prompt(f"{provider.upper()}_API_KEY", hide_input=True)
 
     # Prompt for model interactively when not supplied via -m.
     resolved_model = model
