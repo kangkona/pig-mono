@@ -38,6 +38,11 @@ class LLM:
             config_dict.update(kwargs)
             config = Config(**config_dict)
 
+        if not config.model:
+            raise ValueError(
+                f"No model specified for provider '{config.provider}'. "
+                "Pass --model / -m or set the model in your config."
+            )
         self.config = config
         self.enable_web_search = enable_web_search
         self.web_search_max_uses = web_search_max_uses
@@ -56,13 +61,8 @@ class LLM:
 
     @property
     def model(self) -> str:
-        """Return the configured model name, raising clearly if unset."""
-        if not self.config.model:
-            raise ValueError(
-                f"No model specified for provider '{self.config.provider}'. "
-                "Pass --model / -m or set the model in your config."
-            )
-        return self.config.model
+        """Return the configured model name (validated at construction time)."""
+        return self.config.model  # type: ignore[return-value]
 
     # Maps provider name to (module, class_name) for lazy import
     _PROVIDER_MAP = {
