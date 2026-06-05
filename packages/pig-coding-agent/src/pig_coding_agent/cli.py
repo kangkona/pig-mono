@@ -248,6 +248,10 @@ def main(
         if configured_session_dir:
             resolved_session_dir = Path(configured_session_dir).expanduser()
 
+    # Auto-infer openrouter when model looks like "org/model" and no -p was given.
+    if provider == "openai" and model and "/" in model:
+        provider = "openrouter"
+
     # Get API key
     api_key = os.getenv(f"{provider.upper()}_API_KEY")
     if not api_key:
