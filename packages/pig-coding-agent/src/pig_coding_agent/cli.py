@@ -249,7 +249,8 @@ def main(
             resolved_session_dir = Path(configured_session_dir).expanduser()
 
     # Auto-infer openrouter when model looks like "org/model" and no -p was given.
-    if provider == "openai" and model and "/" in model:
+    resolved_model_hint = _resolve_option_value(model)
+    if provider == "openai" and resolved_model_hint and "/" in resolved_model_hint:
         provider = "openrouter"
 
     # Get API key
