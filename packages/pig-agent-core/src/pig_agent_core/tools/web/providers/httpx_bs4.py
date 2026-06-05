@@ -4,7 +4,7 @@ Self-contained: fetches the raw HTML and strips it locally.
 Works without any external API — good for intranets or when you
 prefer not to route page content through a third-party service.
 
-Requires: pip install pig-agent-tools[web]  (httpx + beautifulsoup4)
+Requires: pip install pig-agent-core[web]  (httpx + beautifulsoup4)
 """
 
 from .base import PageContent

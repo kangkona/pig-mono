@@ -5,7 +5,7 @@ from types import ModuleType
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
-from pig_agent_tools.web.providers.base import (
+from pig_agent_core.tools.web.providers.base import (
     PageContent,
     ReaderProvider,
     SearchProvider,
@@ -65,7 +65,7 @@ def _fake_tavily_module(search_response: dict):
 
 @pytest.mark.asyncio
 async def test_tavily_provider_success():
-    from pig_agent_tools.web.providers.tavily import TavilyProvider
+    from pig_agent_core.tools.web.providers.tavily import TavilyProvider
 
     response = {
         "results": [
@@ -91,7 +91,7 @@ async def test_tavily_provider_success():
 
 @pytest.mark.asyncio
 async def test_tavily_provider_no_api_key():
-    from pig_agent_tools.web.providers.tavily import TavilyProvider
+    from pig_agent_core.tools.web.providers.tavily import TavilyProvider
 
     with patch.dict("os.environ", {}, clear=True):
         provider = TavilyProvider()
@@ -101,18 +101,18 @@ async def test_tavily_provider_no_api_key():
 
 @pytest.mark.asyncio
 async def test_tavily_provider_not_installed():
-    from pig_agent_tools.web.providers.tavily import TavilyProvider
+    from pig_agent_core.tools.web.providers.tavily import TavilyProvider
 
     sys.modules.pop("tavily", None)
     with patch.dict("sys.modules", {"tavily": None}):  # type: ignore[dict-item]
         provider = TavilyProvider(api_key="key")
-        with pytest.raises(RuntimeError, match="pip install pig-agent-tools\\[tavily\\]"):
+        with pytest.raises(RuntimeError, match="pip install pig-agent-core\\[tavily\\]"):
             await provider.search("test")
 
 
 @pytest.mark.asyncio
 async def test_tavily_provider_empty_results():
-    from pig_agent_tools.web.providers.tavily import TavilyProvider
+    from pig_agent_core.tools.web.providers.tavily import TavilyProvider
 
     fake_tavily, _ = _fake_tavily_module({"results": []})
     sys.modules["tavily"] = fake_tavily
@@ -159,7 +159,7 @@ def _fake_exa_module():
 
 @pytest.mark.asyncio
 async def test_exa_provider_success():
-    from pig_agent_tools.web.providers.exa import ExaProvider
+    from pig_agent_core.tools.web.providers.exa import ExaProvider
 
     fake_exa, client = _fake_exa_module()
     sys.modules["exa_py"] = fake_exa
@@ -183,7 +183,7 @@ async def test_exa_provider_success():
 
 @pytest.mark.asyncio
 async def test_exa_provider_no_api_key():
-    from pig_agent_tools.web.providers.exa import ExaProvider
+    from pig_agent_core.tools.web.providers.exa import ExaProvider
 
     with patch.dict("os.environ", {}, clear=True):
         provider = ExaProvider()
@@ -193,12 +193,12 @@ async def test_exa_provider_no_api_key():
 
 @pytest.mark.asyncio
 async def test_exa_provider_not_installed():
-    from pig_agent_tools.web.providers.exa import ExaProvider
+    from pig_agent_core.tools.web.providers.exa import ExaProvider
 
     sys.modules.pop("exa_py", None)
     with patch.dict("sys.modules", {"exa_py": None}):  # type: ignore[dict-item]
         provider = ExaProvider(api_key="key")
-        with pytest.raises(RuntimeError, match="pip install pig-agent-tools\\[exa\\]"):
+        with pytest.raises(RuntimeError, match="pip install pig-agent-core\\[exa\\]"):
             await provider.search("test")
 
 
@@ -208,7 +208,7 @@ async def test_exa_provider_not_installed():
 
 
 def test_get_default_provider_tavily(monkeypatch):
-    from pig_agent_tools.web.providers import TavilyProvider, get_default_provider
+    from pig_agent_core.tools.web.providers import TavilyProvider, get_default_provider
 
     monkeypatch.setenv("TAVILY_API_KEY", "tav-key")
     monkeypatch.delenv("EXA_API_KEY", raising=False)
@@ -217,7 +217,7 @@ def test_get_default_provider_tavily(monkeypatch):
 
 
 def test_get_default_provider_exa(monkeypatch):
-    from pig_agent_tools.web.providers import ExaProvider, get_default_provider
+    from pig_agent_core.tools.web.providers import ExaProvider, get_default_provider
 
     monkeypatch.delenv("TAVILY_API_KEY", raising=False)
     monkeypatch.setenv("EXA_API_KEY", "exa-key")
@@ -226,7 +226,7 @@ def test_get_default_provider_exa(monkeypatch):
 
 
 def test_get_default_provider_tavily_takes_priority(monkeypatch):
-    from pig_agent_tools.web.providers import TavilyProvider, get_default_provider
+    from pig_agent_core.tools.web.providers import TavilyProvider, get_default_provider
 
     monkeypatch.setenv("TAVILY_API_KEY", "tav-key")
     monkeypatch.setenv("EXA_API_KEY", "exa-key")
@@ -235,7 +235,7 @@ def test_get_default_provider_tavily_takes_priority(monkeypatch):
 
 
 def test_get_default_provider_no_key(monkeypatch):
-    from pig_agent_tools.web.providers import get_default_provider
+    from pig_agent_core.tools.web.providers import get_default_provider
 
     monkeypatch.delenv("TAVILY_API_KEY", raising=False)
     monkeypatch.delenv("EXA_API_KEY", raising=False)
@@ -268,7 +268,7 @@ def _make_jina_httpx_mock(json_response: dict | None = None, text: str = ""):
 
 @pytest.mark.asyncio
 async def test_jina_reader_success_json():
-    from pig_agent_tools.web.providers.jina import JinaReaderProvider
+    from pig_agent_core.tools.web.providers.jina import JinaReaderProvider
 
     jina_json = {"data": {"title": "My Page", "content": "# Hello\nWorld"}}
 
@@ -285,7 +285,7 @@ async def test_jina_reader_success_json():
 @pytest.mark.asyncio
 async def test_jina_reader_success_text_fallback():
     """Falls back to response.text when JSON parsing fails."""
-    from pig_agent_tools.web.providers.jina import JinaReaderProvider
+    from pig_agent_core.tools.web.providers.jina import JinaReaderProvider
 
     raw_text = "Plain text content from Jina"
 
@@ -299,7 +299,7 @@ async def test_jina_reader_success_text_fallback():
 @pytest.mark.asyncio
 async def test_jina_reader_with_api_key_sets_auth_header():
     """API key is sent as Authorization header."""
-    from pig_agent_tools.web.providers.jina import JinaReaderProvider
+    from pig_agent_core.tools.web.providers.jina import JinaReaderProvider
 
     jina_json = {"data": {"title": "", "content": "content"}}
     mock_client = _make_jina_httpx_mock(json_response=jina_json)
@@ -315,7 +315,7 @@ async def test_jina_reader_with_api_key_sets_auth_header():
 @pytest.mark.asyncio
 async def test_jina_reader_http_error():
     import httpx
-    from pig_agent_tools.web.providers.jina import JinaReaderProvider
+    from pig_agent_core.tools.web.providers.jina import JinaReaderProvider
 
     mock_response = Mock()
     mock_response.status_code = 429
@@ -337,7 +337,7 @@ async def test_jina_reader_http_error():
 @pytest.mark.asyncio
 async def test_jina_reader_timeout():
     import httpx
-    from pig_agent_tools.web.providers.jina import JinaReaderProvider
+    from pig_agent_core.tools.web.providers.jina import JinaReaderProvider
 
     mock_client = AsyncMock()
     mock_client.__aenter__.return_value = mock_client
@@ -352,7 +352,7 @@ async def test_jina_reader_timeout():
 
 @pytest.mark.asyncio
 async def test_jina_reader_content_truncation():
-    from pig_agent_tools.web.providers.jina import JinaReaderProvider
+    from pig_agent_core.tools.web.providers.jina import JinaReaderProvider
 
     long_text = "A" * 15000
     jina_json = {"data": {"title": "", "content": long_text}}
@@ -372,7 +372,8 @@ async def test_jina_reader_content_truncation():
 
 @pytest.mark.asyncio
 async def test_httpx_bs4_success():
-    from pig_agent_tools.web.providers.httpx_bs4 import HttpxBs4Provider
+    pytest.importorskip("bs4")
+    from pig_agent_core.tools.web.providers.httpx_bs4 import HttpxBs4Provider
 
     mock_html = """
     <html>
@@ -411,7 +412,9 @@ async def test_httpx_bs4_success():
 @pytest.mark.asyncio
 async def test_httpx_bs4_http_error():
     import httpx
-    from pig_agent_tools.web.providers.httpx_bs4 import HttpxBs4Provider
+
+    pytest.importorskip("bs4")
+    from pig_agent_core.tools.web.providers.httpx_bs4 import HttpxBs4Provider
 
     mock_response = Mock()
     mock_response.status_code = 404
@@ -432,7 +435,8 @@ async def test_httpx_bs4_http_error():
 
 @pytest.mark.asyncio
 async def test_httpx_bs4_content_truncation():
-    from pig_agent_tools.web.providers.httpx_bs4 import HttpxBs4Provider
+    pytest.importorskip("bs4")
+    from pig_agent_core.tools.web.providers.httpx_bs4 import HttpxBs4Provider
 
     long_text = "B" * 15000
     mock_html = f"<html><body><p>{long_text}</p></body></html>"
@@ -459,7 +463,7 @@ async def test_httpx_bs4_content_truncation():
 
 
 def test_get_default_reader_returns_jina():
-    from pig_agent_tools.web.providers import JinaReaderProvider, get_default_reader
+    from pig_agent_core.tools.web.providers import JinaReaderProvider, get_default_reader
 
     reader = get_default_reader()
     assert isinstance(reader, JinaReaderProvider)

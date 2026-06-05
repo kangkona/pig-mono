@@ -1,6 +1,6 @@
 """Exa search provider.
 
-Requires: pip install pig-agent-tools[exa]
+Requires: pip install pig-agent-core[exa]
 API key:  EXA_API_KEY environment variable
 Strengths: Semantic / similarity search, academic papers, technical docs
 """
@@ -45,7 +45,7 @@ class ExaProvider:
             from exa_py import Exa
         except ImportError as e:
             raise RuntimeError(
-                "Exa package not installed. Install with: pip install pig-agent-tools[exa]"
+                "Exa package not installed. Install with: pip install pig-agent-core[exa]"
             ) from e
 
         client = Exa(api_key=self._api_key)

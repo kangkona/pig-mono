@@ -1,10 +1,16 @@
-"""Built-in tools for coding agent."""
+"""Built-in tools for the coding agent.
+
+Tools are authored in the new-registry style: plain handler methods plus
+explicit OpenAI function-calling schemas, registered in bulk via
+``ToolRegistry.register_package``. ``build_coding_tools`` is the single entry
+point that binds handler state (workspace) and returns ``(schemas, handlers)``.
+"""
 
 import asyncio
 import subprocess
+from collections.abc import Callable
 from pathlib import Path
-
-from pig_agent_core import tool
+from typing import Any
 
 MAX_COMMAND_OUTPUT_BYTES = 64_000
 MAX_COMMAND_OUTPUT_LINES = 2_000
@@ -57,7 +63,6 @@ class FileTools:
             raise ValueError(f"Path {path} is outside workspace")
         return full_path
 
-    @tool(description="Read contents of a file")
     def read_file(self, path: str) -> str:
         """Read file contents.
 
@@ -72,7 +77,6 @@ class FileTools:
             return f"Error: File {path} does not exist"
         return file_path.read_text()
 
-    @tool(description="Write content to a file")
     def write_file(self, path: str, content: str) -> str:
         """Write content to file.
 
@@ -88,7 +92,6 @@ class FileTools:
         file_path.write_text(content)
         return f"Successfully wrote to {path}"
 
-    @tool(description="List files in a directory")
     def list_files(self, directory: str = ".") -> str:
         """List files in directory.
 
@@ -111,7 +114,6 @@ class FileTools:
 
         return "\n".join(files) if files else "Empty directory"
 
-    @tool(description="Check if file exists")
     def file_exists(self, path: str) -> bool:
         """Check if file exists.
 
@@ -123,7 +125,6 @@ class FileTools:
         """
         return self._resolve_path(path).exists()
 
-    @tool(description="Search for text in files (grep)")
     def grep_files(self, pattern: str, path: str = ".", recursive: bool = True) -> str:
         """Search for pattern in files.
 
@@ -172,7 +173,6 @@ class FileTools:
 
         return "\n".join(results)
 
-    @tool(description="Find files by name pattern")
     def find_files(self, pattern: str, path: str = ".") -> str:
         """Find files matching pattern.
 
@@ -203,7 +203,6 @@ class FileTools:
 
         return "\n".join(results)
 
-    @tool(description="List files with details (ls -la)")
     def ls_detailed(self, path: str = ".") -> str:
         """List files with detailed information.
 
@@ -246,54 +245,9 @@ class FileTools:
         return header + "\n".join(results)
 
 
-class CodeTools:
-    """Code generation and analysis tools."""
-
-    @tool(description="Generate code from description")
-    def generate_code(self, description: str, language: str = "python") -> str:
-        """Generate code from natural language description.
-
-        Args:
-            description: What the code should do
-            language: Programming language
-
-        Returns:
-            Generated code
-        """
-        # This is a placeholder - actual implementation would use LLM
-        return f"# Generated {language} code for: {description}\n# TODO: Implement"
-
-    @tool(description="Explain what code does")
-    def explain_code(self, code: str) -> str:
-        """Explain what code does.
-
-        Args:
-            code: Code to explain
-
-        Returns:
-            Explanation
-        """
-        # Placeholder
-        return f"This code appears to be {len(code.split())} lines long."
-
-    @tool(description="Add type hints to Python code")
-    def add_type_hints(self, code: str) -> str:
-        """Add type hints to Python code.
-
-        Args:
-            code: Python code
-
-        Returns:
-            Code with type hints
-        """
-        # Placeholder
-        return f"# Type hints added:\n{code}"
-
-
 class ShellTools:
     """Shell command execution tools."""
 
-    @tool(description="Execute a shell command")
     async def run_command(
         self,
         command: str,
@@ -371,7 +325,6 @@ class ShellTools:
         except Exception as e:
             return f"Error: {e}"
 
-    @tool(description="Get git status")
     def git_status(self) -> str:
         """Get git repository status.
 
@@ -380,7 +333,6 @@ class ShellTools:
         """
         return self._run_command_sync("git status --short")
 
-    @tool(description="Get git diff")
     def git_diff(self, path: str | None = None) -> str:
         """Get git diff.
 
@@ -393,7 +345,6 @@ class ShellTools:
         cmd = f"git diff {path}" if path else "git diff"
         return self._run_command_sync(cmd)
 
-    @tool(description="Git commit changes")
     def git_commit(self, message: str, add_all: bool = False) -> str:
         """Commit changes to git.
 
@@ -413,7 +364,6 @@ class ShellTools:
         safe_message = shlex.quote(message)
         return self._run_command_sync(f"git commit -m {safe_message}")
 
-    @tool(description="Git push changes")
     def git_push(self, remote: str = "origin", branch: str | None = None) -> str:
         """Push changes to remote.
 
@@ -429,7 +379,6 @@ class ShellTools:
         else:
             return self._run_command_sync(f"git push {remote}")
 
-    @tool(description="Create git branch")
     def git_branch(self, branch_name: str, checkout: bool = True) -> str:
         """Create a new git branch.
 
@@ -445,7 +394,6 @@ class ShellTools:
         else:
             return self._run_command_sync(f"git branch {branch_name}")
 
-    @tool(description="Get git log")
     def git_log(self, limit: int = 10) -> str:
         """Get recent git commits.
 
@@ -456,3 +404,166 @@ class ShellTools:
             Git log output
         """
         return self._run_command_sync(f"git log --oneline -n {limit}")
+
+
+def _fn(name: str, description: str, properties: dict, required: list[str]) -> dict[str, Any]:
+    """Build an OpenAI function-calling schema (matches the registry's expected shape)."""
+    return {
+        "type": "function",
+        "function": {
+            "name": name,
+            "description": description,
+            "parameters": {
+                "type": "object",
+                "properties": properties,
+                "required": required,
+            },
+        },
+    }
+
+
+# Explicit schemas for the coding tools (replaces the old @tool Pydantic auto-gen).
+CODING_TOOL_SCHEMAS: list[dict[str, Any]] = [
+    _fn(
+        "read_file",
+        "Read contents of a file",
+        {"path": {"type": "string", "description": "File path relative to workspace"}},
+        ["path"],
+    ),
+    _fn(
+        "write_file",
+        "Write content to a file",
+        {
+            "path": {"type": "string", "description": "File path relative to workspace"},
+            "content": {"type": "string", "description": "Content to write"},
+        },
+        ["path", "content"],
+    ),
+    _fn(
+        "list_files",
+        "List files in a directory",
+        {"directory": {"type": "string", "description": "Directory path (default '.')"}},
+        [],
+    ),
+    _fn(
+        "file_exists",
+        "Check if a file exists",
+        {"path": {"type": "string", "description": "File path"}},
+        ["path"],
+    ),
+    _fn(
+        "grep_files",
+        "Search for text in files (grep)",
+        {
+            "pattern": {"type": "string", "description": "Text pattern to search for"},
+            "path": {"type": "string", "description": "Directory or file to search in"},
+            "recursive": {"type": "boolean", "description": "Search recursively (default true)"},
+        },
+        ["pattern"],
+    ),
+    _fn(
+        "find_files",
+        "Find files by name pattern",
+        {
+            "pattern": {"type": "string", "description": "File name pattern (supports wildcards)"},
+            "path": {"type": "string", "description": "Directory to search in"},
+        },
+        ["pattern"],
+    ),
+    _fn(
+        "ls_detailed",
+        "List files with details (ls -la)",
+        {"path": {"type": "string", "description": "Directory path (default '.')"}},
+        [],
+    ),
+    _fn(
+        "run_command",
+        "Execute a shell command",
+        {
+            "command": {"type": "string", "description": "Command to execute"},
+            "cwd": {"type": "string", "description": "Working directory"},
+            "exclude_from_context": {
+                "type": "boolean",
+                "description": "Do not add output to model context",
+            },
+        },
+        ["command"],
+    ),
+    _fn("git_status", "Get git status", {}, []),
+    _fn(
+        "git_diff",
+        "Get git diff",
+        {"path": {"type": "string", "description": "Optional path to diff"}},
+        [],
+    ),
+    _fn(
+        "git_commit",
+        "Commit changes to git",
+        {
+            "message": {"type": "string", "description": "Commit message"},
+            "add_all": {"type": "boolean", "description": "Add all changes first"},
+        },
+        ["message"],
+    ),
+    _fn(
+        "git_push",
+        "Push changes to a remote",
+        {
+            "remote": {"type": "string", "description": "Remote name (default 'origin')"},
+            "branch": {"type": "string", "description": "Branch name (current if omitted)"},
+        },
+        [],
+    ),
+    _fn(
+        "git_branch",
+        "Create a git branch",
+        {
+            "branch_name": {"type": "string", "description": "Branch name"},
+            "checkout": {
+                "type": "boolean",
+                "description": "Checkout after creating (default true)",
+            },
+        },
+        ["branch_name"],
+    ),
+    _fn(
+        "git_log",
+        "Get recent git commits",
+        {"limit": {"type": "integer", "description": "Number of commits (default 10)"}},
+        [],
+    ),
+]
+
+
+def build_coding_tools(workspace: str = ".") -> tuple[list[dict[str, Any]], dict[str, Callable]]:
+    """Build the coding tools' schemas and name→handler map.
+
+    Instantiates the stateful tool classes (FileTools needs the workspace) and
+    returns ``(schemas, handlers)`` ready for ``ToolRegistry.register_package``.
+
+    Args:
+        workspace: Workspace directory for the file tools.
+
+    Returns:
+        A ``(CODING_TOOL_SCHEMAS, handlers)`` tuple.
+    """
+    file_tools = FileTools(workspace)
+    shell_tools = ShellTools()
+
+    handlers: dict[str, Callable] = {
+        "read_file": file_tools.read_file,
+        "write_file": file_tools.write_file,
+        "list_files": file_tools.list_files,
+        "file_exists": file_tools.file_exists,
+        "grep_files": file_tools.grep_files,
+        "find_files": file_tools.find_files,
+        "ls_detailed": file_tools.ls_detailed,
+        "run_command": shell_tools.run_command,
+        "git_status": shell_tools.git_status,
+        "git_diff": shell_tools.git_diff,
+        "git_commit": shell_tools.git_commit,
+        "git_push": shell_tools.git_push,
+        "git_branch": shell_tools.git_branch,
+        "git_log": shell_tools.git_log,
+    }
+    return CODING_TOOL_SCHEMAS, handlers

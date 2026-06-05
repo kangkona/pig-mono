@@ -82,7 +82,7 @@ jobs:
 
 # One-time PyPI setup required before the pypi-publish job can succeed:
 #   1. For each package (pig-llm, pig-agent-core, pig-coding-agent, pig-tui,
-#      pig-messenger, pig-agent-tools, pig-web-ui), add a Trusted Publisher on
+#      pig-messenger, pig-web-ui), add a Trusted Publisher on
 #      PyPI -> Project -> Settings -> Publishing (or a "pending publisher" for
 #      first-ever uploads) with:
 #         Owner:    kangkona

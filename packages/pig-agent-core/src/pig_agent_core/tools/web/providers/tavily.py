@@ -1,6 +1,6 @@
 """Tavily search provider.
 
-Requires: pip install pig-agent-tools[tavily]
+Requires: pip install pig-agent-core[tavily]
 API key:  TAVILY_API_KEY environment variable
 Strengths: News, current events, fast Q&A
 """
@@ -44,7 +44,7 @@ class TavilyProvider:
             from tavily import TavilyClient
         except ImportError as e:
             raise RuntimeError(
-                "Tavily package not installed. Install with: pip install pig-agent-tools[tavily]"
+                "Tavily package not installed. Install with: pip install pig-agent-core[tavily]"
             ) from e
 
         client = TavilyClient(api_key=self._api_key)

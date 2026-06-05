@@ -1,22 +1,21 @@
-"""Integration tests for tool auto-registration."""
+"""Integration tests for web-tool registration (``register_web_tools``)."""
 
 import asyncio
 
-import pytest
 from pig_agent_core.tools import _global_registry
-from pig_agent_tools.web import register_tools
-from pig_agent_tools.web.providers.base import SearchResult
+from pig_agent_core.tools.web import register_web_tools
+from pig_agent_core.tools.web.providers.base import SearchResult
 
 
-def test_register_tools_with_global_registry():
-    """Test registering web tools with global registry."""
+def test_register_web_tools_with_global_registry():
+    """Registering with no argument targets the global registry."""
     with _global_registry._lock:
         _global_registry._handlers.clear()
         _global_registry._schemas.clear()
         _global_registry._core_tools.clear()
         _global_registry._discovered.clear()
 
-    registered = register_tools()
+    registered = register_web_tools()
 
     assert "search_web" in registered
     assert "read_webpage" in registered
@@ -29,12 +28,12 @@ def test_register_tools_with_global_registry():
         assert "read_webpage" in _global_registry._schemas
 
 
-def test_register_tools_with_new_registry():
-    """Test registering web tools with new ToolRegistry."""
+def test_register_web_tools_with_explicit_registry():
+    """Registering with an explicit ToolRegistry populates it."""
     from pig_agent_core.tools.registry import ToolRegistry
 
     new_registry = ToolRegistry()
-    registered = register_tools(new_registry)
+    registered = register_web_tools(new_registry)
 
     assert "search_web" in registered
     assert "read_webpage" in registered
@@ -44,24 +43,14 @@ def test_register_tools_with_new_registry():
         assert "read_webpage" in new_registry._handlers
 
 
-def test_register_tools_with_old_registry_raises_error():
-    """Test that registering with old ToolRegistry raises helpful error."""
-    from pig_agent_core.registry import ToolRegistry as OldToolRegistry
-
-    old_registry = OldToolRegistry()
-
-    with pytest.raises(TypeError, match="old ToolRegistry API"):
-        register_tools(old_registry)
-
-
-def test_register_tools_idempotent():
-    """Test that registering tools multiple times is safe."""
+def test_register_web_tools_idempotent():
+    """Registering twice is safe and returns the same names."""
     from pig_agent_core.tools.registry import ToolRegistry
 
     registry = ToolRegistry()
 
-    registered1 = register_tools(registry)
-    registered2 = register_tools(registry)
+    registered1 = register_web_tools(registry)
+    registered2 = register_web_tools(registry)
 
     assert registered1 == registered2
 
@@ -71,8 +60,8 @@ def test_register_tools_idempotent():
 
 
 def test_handlers_can_be_called_directly():
-    """Test that handlers can be used without registration."""
-    from pig_agent_tools.web import handle_search_web
+    """Handlers can be used without registration."""
+    from pig_agent_core.tools.web import handle_search_web
 
     class _MockProvider:
         async def search(self, query: str, max_results: int = 5) -> list[SearchResult]:

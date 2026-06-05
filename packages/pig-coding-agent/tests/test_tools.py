@@ -4,7 +4,7 @@ import asyncio
 import sys
 
 import pytest
-from pig_coding_agent.tools import CodeTools, FileTools, ShellTools
+from pig_coding_agent.tools import FileTools, ShellTools, build_coding_tools
 
 
 @pytest.fixture
@@ -115,34 +115,6 @@ def test_path_traversal_prevention(temp_workspace):
 
     with pytest.raises(ValueError, match="outside workspace"):
         tools.read_file("../../../etc/passwd")
-
-
-def test_code_tools_generate():
-    """Test code generation tool."""
-    tools = CodeTools()
-
-    result = tools.generate_code("Hello world function", "python")
-    assert "python" in result.lower()
-    assert "TODO" in result or "hello world" in result.lower()
-
-
-def test_code_tools_explain():
-    """Test code explanation tool."""
-    tools = CodeTools()
-
-    code = "def add(a, b):\n    return a + b"
-    result = tools.explain_code(code)
-    assert isinstance(result, str)
-    assert len(result) > 0
-
-
-def test_code_tools_add_type_hints():
-    """Test adding type hints."""
-    tools = CodeTools()
-
-    code = "def add(a, b):\n    return a + b"
-    result = tools.add_type_hints(code)
-    assert "Type hints added" in result or code in result
 
 
 def test_shell_tools_run_command():
@@ -297,10 +269,9 @@ def test_run_command_killed_when_turn_cancelled(tmp_path):
 
     from pig_agent_core.tools.registry import ToolRegistry
 
-    tools = ShellTools()
-    bound = tools.run_command  # descriptor returns a bound Tool
     registry = ToolRegistry()
-    registry.register("run_command", bound.func, bound.to_openai_schema())
+    schemas, handlers = build_coding_tools(".")
+    registry.register_package(schemas, handlers, is_core=True)
 
     sentinel = tmp_path / "done.txt"
     # Sleeps, then writes the sentinel. If the process is killed first, the
@@ -330,10 +301,9 @@ def test_run_command_cancel_none_is_unaffected():
 
     from pig_agent_core.tools.registry import ToolRegistry
 
-    tools = ShellTools()
-    bound = tools.run_command
     registry = ToolRegistry()
-    registry.register("run_command", bound.func, bound.to_openai_schema())
+    schemas, handlers = build_coding_tools(".")
+    registry.register_package(schemas, handlers, is_core=True)
 
     tool_call = SimpleNamespace(
         function=SimpleNamespace(name="run_command", arguments=json.dumps({"command": "echo hi"}))
@@ -352,10 +322,9 @@ def test_execute_sync_drives_async_run_command():
     """
     from pig_agent_core.tools.registry import ToolRegistry
 
-    tools = ShellTools()
-    bound = tools.run_command
     registry = ToolRegistry()
-    registry.register("run_command", bound.func, bound.to_openai_schema())
+    schemas, handlers = build_coding_tools(".")
+    registry.register_package(schemas, handlers, is_core=True)
 
     result = registry.execute_sync("run_command", {"command": "echo hi"})
 

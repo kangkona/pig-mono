@@ -3,8 +3,8 @@
 from unittest.mock import patch
 
 import pytest
-from pig_agent_tools.web.handlers import handle_read_webpage, handle_search_web
-from pig_agent_tools.web.providers.base import SearchResult
+from pig_agent_core.tools.web.handlers import handle_read_webpage, handle_search_web
+from pig_agent_core.tools.web.providers.base import SearchResult
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -117,7 +117,7 @@ async def test_search_web_auto_detects_provider_no_key():
 
 def _make_reader(content: str, title: str = ""):
     """Return a mock ReaderProvider that yields the given content."""
-    from pig_agent_tools.web.providers.base import PageContent
+    from pig_agent_core.tools.web.providers.base import PageContent
 
     class _Reader:
         async def read(self, url: str) -> PageContent:

@@ -22,7 +22,7 @@ from .billing import CostTracker
 from .config import ConfigManager
 from .file_reference import FileReferenceParser
 from .resilience import create_profile_manager_from_env, get_profile_status
-from .tools import CodeTools, FileTools, ShellTools
+from .tools import FileTools, build_coding_tools
 
 
 class SessionExitRequested(Exception):
@@ -141,18 +141,9 @@ class CodingAgent:
                 if session_id:
                     self.session.id = session_id
 
-        # Initialize tools
-        file_tools = FileTools(str(self.workspace))
-        code_tools = CodeTools()
-        shell_tools = ShellTools()
-
-        # Get all tool methods (descriptor protocol auto-binds self)
-        tools = []
-        for tool_instance in [file_tools, code_tools, shell_tools]:
-            for attr_name in dir(tool_instance):
-                attr = getattr(tool_instance, attr_name)
-                if isinstance(attr, Tool) and attr.name not in self.excluded_tools:
-                    tools.append(attr)
+        # Initialize tools (new-registry style: explicit schemas + handlers,
+        # registered in bulk on the agent's registry once it exists below).
+        coding_schemas, coding_handlers = build_coding_tools(str(self.workspace))
 
         # Initialize context manager (needed by _get_system_prompt)
         self.context_manager = ContextManager(self.workspace)
@@ -169,7 +160,6 @@ class CodingAgent:
         self.agent = Agent(
             name="CodingAgent",
             llm=self.llm,
-            tools=tools,
             system_prompt=self._get_system_prompt(),
             verbose=verbose,
             profile_manager=self.profile_manager,
@@ -178,6 +168,23 @@ class CodingAgent:
             # completion, a terminate tool result, or user abort (Esc/Ctrl-C).
             max_rounds=0,
         )
+
+        # Register the coding tools on the agent's registry. Web tools
+        # (pig-agent-core[web]) are added only when a search backend is
+        # configured, so we never advertise tools that fail without an API key.
+        # Finally drop any tools excluded for this agent instance.
+        self.agent.registry.register_package(coding_schemas, coding_handlers, is_core=True)
+        try:
+            from pig_agent_core.tools import register_web_tools
+            from pig_agent_core.tools.web import get_default_provider
+
+            get_default_provider()  # raises if no TAVILY_API_KEY / EXA_API_KEY
+            register_web_tools(self.agent.registry)
+        except Exception:
+            pass  # web extra not installed or no search backend configured
+        for name in self.excluded_tools:
+            self.agent.registry.unregister(name)
+
         self.agent.session = self.session
         self.agent.add_tool = self.add_tool
 

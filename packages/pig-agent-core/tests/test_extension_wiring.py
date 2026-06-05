@@ -48,10 +48,16 @@ def test_all_exports_available():
 
 
 def test_version_matches_pyproject():
-    """Test that __version__ matches pyproject.toml."""
+    """Test that __version__ matches the version declared in pyproject.toml."""
+    import re
+    from pathlib import Path
+
     import pig_agent_core
 
-    assert pig_agent_core.__version__ == "0.0.4"
+    pyproject = Path(__file__).resolve().parents[1] / "pyproject.toml"
+    match = re.search(r'^version\s*=\s*"([^"]+)"', pyproject.read_text(), re.MULTILINE)
+    assert match, "version not found in pyproject.toml"
+    assert pig_agent_core.__version__ == match.group(1)
 
 
 def test_memory_provider_protocol():

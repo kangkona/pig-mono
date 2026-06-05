@@ -3,7 +3,7 @@
 No package installation required — uses httpx (already a project dep).
 API key optional: free tier available without registration.
 
-Requires: httpx (already included in pig-agent-tools dev deps)
+Requires: httpx (install with: pip install pig-agent-core[web])
 API key:  JINA_API_KEY environment variable (optional, increases rate limits)
 Docs:     https://jina.ai/reader
 """
