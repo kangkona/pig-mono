@@ -260,7 +260,7 @@ def main(
     _DEFAULT_MODELS: dict[str, str] = {
         "openai": "gpt-3.5-turbo",
         "anthropic": "claude-haiku-4-5-20251001",
-        "google": "gemini-2.0-flash",
+        "google": "gemini-3.0-flash",
     }
     resolved_model = model or _DEFAULT_MODELS.get(provider)
     llm_kwargs: dict = {
