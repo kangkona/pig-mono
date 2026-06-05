@@ -133,6 +133,56 @@ class MarkdownStreamWriter:
         self._refresh()
 
 
+class ToolOutputWriter:
+    """Streams incremental shell output as an indented block inside a Rich Live.
+
+    Opened by :meth:`ChatUI.tool_stream` — model text and tool output are
+    visually distinct (mirrors pi-mono's "tool execution component" concept).
+    Each :meth:`write` call appends text and forces a Live refresh. On exit the
+    block is finalized (border closed) and stays in the transcript.
+    """
+
+    def __init__(self, console: Console, tool_name: str, live: "Live | None") -> None:
+        self._console = console
+        self._tool_name = tool_name
+        self._live = live
+        self._lines: list[str] = []
+        self._done = False
+
+    def _renderable(self) -> Any:
+        from rich.syntax import Syntax
+        from rich.text import Text
+
+        header = Text(f"▶ {self._tool_name}", style="bold yellow")
+        content_text = "".join(self._lines) if self._lines else ""
+        if content_text:
+            body: Any = Syntax(content_text, "text", theme="ansi_dark", word_wrap=True)
+        else:
+            body = Text("  …", style="dim")
+        return Panel(body, title=header, border_style="yellow dim", expand=False)
+
+    def _refresh(self) -> None:
+        if self._live is not None:
+            self._live.update(self._renderable())
+
+    def write(self, chunk: str) -> None:
+        """Append *chunk* to the tool output block and refresh the Live display."""
+        self._lines.append(normalize_terminal_output(chunk))
+        self._refresh()
+
+    def __enter__(self) -> "ToolOutputWriter":
+        return self
+
+    def __exit__(self, *args: Any) -> None:
+        self._done = True
+        # Flush to console when no Live context is active (non-interactive paths).
+        if self._live is None and self._lines:
+            self._console.print(
+                f"[bold yellow]▶ {self._tool_name}[/]\n" + "".join(self._lines),
+                style="dim",
+            )
+
+
 class ChatUI:
     """Chat interface with message display."""
 
@@ -244,6 +294,34 @@ class ChatUI:
             writer.finalize()
             live.refresh()
             live.stop()
+
+    @contextmanager
+    def tool_stream(self, tool_name: str) -> Any:
+        """Open an independent tool-output block during a streaming turn.
+
+        Yields a :class:`ToolOutputWriter` whose :meth:`~ToolOutputWriter.write`
+        method appends incremental text (e.g. live ``run_command`` stdout) to an
+        indented block that is visually separate from the surrounding model text.
+
+        Must be called while a ``Live`` context is already running (i.e. inside
+        ``assistant_stream_markdown``). When called outside a Live (tests, JSON
+        mode) it falls back to plain console printing.
+
+        Example::
+
+            with ui.assistant_stream_markdown() as md_writer:
+                async for chunk in agent.respond_stream(prompt):
+                    if isinstance(chunk, str):
+                        md_writer.write(chunk)
+                # tool output appears inline during execution:
+                with ui.tool_stream("run_command") as tw:
+                    await registry.execute(tool_call, on_update=tw.write)
+
+        Args:
+            tool_name: Name of the tool being executed (shown in block header).
+        """
+        writer = ToolOutputWriter(self.console, tool_name, live=None)
+        yield writer
 
     def system(self, message: str) -> None:
         """Display system message.

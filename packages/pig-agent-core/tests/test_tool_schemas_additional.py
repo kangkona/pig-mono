@@ -2,7 +2,6 @@
 
 from pig_agent_core.tools.schemas import (
     CORE_TOOL_NAMES,
-    DEFERRED_TOOL_INDEX,
     PARALLEL_SAFE_TOOLS,
     TOOL_BUDGETS,
     TOOL_PERMISSIONS,
@@ -52,78 +51,6 @@ class TestGetCurrentTimeSchema:
         assert "get_current_time" in TOOL_BUDGETS
         assert TOOL_BUDGETS["get_current_time"]["timeout"] == 1
         assert TOOL_BUDGETS["get_current_time"]["max_retries"] == 0
-
-
-class TestDeferredToolIndex:
-    """Test deferred tool index for keyword-based discovery."""
-
-    def test_deferred_tool_index_exists(self):
-        """Test that DEFERRED_TOOL_INDEX is defined."""
-        assert isinstance(DEFERRED_TOOL_INDEX, dict)
-        assert len(DEFERRED_TOOL_INDEX) > 0
-
-    def test_web_keyword(self):
-        """Test web keyword mapping."""
-        assert "web" in DEFERRED_TOOL_INDEX
-        tools = DEFERRED_TOOL_INDEX["web"]
-        assert "search_web" in tools
-        assert "read_webpage" in tools
-
-    def test_search_keyword(self):
-        """Test search keyword mapping."""
-        assert "search" in DEFERRED_TOOL_INDEX
-        tools = DEFERRED_TOOL_INDEX["search"]
-        assert "search_web" in tools
-
-    def test_read_keyword(self):
-        """Test read keyword mapping."""
-        assert "read" in DEFERRED_TOOL_INDEX
-        tools = DEFERRED_TOOL_INDEX["read"]
-        assert "read_webpage" in tools
-        assert "read_file" in tools
-
-    def test_browser_keyword(self):
-        """Test browser keyword mapping."""
-        assert "browser" in DEFERRED_TOOL_INDEX
-        tools = DEFERRED_TOOL_INDEX["browser"]
-        assert isinstance(tools, list)
-
-    def test_api_keyword(self):
-        """Test api keyword mapping."""
-        assert "api" in DEFERRED_TOOL_INDEX
-        tools = DEFERRED_TOOL_INDEX["api"]
-        assert isinstance(tools, list)
-
-    def test_file_keyword(self):
-        """Test file keyword mapping."""
-        assert "file" in DEFERRED_TOOL_INDEX
-        tools = DEFERRED_TOOL_INDEX["file"]
-        assert "read_file" in tools
-        assert "write_file" in tools
-
-    def test_code_keyword(self):
-        """Test code keyword mapping."""
-        assert "code" in DEFERRED_TOOL_INDEX
-        tools = DEFERRED_TOOL_INDEX["code"]
-        assert isinstance(tools, list)
-
-    def test_social_keyword(self):
-        """Test social keyword mapping."""
-        assert "social" in DEFERRED_TOOL_INDEX
-        tools = DEFERRED_TOOL_INDEX["social"]
-        assert isinstance(tools, list)
-
-    def test_all_values_are_lists(self):
-        """Test that all index values are lists."""
-        for keyword, tools in DEFERRED_TOOL_INDEX.items():
-            assert isinstance(tools, list), f"{keyword} should map to a list"
-            assert len(tools) > 0, f"{keyword} should have at least one tool"
-
-    def test_all_tool_names_are_strings(self):
-        """Test that all tool names are strings."""
-        for keyword, tools in DEFERRED_TOOL_INDEX.items():
-            for tool in tools:
-                assert isinstance(tool, str), f"Tool name in {keyword} should be string"
 
 
 class TestParallelSafeTools:
@@ -217,11 +144,6 @@ class TestSchemaIntegration:
             assert "description" in schema["function"]
             assert "parameters" in schema["function"]
 
-    def test_deferred_index_references_valid_tools(self):
-        """Test that deferred index doesn't reference core tools."""
-        # Core tools are always loaded, so they shouldn't be in deferred index
-        for _keyword, tools in DEFERRED_TOOL_INDEX.items():
-            for _tool in tools:
-                # This is okay - deferred tools are loaded on demand
-                # They don't need to be in CORE_TOOL_NAMES
-                pass
+    def test_core_tool_names_are_known(self):
+        """Sanity check: core tool names are the expected set."""
+        assert CORE_TOOL_NAMES == {"think", "plan", "discover_tools", "get_current_time"}

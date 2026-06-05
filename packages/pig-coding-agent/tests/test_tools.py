@@ -7,6 +7,28 @@ import pytest
 from pig_coding_agent.tools import FileTools, ShellTools, build_coding_tools
 
 
+def _run_cmd(command: str, cwd: str | None = None, exclude_from_context: bool = False) -> str:
+    """Drive run_command via the registry for tests (canonical path)."""
+    import json
+    from types import SimpleNamespace
+
+    from pig_agent_core.tools.registry import ToolRegistry
+
+    registry = ToolRegistry()
+    schemas, handlers = build_coding_tools(".")
+    registry.register_package(schemas, handlers, is_core=True)
+    args = {"command": command}
+    if cwd is not None:
+        args["cwd"] = cwd
+    if exclude_from_context:
+        args["exclude_from_context"] = True
+    tool_call = SimpleNamespace(
+        function=SimpleNamespace(name="run_command", arguments=json.dumps(args))
+    )
+    result = asyncio.run(registry.execute(tool_call, "default", {}, None))
+    return result.data if result.ok else result.error or ""
+
+
 @pytest.fixture
 def temp_workspace(tmp_path):
     """Create a temporary workspace."""
@@ -119,41 +141,30 @@ def test_path_traversal_prevention(temp_workspace):
 
 def test_shell_tools_run_command():
     """Test running shell command."""
-    tools = ShellTools()
-
-    # Run simple command
-    result = asyncio.run(tools.run_command("echo 'Hello'"))
+    result = _run_cmd("echo 'Hello'")
     assert "Hello" in result
 
 
 def test_shell_tools_run_command_with_error():
     """Test running command that fails."""
-    tools = ShellTools()
-
-    result = asyncio.run(tools.run_command("exit 1"))
-    # Should not raise, just return output
+    result = _run_cmd("exit 1")
     assert isinstance(result, str)
 
 
 def test_shell_tools_timeout():
     """Test command timeout."""
-    tools = ShellTools()
-
-    # This should timeout
-    result = asyncio.run(tools.run_command("sleep 100"))
+    result = _run_cmd("sleep 100")
     assert "timed out" in result.lower() or "error" in result.lower()
 
 
 def test_shell_tools_truncates_large_line_output_without_counting_trailing_newline_twice():
     """Large single-line output should trim to a stable tail without phantom newline lines."""
-    tools = ShellTools()
-
     command = (
         f'"{sys.executable}" -c "import sys; '
         """sys.stdout.write('X' * 300000 + '\\n')"""
         '"'
     )
-    result = asyncio.run(tools.run_command(command))
+    result = _run_cmd(command)
 
     assert "[Output truncated" in result
     assert "300001" not in result
@@ -164,14 +175,12 @@ def test_shell_tools_truncates_large_line_output_without_counting_trailing_newli
 
 def test_shell_tools_truncates_many_lines_without_extra_trailing_newline_line():
     """Line-limited output should ignore the final trailing newline as an extra line."""
-    tools = ShellTools()
-
     command = (
         f'"{sys.executable}" -c "for i in range(1, 4001): '
         """print(f'line-{i:04d}')"""
         '"'
     )
-    result = asyncio.run(tools.run_command(command))
+    result = _run_cmd(command)
 
     assert "[Showing lines 2001-4000 of 4000." in result
     assert "line-2001" in result
@@ -330,3 +339,212 @@ def test_execute_sync_drives_async_run_command():
 
     assert result.ok is True
     assert "hi" in str(result.data)
+
+
+# ---------------------------------------------------------------------------
+# Fake-operations tests: verify routing through the ops layer without real I/O
+# ---------------------------------------------------------------------------
+
+
+class _FakeFileOperations:
+    """In-memory filesystem stub for unit tests."""
+
+    def __init__(self):
+        self._files: dict = {}  # path str → content str
+        self._dirs: set = set()  # path strs that are directories
+        self.calls: list = []  # recorded method calls
+
+    def _record(self, method, *args):
+        self.calls.append((method,) + args)
+
+    def seed(self, path_str: str, content: str):
+        from pathlib import Path
+
+        self._files[str(Path(path_str).resolve())] = content
+
+    def seed_dir(self, path_str: str):
+        from pathlib import Path
+
+        self._dirs.add(str(Path(path_str).resolve()))
+
+    def exists(self, path):
+        self._record("exists", path)
+        return str(path) in self._files or str(path) in self._dirs
+
+    def is_file(self, path):
+        return str(path) in self._files
+
+    def is_dir(self, path):
+        return str(path) in self._dirs
+
+    def read_text(self, path):
+        self._record("read_text", path)
+        return self._files.get(str(path), "")
+
+    def write_text(self, path, content):
+        self._record("write_text", path)
+        self._files[str(path)] = content
+
+    def mkdir(self, path, *, parents=True, exist_ok=True):
+        self._record("mkdir", path)
+        self._dirs.add(str(path))
+
+    def iterdir(self, path):
+        prefix = str(path) + "/"
+        seen = set()
+        results = []
+        for p in list(self._files) + list(self._dirs):
+            if p.startswith(prefix):
+                child = p[len(prefix) :].split("/")[0]
+                child_path = path / child
+                if str(child_path) not in seen:
+                    seen.add(str(child_path))
+                    results.append(child_path)
+        return results
+
+    def glob(self, path, pattern):
+        return [
+            p
+            for p in [__import__("pathlib").Path(f) for f in self._files]
+            if p.parent == path or str(p).startswith(str(path) + "/")
+        ]
+
+    def rglob(self, path, pattern):
+        import fnmatch
+        from pathlib import Path as P
+
+        return [
+            P(f)
+            for f in self._files
+            if fnmatch.fnmatch(P(f).name, pattern) and str(f).startswith(str(path))
+        ]
+
+    def stat(self, path):
+        from unittest.mock import MagicMock
+
+        s = MagicMock()
+        s.st_size = len(self._files.get(str(path), "").encode())
+        s.st_mtime = 0.0
+        return s
+
+
+class _FakeShellOperations:
+    """Subprocess stub that records calls and returns preset output."""
+
+    def __init__(self, async_output: str = "fake output", sync_output: str = "fake sync"):
+        self._async_output = async_output
+        self._sync_output = sync_output
+        self.async_calls: list = []
+        self.sync_calls: list = []
+        self.on_data_received: list = []
+
+    async def exec_async(self, command, cwd, timeout, on_data=None):
+        self.async_calls.append({"command": command, "cwd": cwd, "on_data": on_data})
+        if on_data:
+            on_data(self._async_output)
+            self.on_data_received.append(self._async_output)
+        return self._async_output
+
+    def exec_sync(self, command, cwd, timeout):
+        self.sync_calls.append({"command": command, "cwd": cwd})
+        return self._sync_output
+
+
+def test_file_tools_route_read_through_ops(tmp_path):
+    """read_file must use ops.read_text, not Path.read_text directly."""
+    fake = _FakeFileOperations()
+    fake.seed(str(tmp_path / "hello.txt"), "ops content")
+
+    tools = FileTools(str(tmp_path), ops=fake)
+    result = tools.read_file("hello.txt")
+
+    assert result == "ops content"
+    methods = [c[0] for c in fake.calls]
+    assert "read_text" in methods
+
+
+def test_file_tools_route_write_through_ops(tmp_path):
+    """write_file must use ops.write_text."""
+    fake = _FakeFileOperations()
+    fake.seed_dir(str(tmp_path))
+    fake.seed_dir(str(tmp_path / "sub"))
+
+    tools = FileTools(str(tmp_path), ops=fake)
+    tools.write_file("sub/out.txt", "written")
+
+    methods = [c[0] for c in fake.calls]
+    assert "write_text" in methods
+    assert fake._files.get(str(tmp_path / "sub" / "out.txt")) == "written"
+
+
+def test_file_tools_route_exists_through_ops(tmp_path):
+    """file_exists must use ops.exists."""
+    fake = _FakeFileOperations()
+    tools = FileTools(str(tmp_path), ops=fake)
+    tools.file_exists("anything.txt")
+
+    assert any(c[0] == "exists" for c in fake.calls)
+
+
+def test_shell_tools_route_async_through_ops():
+    """run_command must use ops.exec_async and return its output."""
+    import json
+    from types import SimpleNamespace
+
+    from pig_agent_core.tools.registry import ToolRegistry
+
+    fake = _FakeShellOperations(async_output="hello from fake")
+    schemas, handlers = build_coding_tools(".", shell_ops=fake)
+
+    registry = ToolRegistry()
+    registry.register_package(schemas, handlers, is_core=True)
+
+    tool_call = SimpleNamespace(
+        function=SimpleNamespace(
+            name="run_command", arguments=json.dumps({"command": "echo ignored"})
+        )
+    )
+    result = asyncio.run(registry.execute(tool_call, "default", {}, None))
+
+    assert result.ok is True
+    assert "hello from fake" in str(result.data)
+    assert len(fake.async_calls) == 1
+    assert fake.async_calls[0]["command"] == "echo ignored"
+
+
+def test_shell_tools_on_update_forwarded_to_exec_async():
+    """on_update from registry.execute() must reach ops.exec_async as on_data."""
+    import json
+    from types import SimpleNamespace
+
+    from pig_agent_core.tools.registry import ToolRegistry
+
+    chunks_received: list = []
+    fake = _FakeShellOperations(async_output="streaming chunk")
+    schemas, handlers = build_coding_tools(".", shell_ops=fake)
+
+    registry = ToolRegistry()
+    registry.register_package(schemas, handlers, is_core=True)
+
+    tool_call = SimpleNamespace(
+        function=SimpleNamespace(name="run_command", arguments=json.dumps({"command": "echo hi"}))
+    )
+
+    def _on_update(chunk: str) -> None:
+        chunks_received.append(chunk)
+
+    asyncio.run(registry.execute(tool_call, "default", {}, None, on_update=_on_update))
+
+    assert chunks_received == ["streaming chunk"]
+    assert fake.async_calls[0]["on_data"] is not None
+
+
+def test_shell_tools_route_sync_through_ops():
+    """git_status (sync shell) must use ops.exec_sync."""
+    fake = _FakeShellOperations(sync_output="M  file.txt")
+    tools = ShellTools(ops=fake)
+    result = tools.git_status()
+
+    assert "file.txt" in result
+    assert len(fake.sync_calls) == 1
+    assert "git status" in fake.sync_calls[0]["command"]
