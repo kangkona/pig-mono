@@ -441,9 +441,9 @@ When generating code, provide clean, well-documented, production-ready code.
                     session_dir_hint = f" --session-dir {self.sessions_dir}"
                 self.ui.system(
                     f"💾 Session saved. Resume with:  "
-                    f"piggy --session-id {self.session.id}{session_dir_hint}"
+                    f"pig --session-id {self.session.id}{session_dir_hint}"
                 )
-                self.ui.system("(or piggy --continue to resume the most recent session)")
+                self.ui.system("(or pig --continue to resume the most recent session)")
             self.ui.system("Goodbye!")
 
             # Tear down the session event loop (and any provider clients bound
@@ -1107,7 +1107,7 @@ Tools: {len(self.agent.registry)}
             sessions_text += "\n\n... (showing most recent 20)"
 
         self.ui.panel(sessions_text, title=f"Available Sessions ({len(sessions)})")
-        self.ui.system("Use `piggy --resume` to select a session")
+        self.ui.system("Use `pig --resume` to select a session")
 
     def _show_session_info(self):
         """Show session information."""

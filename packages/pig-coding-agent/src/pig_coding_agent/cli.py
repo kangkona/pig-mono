@@ -17,7 +17,7 @@ from .agent import CodingAgent
 from .config import ConfigManager
 
 app = typer.Typer(
-    name="piggy",
+    name="pig",
     help="Interactive coding agent CLI",
     add_completion=False,
     invoke_without_command=True,
@@ -470,7 +470,7 @@ def run_json_mode(agent):
             emit_shutdown("eof")
         else:
             # Interactive JSON mode
-            json_out.emit_event("ready", {"agent": "piggy", "mode": "json"})
+            json_out.emit_event("ready", {"agent": "pig", "mode": "json"})
 
             while True:
                 try:

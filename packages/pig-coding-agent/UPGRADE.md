@@ -49,13 +49,13 @@ export ANTHROPIC_API_KEY_2=sk-ant-...
 
 ```bash
 # Resilience is enabled by default
-piggy
+pig
 
 # Check status
 > /resilience
 
 # Disable if needed
-piggy --no-resilience
+pig --no-resilience
 ```
 
 **Benefits**:
@@ -72,7 +72,7 @@ piggy --no-resilience
 **Usage**:
 
 ```bash
-piggy
+pig
 
 # View cost summary
 > /cost
@@ -86,7 +86,7 @@ piggy
 **Disable if needed**:
 
 ```bash
-piggy --no-cost-tracking
+pig --no-cost-tracking
 ```
 
 **Benefits**:
