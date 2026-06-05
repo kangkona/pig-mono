@@ -185,7 +185,9 @@ def test_shell_tools_truncates_large_line_output_without_counting_trailing_newli
 
     assert "[Output truncated" in result
     assert "300001" not in result
-    assert result.rstrip("\n").endswith("X" * 2000)
+    # Strip CR as well as LF: on Windows stdout text mode turns the command's
+    # trailing "\n" into "\r\n", and rstrip("\n") alone would leave a "\r".
+    assert result.rstrip("\r\n").endswith("X" * 2000)
 
 
 def test_shell_tools_truncates_many_lines_without_extra_trailing_newline_line():
