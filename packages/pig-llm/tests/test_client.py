@@ -57,7 +57,7 @@ def test_llm_complete_creates_messages():
         mock_provider = Mock()
         MockProvider.return_value = mock_provider
 
-        llm = LLM(provider="openai", api_key="test")
+        llm = LLM(provider="openai", api_key="test", model="gpt-4o-mini")
         llm.complete("Hello", system="You are helpful")
 
         assert mock_provider.complete.called
@@ -75,7 +75,7 @@ def test_llm_complete_without_system():
         mock_provider = Mock()
         MockProvider.return_value = mock_provider
 
-        llm = LLM(provider="openai", api_key="test")
+        llm = LLM(provider="openai", api_key="test", model="gpt-4o-mini")
         llm.complete("Hello")
 
         call_args = mock_provider.complete.call_args
@@ -91,7 +91,7 @@ def test_llm_chat():
         mock_provider = Mock()
         MockProvider.return_value = mock_provider
 
-        llm = LLM(provider="openai", api_key="test")
+        llm = LLM(provider="openai", api_key="test", model="gpt-4o-mini")
         messages = [
             Message(role="user", content="Hello"),
             Message(role="assistant", content="Hi"),

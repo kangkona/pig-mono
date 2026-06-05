@@ -50,6 +50,7 @@ def _anthropic_llm(create: Mock, enable_web_search: bool, **extra) -> LLM:
         return LLM(
             provider="anthropic",
             api_key="test",
+            model="claude-opus-4-8",
             enable_web_search=enable_web_search,
             **extra,
         )
@@ -103,7 +104,7 @@ def test_non_anthropic_provider_never_receives_web_search():
         patch("pig_llm.providers.openai.openai.OpenAI", return_value=client),
         patch("pig_llm.providers.openai.openai.AsyncOpenAI", return_value=client),
     ):
-        llm = LLM(provider="openai", api_key="test", enable_web_search=True)
+        llm = LLM(provider="openai", api_key="test", model="gpt-4o-mini", enable_web_search=True)
 
     llm.chat([Message(role="user", content="hi")], model="gpt-4o-mini")
 

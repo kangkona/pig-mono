@@ -54,6 +54,16 @@ class LLM:
             kwargs.setdefault("enable_web_search", True)
             kwargs.setdefault("web_search_max_uses", self.web_search_max_uses)
 
+    @property
+    def model(self) -> str:
+        """Return the configured model name, raising clearly if unset."""
+        if not self.config.model:
+            raise ValueError(
+                f"No model specified for provider '{self.config.provider}'. "
+                "Pass --model / -m or set the model in your config."
+            )
+        return self.config.model
+
     # Maps provider name to (module, class_name) for lazy import
     _PROVIDER_MAP = {
         "openai": ("openai", "OpenAIProvider"),
@@ -119,7 +129,7 @@ class LLM:
         self._inject_web_search(kwargs)
         return self._provider.complete(
             messages=messages,
-            model=kwargs.get("model", self.config.model),
+            model=kwargs.get("model", self.model),
             temperature=kwargs.get("temperature", self.config.temperature),
             max_tokens=kwargs.get("max_tokens", self.config.max_tokens),
             **kwargs,
@@ -149,7 +159,7 @@ class LLM:
         self._inject_web_search(kwargs)
         yield from self._provider.stream(
             messages=messages,
-            model=kwargs.get("model", self.config.model),
+            model=kwargs.get("model", self.model),
             temperature=kwargs.get("temperature", self.config.temperature),
             max_tokens=kwargs.get("max_tokens", self.config.max_tokens),
             **kwargs,
@@ -169,7 +179,7 @@ class LLM:
         Returns:
             Response object with content and metadata
         """
-        model = kwargs.pop("model", self.config.model)
+        model = kwargs.pop("model", self.model)
         temperature = kwargs.pop("temperature", self.config.temperature)
         max_tokens = kwargs.pop("max_tokens", self.config.max_tokens)
         self._inject_web_search(kwargs)
@@ -196,7 +206,7 @@ class LLM:
         Returns:
             Response object with content and metadata
         """
-        model = kwargs.pop("model", self.config.model)
+        model = kwargs.pop("model", self.model)
         temperature = kwargs.pop("temperature", self.config.temperature)
         max_tokens = kwargs.pop("max_tokens", self.config.max_tokens)
         self._inject_web_search(kwargs)
@@ -223,7 +233,7 @@ class LLM:
         Yields:
             StreamChunk objects with content
         """
-        model = kwargs.pop("model", self.config.model)
+        model = kwargs.pop("model", self.model)
         temperature = kwargs.pop("temperature", self.config.temperature)
         max_tokens = kwargs.pop("max_tokens", self.config.max_tokens)
         self._inject_web_search(kwargs)

@@ -8,7 +8,7 @@ def test_config_defaults():
     """Test default config values."""
     config = Config()
     assert config.provider == "openai"
-    assert config.model == "gpt-4"
+    assert config.model is None
     assert config.temperature == 0.7
     assert config.timeout == 30
     assert config.max_retries == 3
