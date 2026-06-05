@@ -9,20 +9,24 @@ compat markers never leak into the SDK call.
 from __future__ import annotations
 
 import asyncio
+import importlib
 from types import SimpleNamespace
 
 import pytest
 from pig_llm.config import Config
 from pig_llm.models import Message
-from pig_llm.providers.azure import AzureOpenAIProvider
-from pig_llm.providers.cerebras import CerebrasProvider
-from pig_llm.providers.deepseek import DeepSeekProvider
-from pig_llm.providers.groq import GroqProvider
-from pig_llm.providers.openai import OpenAIProvider
-from pig_llm.providers.openrouter import OpenRouterProvider
-from pig_llm.providers.perplexity import PerplexityProvider
-from pig_llm.providers.together import TogetherProvider
-from pig_llm.providers.xai import XAIProvider
+
+
+def _load_provider(module: str, cls_name: str, sdk: str):
+    """Import a provider class, skipping if its optional SDK isn't installed.
+
+    Provider modules import their SDK at module load time, so a missing
+    optional dependency (e.g. `groq` in CI) must turn into a skip rather than a
+    collection-time ImportError that aborts the whole matrix.
+    """
+    pytest.importorskip(sdk)
+    mod = importlib.import_module(f"pig_llm.providers.{module}")
+    return getattr(mod, cls_name)
 
 
 class _FakeStream:
@@ -65,7 +69,8 @@ class _CapturingCreate:
         return _FakeStream()
 
 
-def _make_provider(cls, **config_overrides):
+def _make_provider(spec, **config_overrides):
+    cls = _load_provider(*spec)
     cfg = Config(provider="x", api_key="test", **config_overrides)
     # Construct without touching the network, then swap in a fake async client.
     provider = cls.__new__(cls)
@@ -90,26 +95,28 @@ def _drive(provider, model: str, **kwargs) -> dict:
     return asyncio.run(run())
 
 
+# (provider module, class name, required SDK module, model). The class is
+# imported lazily so a missing optional SDK skips just that row.
 PROVIDERS = [
-    (OpenAIProvider, "gpt-4o-mini"),
-    (AzureOpenAIProvider, "gpt-4o-mini"),
-    (DeepSeekProvider, "deepseek-chat"),
-    (CerebrasProvider, "llama-3.3-70b"),
-    (GroqProvider, "llama-3.3-70b-versatile"),
-    (OpenRouterProvider, "openai/gpt-4o-mini"),
-    (PerplexityProvider, "sonar"),
-    (TogetherProvider, "meta-llama/Llama-3.3-70B-Instruct-Turbo"),
-    (XAIProvider, "grok-2"),
+    (("openai", "OpenAIProvider", "openai"), "gpt-4o-mini"),
+    (("azure", "AzureOpenAIProvider", "openai"), "gpt-4o-mini"),
+    (("deepseek", "DeepSeekProvider", "openai"), "deepseek-chat"),
+    (("cerebras", "CerebrasProvider", "openai"), "llama-3.3-70b"),
+    (("groq", "GroqProvider", "groq"), "llama-3.3-70b-versatile"),
+    (("openrouter", "OpenRouterProvider", "openai"), "openai/gpt-4o-mini"),
+    (("perplexity", "PerplexityProvider", "openai"), "sonar"),
+    (("together", "TogetherProvider", "openai"), "meta-llama/Llama-3.3-70B-Instruct-Turbo"),
+    (("xai", "XAIProvider", "openai"), "grok-2"),
 ]
 
 _TOKEN_LIMIT_PARAMS = {"max_tokens", "max_completion_tokens"}
 _INTERNAL_MARKERS = {"_resolved_cache_retention", "session_id", "cache_retention"}
 
 
-@pytest.mark.parametrize("cls,model", PROVIDERS, ids=[c.__name__ for c, _ in PROVIDERS])
-def test_astream_requests_usage_and_streams(cls, model):
+@pytest.mark.parametrize("spec,model", PROVIDERS, ids=[s[1] for s, _ in PROVIDERS])
+def test_astream_requests_usage_and_streams(spec, model):
     """Every OpenAI-compatible provider streams with usage requested."""
-    provider, capture = _make_provider(cls)
+    provider, capture = _make_provider(spec)
     chunks = _drive(provider, model, max_tokens=128)
 
     kwargs = capture.kwargs
@@ -124,40 +131,40 @@ def test_astream_requests_usage_and_streams(cls, model):
     assert usages and usages[-1]["cached_tokens"] == 4
 
 
-@pytest.mark.parametrize("cls,model", PROVIDERS, ids=[c.__name__ for c, _ in PROVIDERS])
-def test_astream_sends_exactly_one_token_limit_param(cls, model):
+@pytest.mark.parametrize("spec,model", PROVIDERS, ids=[s[1] for s, _ in PROVIDERS])
+def test_astream_sends_exactly_one_token_limit_param(spec, model):
     """A single token-limit param is sent (legacy max_tokens is not duplicated)."""
-    provider, capture = _make_provider(cls)
+    provider, capture = _make_provider(spec)
     _drive(provider, model, max_tokens=128)
 
     present = _TOKEN_LIMIT_PARAMS & set(capture.kwargs)
     assert len(present) == 1, f"expected one token-limit param, got {present}"
 
 
-@pytest.mark.parametrize("cls,model", PROVIDERS, ids=[c.__name__ for c, _ in PROVIDERS])
-def test_astream_does_not_leak_internal_markers(cls, model):
+@pytest.mark.parametrize("spec,model", PROVIDERS, ids=[s[1] for s, _ in PROVIDERS])
+def test_astream_does_not_leak_internal_markers(spec, model):
     """Internal compat markers must never reach the SDK create() call."""
-    provider, capture = _make_provider(cls)
+    provider, capture = _make_provider(spec)
     _drive(provider, model, max_tokens=128, session_id="sess-1")
 
     leaked = _INTERNAL_MARKERS & set(capture.kwargs)
     assert not leaked, f"internal markers leaked to create(): {leaked}"
 
 
-@pytest.mark.parametrize("cls,model", PROVIDERS, ids=[c.__name__ for c, _ in PROVIDERS])
-def test_astream_passes_tools_through(cls, model):
+@pytest.mark.parametrize("spec,model", PROVIDERS, ids=[s[1] for s, _ in PROVIDERS])
+def test_astream_passes_tools_through(spec, model):
     """A tools schema is forwarded to the provider create() call."""
-    provider, capture = _make_provider(cls)
+    provider, capture = _make_provider(spec)
     tools = [{"type": "function", "function": {"name": "noop", "parameters": {}}}]
     _drive(provider, model, max_tokens=128, tools=tools)
 
     assert capture.kwargs.get("tools") == tools
 
 
-@pytest.mark.parametrize("cls,model", PROVIDERS, ids=[c.__name__ for c, _ in PROVIDERS])
-def test_astream_sends_prompt_cache_key_when_session_present(cls, model):
+@pytest.mark.parametrize("spec,model", PROVIDERS, ids=[s[1] for s, _ in PROVIDERS])
+def test_astream_sends_prompt_cache_key_when_session_present(spec, model):
     """With a session_id and long retention, a prompt_cache_key is sent."""
-    provider, capture = _make_provider(cls)
+    provider, capture = _make_provider(spec)
     _drive(provider, model, max_tokens=128, session_id="sess-1", cache_retention="24h")
 
     # Providers that support OpenAI-style prompt caching attach the key; those
@@ -165,14 +172,14 @@ def test_astream_sends_prompt_cache_key_when_session_present(cls, model):
     assert "session_id" not in capture.kwargs
 
 
-@pytest.mark.parametrize("cls,model", PROVIDERS, ids=[c.__name__ for c, _ in PROVIDERS])
-def test_astream_relocates_nonstandard_params_to_extra_body(cls, model):
+@pytest.mark.parametrize("spec,model", PROVIDERS, ids=[s[1] for s, _ in PROVIDERS])
+def test_astream_relocates_nonstandard_params_to_extra_body(spec, model):
     """OpenRouter-style reasoning is sent via extra_body, never as a raw kwarg.
 
     Regression: a top-level `reasoning` kwarg crashed the OpenAI SDK with
     TypeError; non-standard params must be relocated into extra_body.
     """
-    provider, capture = _make_provider(cls)
+    provider, capture = _make_provider(spec)
     _drive(provider, model, max_tokens=128, thinking_level="high")
 
     kwargs = capture.kwargs
