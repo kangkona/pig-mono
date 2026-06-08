@@ -78,7 +78,7 @@ uv pip install pig-coding-agent
 # or: pipx install pig-coding-agent
 
 export OPENROUTER_API_KEY=your-key
-pig-code --provider openrouter --model moonshotai/kimi-k2.5
+pig --provider openrouter --model moonshotai/kimi-k2.5
 
 # Try these features:
 > Review @src/main.py for bugs          # @file references
@@ -97,7 +97,7 @@ export OPENAI_API_KEY=sk-...
 export OPENAI_API_KEY_2=sk-...
 export ANTHROPIC_API_KEY=sk-ant-...
 
-pig-code
+pig
 # ✓ Resilience enabled: 3 API keys available
 # ✓ Cost tracking enabled
 
@@ -178,7 +178,7 @@ bot.start()
 
 ### Code Development
 ```bash
-pig-code --session my-project
+pig --session my-project
 
 > Create a FastAPI web server with authentication
 > @src/main.py - Review this code
@@ -204,10 +204,10 @@ bot.start()
 export OPENROUTER_API_KEY=your-key
 
 # JSON mode for CI/CD
-echo '{"message": "Review this code"}' | pig-code --provider openrouter --mode json
+echo '{"message": "Review this code"}' | pig --provider openrouter --mode json
 
 # RPC mode for integration
-pig-code --provider openrouter --mode rpc < requests.jsonl > responses.jsonl
+pig --provider openrouter --mode rpc < requests.jsonl > responses.jsonl
 ```
 
 ---
