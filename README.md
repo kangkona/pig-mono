@@ -8,6 +8,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Code style: ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)](https://github.com/astral-sh/ruff)
 [![Test Coverage](https://img.shields.io/badge/coverage-84%25-green.svg)](TESTING.md)
+[![PyPI](https://img.shields.io/pypi/v/pig-llm.svg)](https://pypi.org/project/pig-llm/)
 
 Build AI agents and LLM applications with a powerful, modular Python toolkit. pig-mono provides everything you need: unified LLM APIs, agent runtime, session management, extensions, skills, and multi-platform messaging bots.
 
@@ -23,11 +24,11 @@ Build AI agents and LLM applications with a powerful, modular Python toolkit. pi
 
 | Package | Version | Description | Status |
 |---------|---------|-------------|--------|
-| **[pig-llm](packages/pig-llm)** | v0.0.2 | Unified LLM API for 14 providers | ✅ Ready |
-| **[pig-agent-core](packages/pig-agent-core)** | v0.0.4 | Agent runtime with tools, resilience, observability | ✅ Ready |
-| **[pig-tui](packages/pig-tui)** | v0.0.1 | Terminal UI with rich formatting | ✅ Ready |
+| **[pig-llm](packages/pig-llm)** | v0.1.1 | Unified LLM API for 14 providers | ✅ Ready |
+| **[pig-agent-core](packages/pig-agent-core)** | v0.1.1 | Agent runtime with tools, resilience, observability | ✅ Ready |
+| **[pig-tui](packages/pig-tui)** | v0.1.1 | Terminal UI with rich formatting | ✅ Ready |
 | **[pig-web-ui](packages/pig-web-ui)** | v0.0.1 | Web chat interface with FastAPI | ✅ Ready |
-| **[pig-coding-agent](packages/pig-coding-agent)** | v0.0.4 | Interactive coding assistant with resilience & cost tracking | ✅ Ready |
+| **[pig-coding-agent](packages/pig-coding-agent)** | v0.1.1 | Interactive coding assistant with resilience & cost tracking | ✅ Ready |
 | **[pig-messenger](packages/pig-messenger)** | v0.0.3 | Multi-platform bot framework | ✅ Ready |
 
 ---
@@ -77,7 +78,10 @@ pig-webui --provider openrouter --model moonshotai/kimi-k2.5
 uv pip install pig-coding-agent
 # or: pipx install pig-coding-agent
 
-export OPENROUTER_API_KEY=your-key
+# Interactive startup — prompts for provider and model if omitted
+pig
+
+# Or specify directly
 pig --provider openrouter --model moonshotai/kimi-k2.5
 
 # Try these features:
@@ -85,12 +89,12 @@ pig --provider openrouter --model moonshotai/kimi-k2.5
 > /tree                                   # View session tree
 > /fork alternative-approach              # Branch conversation
 > /skill:code-review                      # Invoke skill
-> /resilience                             # Check API key status (NEW v0.0.4)
-> /cost                                   # View usage & costs (NEW v0.0.4)
+> /resilience                             # Check API key status
+> /cost                                   # View usage & costs
 !Stop and explain what you're doing      # Interrupt with steering
 ```
 
-**Production Resilience** (NEW v0.0.4):
+**Production Resilience**:
 ```bash
 # Set multiple API keys for automatic rotation
 export OPENAI_API_KEY=sk-...
@@ -141,10 +145,13 @@ bot.start()
 - **Skills**: Reusable agent capabilities (Agent Skills standard)
 - **Prompts**: Template system with variable substitution
 - **Context**: Project-aware via AGENTS.md and SYSTEM.md
-- **Resilience** (NEW v0.0.4): Automatic API key rotation, failure recovery, model fallback
-- **Observability** (NEW v0.0.4): Event emission, billing tracking, metrics collection
+- **Resilience**: Automatic API key rotation, failure recovery, model fallback
+- **Observability**: Event emission, billing tracking, metrics collection
+- **Streaming**: Live tool call output with onUpdate callbacks and any-tool termination
 
 ### Production-Ready Infrastructure
+- **Unified Tool Registry**: Single ToolRegistry across all tools; web tools (search, read) built into pig-agent-core
+- **Operations Abstraction**: FileOperations/ShellOperations protocols for testable, swappable backends
 - **API Key Rotation**: Automatic failover on rate limits with per-failure-type cooldowns
 - **Cost Tracking**: Real-time LLM and tool usage monitoring with pricing data
 - **Context Management**: 3-level compression (truncate → summarize → LLM-compress)
@@ -215,10 +222,10 @@ pig --provider openrouter --mode rpc < requests.jsonl > responses.jsonl
 ## 📊 Project Stats
 
 - **Code**: 14,000+ lines
-- **Tests**: 300+ tests with 84% coverage
+- **Tests**: 330+ tests with 84% coverage
 - **Documentation**: 55,000+ words
-- **Commits**: 32 well-structured commits
-- **Packages**: 6 production-ready packages
+- **Packages**: 6 production-ready packages on PyPI
+- **CI/CD**: Automated PyPI publishing via Trusted Publishing on tag releases
 
 ---
 
