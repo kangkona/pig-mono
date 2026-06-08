@@ -140,3 +140,105 @@ def test_registry_iteration():
 
     tools = list(registry)
     assert len(tools) == 2
+
+
+# ---------------------------------------------------------------------------
+# Audit / metrics integration tests
+# ---------------------------------------------------------------------------
+
+
+def test_registry_records_audit_entry_after_execute():
+    """ToolAuditLog passed to ToolRegistry is populated after execute()."""
+    import asyncio
+    import json
+    from types import SimpleNamespace
+
+    from pig_agent_core.tools.audit import ToolAuditLog
+    from pig_agent_core.tools.base import ToolResult
+    from pig_agent_core.tools.registry import ToolRegistry
+
+    audit = ToolAuditLog()
+    registry = ToolRegistry(audit_log=audit)
+
+    def noop_handler(**kwargs):
+        return ToolResult(ok=True, data="ok")
+
+    registry.register(
+        "noop",
+        noop_handler,
+        {
+            "type": "function",
+            "function": {"name": "noop", "parameters": {"type": "object", "properties": {}}},
+        },
+    )
+
+    tool_call = SimpleNamespace(function=SimpleNamespace(name="noop", arguments=json.dumps({})))
+    asyncio.run(registry.execute(tool_call, "user1", {}))
+
+    entries = audit.get_entries()
+    assert len(entries) == 1
+    assert entries[0].tool_name == "noop"
+    assert entries[0].user_id == "user1"
+    assert entries[0].success is True
+
+
+def test_registry_records_metrics_after_execute():
+    """ToolMetricsCollector passed to ToolRegistry is populated after execute()."""
+    import asyncio
+    import json
+    from types import SimpleNamespace
+
+    from pig_agent_core.tools.base import ToolResult
+    from pig_agent_core.tools.metrics import ToolMetricsCollector
+    from pig_agent_core.tools.registry import ToolRegistry
+
+    metrics = ToolMetricsCollector()
+    registry = ToolRegistry(metrics=metrics)
+
+    def noop_handler(**kwargs):
+        return ToolResult(ok=True, data="ok")
+
+    registry.register(
+        "noop",
+        noop_handler,
+        {
+            "type": "function",
+            "function": {"name": "noop", "parameters": {"type": "object", "properties": {}}},
+        },
+    )
+
+    tool_call = SimpleNamespace(function=SimpleNamespace(name="noop", arguments=json.dumps({})))
+    asyncio.run(registry.execute(tool_call, "user1", {}))
+
+    summary = metrics.get_metrics("noop")
+    assert summary is not None
+    assert summary.total_calls == 1
+    assert summary.success_rate == 100.0
+
+
+def test_registry_without_audit_metrics_unchanged():
+    """Registry with no audit/metrics (default) runs unaffected."""
+    import asyncio
+    import json
+    from types import SimpleNamespace
+
+    from pig_agent_core.tools.base import ToolResult
+    from pig_agent_core.tools.registry import ToolRegistry
+
+    registry = ToolRegistry()  # no audit_log, no metrics
+
+    def noop_handler(**kwargs):
+        return ToolResult(ok=True, data="ok")
+
+    registry.register(
+        "noop",
+        noop_handler,
+        {
+            "type": "function",
+            "function": {"name": "noop", "parameters": {"type": "object", "properties": {}}},
+        },
+    )
+
+    tool_call = SimpleNamespace(function=SimpleNamespace(name="noop", arguments=json.dumps({})))
+    result = asyncio.run(registry.execute(tool_call, "user1", {}))
+    assert result.ok is True

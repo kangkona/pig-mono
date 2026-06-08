@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "pig-coding-agent"
-version = "0.1.0"
+version = "0.1.1"
 description = "Interactive coding agent CLI"
 readme = "README.md"
 license = { text = "MIT" }
@@ -33,7 +33,7 @@ dev = [
 ]
 
 [project.scripts]
-pig-code = "pig_coding_agent.cli:app"
+pig = "pig_coding_agent.cli:app"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/pig_coding_agent"]

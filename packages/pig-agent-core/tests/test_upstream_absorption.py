@@ -993,6 +993,51 @@ async def test_respond_stream_terminate_ignores_stale_tool_outputs() -> None:
     assert "stale-result" not in agent.history[-1].content
 
 
+def test_single_terminate_in_batch_stops_agent_any_semantics() -> None:
+    """ANY semantics: one tool with terminate=True in a batch stops the agent.
+
+    Previously the agent used AND semantics (all tools must terminate). This
+    regression test ensures a mixed batch — one tool terminates, one doesn't —
+    still stops the loop without a follow-up LLM call.
+    """
+    call_count = [0]
+
+    class FakeLLM:
+        config = SimpleNamespace(model="fake")
+
+        def chat(self, messages, tools=None):
+            call_count[0] += 1
+            return SimpleNamespace(
+                content="",
+                tool_calls=[
+                    {"id": "c1", "function": {"name": "terminator", "arguments": "{}"}},
+                    {"id": "c2", "function": {"name": "non_terminator", "arguments": "{}"}},
+                ],
+            )
+
+    def terminator():
+        return ToolResult(ok=True, data="done", meta={"terminate": True})
+
+    def non_terminator():
+        return ToolResult(ok=True, data="still going")
+
+    agent = Agent(llm=FakeLLM(), tools=[], verbose=False)
+    agent.registry.register(
+        "terminator", terminator, {"type": "function", "function": {"name": "terminator"}}
+    )
+    agent.registry.register(
+        "non_terminator",
+        non_terminator,
+        {"type": "function", "function": {"name": "non_terminator"}},
+    )
+
+    agent.run("go")
+
+    # ANY semantics: loop stops after the first batch even though non_terminator
+    # did not set terminate=True.
+    assert call_count[0] == 1, "Agent should stop after one LLM call (ANY terminate semantics)"
+
+
 @pytest.mark.asyncio
 async def test_respond_stream_before_tool_call_abort_skips_sibling_tools() -> None:
     executed: list[str] = []

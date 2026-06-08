@@ -7,7 +7,7 @@ class Config(BaseModel):
     """Configuration for LLM client."""
 
     provider: str = "openai"
-    model: str = "gpt-4"
+    model: str | None = None
     api_key: str | None = None
     temperature: float = Field(default=0.7, ge=0.0, le=2.0)
     max_tokens: int | None = Field(default=None, ge=1)

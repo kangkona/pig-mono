@@ -22,7 +22,7 @@ from .billing import CostTracker
 from .config import ConfigManager
 from .file_reference import FileReferenceParser
 from .resilience import create_profile_manager_from_env, get_profile_status
-from .tools import CodeTools, FileTools, ShellTools
+from .tools import FileTools, build_coding_tools
 
 
 class SessionExitRequested(Exception):
@@ -141,18 +141,9 @@ class CodingAgent:
                 if session_id:
                     self.session.id = session_id
 
-        # Initialize tools
-        file_tools = FileTools(str(self.workspace))
-        code_tools = CodeTools()
-        shell_tools = ShellTools()
-
-        # Get all tool methods (descriptor protocol auto-binds self)
-        tools = []
-        for tool_instance in [file_tools, code_tools, shell_tools]:
-            for attr_name in dir(tool_instance):
-                attr = getattr(tool_instance, attr_name)
-                if isinstance(attr, Tool) and attr.name not in self.excluded_tools:
-                    tools.append(attr)
+        # Initialize tools (new-registry style: explicit schemas + handlers,
+        # registered in bulk on the agent's registry once it exists below).
+        coding_schemas, coding_handlers = build_coding_tools(str(self.workspace))
 
         # Initialize context manager (needed by _get_system_prompt)
         self.context_manager = ContextManager(self.workspace)
@@ -169,7 +160,6 @@ class CodingAgent:
         self.agent = Agent(
             name="CodingAgent",
             llm=self.llm,
-            tools=tools,
             system_prompt=self._get_system_prompt(),
             verbose=verbose,
             profile_manager=self.profile_manager,
@@ -178,6 +168,14 @@ class CodingAgent:
             # completion, a terminate tool result, or user abort (Esc/Ctrl-C).
             max_rounds=0,
         )
+
+        # Register the coding tools on the agent's registry, then drop any tools
+        # excluded for this agent instance. (Web search is handled natively by
+        # the model provider when enabled, not as a locally-dispatched tool.)
+        self.agent.registry.register_package(coding_schemas, coding_handlers, is_core=True)
+        for name in self.excluded_tools:
+            self.agent.registry.unregister(name)
+
         self.agent.session = self.session
         self.agent.add_tool = self.add_tool
 
@@ -443,9 +441,9 @@ When generating code, provide clean, well-documented, production-ready code.
                     session_dir_hint = f" --session-dir {self.sessions_dir}"
                 self.ui.system(
                     f"💾 Session saved. Resume with:  "
-                    f"pig-code --session-id {self.session.id}{session_dir_hint}"
+                    f"pig --session-id {self.session.id}{session_dir_hint}"
                 )
-                self.ui.system("(or pig-code --continue to resume the most recent session)")
+                self.ui.system("(or pig --continue to resume the most recent session)")
             self.ui.system("Goodbye!")
 
             # Tear down the session event loop (and any provider clients bound
@@ -1109,7 +1107,7 @@ Tools: {len(self.agent.registry)}
             sessions_text += "\n\n... (showing most recent 20)"
 
         self.ui.panel(sessions_text, title=f"Available Sessions ({len(sessions)})")
-        self.ui.system("Use `pig-code --resume` to select a session")
+        self.ui.system("Use `pig --resume` to select a session")
 
     def _show_session_info(self):
         """Show session information."""

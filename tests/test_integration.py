@@ -10,7 +10,7 @@ def test_ai_to_agent_integration():
 
     # Mock LLM
     with patch("pig_llm.providers.openai.OpenAIProvider"):
-        llm = LLM(provider="openai", api_key="test")
+        llm = LLM(provider="openai", api_key="test", model="gpt-4o")
 
         @tool
         def test_tool(x: int) -> int:
@@ -30,7 +30,7 @@ def test_agent_to_tui_integration():
     with patch("pig_llm.providers.openai.OpenAIProvider"):
         from pig_llm import LLM
 
-        llm = LLM(provider="openai", api_key="test")
+        llm = LLM(provider="openai", api_key="test", model="gpt-4o")
         Agent(llm=llm)
 
     # Create chat UI
@@ -51,7 +51,7 @@ def test_agent_to_webui_integration():
     with patch("pig_llm.providers.openai.OpenAIProvider"):
         from pig_llm import LLM
 
-        llm = LLM(provider="openai", api_key="test")
+        llm = LLM(provider="openai", api_key="test", model="gpt-4o")
         agent = Agent(llm=llm)
 
     server = ChatServer(agent=agent)
@@ -72,7 +72,7 @@ def test_full_stack_integration():
 
     # Create LLM and agent
     with patch("pig_llm.providers.openai.OpenAIProvider"):
-        llm = LLM(provider="openai", api_key="test")
+        llm = LLM(provider="openai", api_key="test", model="gpt-4o")
         agent = Agent(
             name="TestAgent",
             llm=llm,

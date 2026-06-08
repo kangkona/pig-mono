@@ -165,22 +165,6 @@ TOOL_BUDGETS: dict[str, dict[str, int]] = {
 
 
 # ---------------------------------------------------------------------------
-# Deferred tool index (keyword-based tool discovery)
-# ---------------------------------------------------------------------------
-
-DEFERRED_TOOL_INDEX: dict[str, list[str]] = {
-    "web": ["search_web", "read_webpage"],
-    "search": ["search_web", "search_x", "search_reddit"],
-    "read": ["read_webpage", "read_file"],
-    "browser": ["open_browser", "click_element", "screenshot"],
-    "api": ["make_api_call", "parse_json"],
-    "file": ["read_file", "write_file", "list_files"],
-    "code": ["run_code", "analyze_code", "format_code"],
-    "social": ["post_x", "post_reddit", "get_x_profile"],
-}
-
-
-# ---------------------------------------------------------------------------
 # Parallel-safe tools (can execute concurrently)
 # ---------------------------------------------------------------------------
 

@@ -44,10 +44,7 @@ jobs:
         pip install --no-deps -e packages/pig-agent-core
         pip install --no-deps -e packages/pig-web-ui
 
-        # 3) Packages depending on pig-agent-core
-        pip install --no-deps -e packages/pig-agent-tools
-
-        # 4) Packages depending on pig-llm + pig-agent-core + pig-tui
+        # 3) Packages depending on pig-llm + pig-agent-core + pig-tui
         pip install --no-deps -e packages/pig-coding-agent
         pip install --no-deps -e packages/pig-messenger
 

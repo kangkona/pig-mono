@@ -11,7 +11,7 @@ def test_llm_initialization_with_provider():
     """Test LLM initialization with provider."""
     with patch("pig_llm.providers.openai.OpenAIProvider") as MockProvider:
         MockProvider.return_value = Mock()
-        llm = LLM(provider="openai", api_key="test-key")
+        llm = LLM(provider="openai", api_key="test-key", model="gpt-4o-mini")
         assert llm.config.provider == "openai"
         assert llm.config.api_key == "test-key"
 
@@ -43,7 +43,7 @@ def test_llm_allows_bedrock_without_api_key():
     fake_bedrock_module = SimpleNamespace(BedrockProvider=mock_bedrock_class)
 
     with patch("importlib.import_module", return_value=fake_bedrock_module) as mock_import:
-        llm = LLM(provider="bedrock")
+        llm = LLM(provider="bedrock", model="anthropic.claude-3-haiku-20240307-v1:0")
 
     assert llm.config.provider == "bedrock"
     assert llm.config.api_key is None
@@ -57,7 +57,7 @@ def test_llm_complete_creates_messages():
         mock_provider = Mock()
         MockProvider.return_value = mock_provider
 
-        llm = LLM(provider="openai", api_key="test")
+        llm = LLM(provider="openai", api_key="test", model="gpt-4o-mini")
         llm.complete("Hello", system="You are helpful")
 
         assert mock_provider.complete.called
@@ -75,7 +75,7 @@ def test_llm_complete_without_system():
         mock_provider = Mock()
         MockProvider.return_value = mock_provider
 
-        llm = LLM(provider="openai", api_key="test")
+        llm = LLM(provider="openai", api_key="test", model="gpt-4o-mini")
         llm.complete("Hello")
 
         call_args = mock_provider.complete.call_args
@@ -91,7 +91,7 @@ def test_llm_chat():
         mock_provider = Mock()
         MockProvider.return_value = mock_provider
 
-        llm = LLM(provider="openai", api_key="test")
+        llm = LLM(provider="openai", api_key="test", model="gpt-4o-mini")
         messages = [
             Message(role="user", content="Hello"),
             Message(role="assistant", content="Hi"),

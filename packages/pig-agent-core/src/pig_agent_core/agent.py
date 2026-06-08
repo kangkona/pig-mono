@@ -331,13 +331,13 @@ class Agent:
         results = await self.registry.execute_batch(tool_call_objects, "default", {}, cancel)
 
         tool_messages: list[dict[str, Any]] = []
-        terminate_all = True
+        terminate_any = False
         for tool_call, result in zip(tool_calls, results, strict=False):
             tool_name = tool_call.get("function", {}).get("name")
             tool_messages.append(self._tool_message(tool_call, tool_name, result))
-            terminate_all = terminate_all and bool(result.ok and result.meta.get("terminate"))
+            terminate_any = terminate_any or bool(result.ok and result.meta.get("terminate"))
 
-        return tool_messages, terminate_all
+        return tool_messages, terminate_any
 
     def add_tool(self, tool: Tool) -> None:
         """Add a tool to the agent.
@@ -417,7 +417,7 @@ class Agent:
                         )
                     )
 
-                if tool_results and all(
+                if tool_results and any(
                     tr.get("result") and tr["result"].ok and tr["result"].meta.get("terminate")
                     for tr in tool_results
                 ):
@@ -573,11 +573,11 @@ class Agent:
                         self._rounds_since_plan = 0
 
                 if self._can_use_async_batch_execution():
-                    tool_results, terminate_all = await self._execute_async_batch_tool_calls(
+                    tool_results, terminate_any = await self._execute_async_batch_tool_calls(
                         response_tool_calls, cancel
                     )
                 else:
-                    terminate_all = False
+                    terminate_any = False
 
                 if not self._can_use_async_batch_execution():
                     # Execute tools
@@ -695,9 +695,9 @@ class Agent:
                     )
 
                 if tool_results and (
-                    terminate_all
+                    terminate_any
                     if self._can_use_async_batch_execution()
-                    else all(
+                    else any(
                         tr.get("result") and tr["result"].ok and tr["result"].meta.get("terminate")
                         for tr in tool_results
                     )
@@ -975,8 +975,8 @@ class Agent:
 
             # Execute tool calls
             tool_history_start = len(self.history)
-            terminate_all = await self._execute_tool_calls_from_dict(assistant_tool_calls, cancel)
-            if terminate_all:
+            terminate_any = await self._execute_tool_calls_from_dict(assistant_tool_calls, cancel)
+            if terminate_any:
                 current_tool_call_ids = {tool_call["id"] for tool_call in assistant_tool_calls}
                 final_content = "\n".join(
                     message.content
@@ -1021,10 +1021,10 @@ class Agent:
             cancel: Optional cancellation event
 
         Returns:
-            True when every tool result requested early termination.
+            True when any tool result requested early termination.
         """
         if self._can_use_async_batch_execution():
-            tool_messages, terminate_all = await self._execute_async_batch_tool_calls(
+            tool_messages, terminate_any = await self._execute_async_batch_tool_calls(
                 tool_calls, cancel
             )
             for tool_result in tool_messages:
@@ -1038,9 +1038,9 @@ class Agent:
                         },
                     )
                 )
-            return terminate_all
+            return terminate_any
 
-        terminate_all = True
+        terminate_any = False
         for tool_call in tool_calls:
             if cancel and cancel.is_set():
                 return False
@@ -1075,7 +1075,7 @@ class Agent:
                             },
                         )
                     )
-                    terminate_all = terminate_all and bool(
+                    terminate_any = terminate_any or bool(
                         result.ok and result.meta.get("terminate")
                     )
                     if result.meta.get("abort_batch"):
@@ -1124,7 +1124,7 @@ class Agent:
 
                 if self.on_tool_end:
                     self.on_tool_end(tool_name, result)
-                terminate_all = terminate_all and bool(result.ok and result.meta.get("terminate"))
+                terminate_any = terminate_any or bool(result.ok and result.meta.get("terminate"))
             except Exception as e:
                 error_msg = f"Error: {e}"
                 self.history.append(
@@ -1138,9 +1138,8 @@ class Agent:
                     )
                 )
                 self._log(f"✗ {error_msg}", style="red")
-                terminate_all = False
 
-        return terminate_all
+        return terminate_any
 
     async def _execute_tool_calls(self, tool_calls: list[dict[str, Any]]) -> None:
         """Execute tool calls (backward compatibility wrapper).

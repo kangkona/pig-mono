@@ -17,7 +17,7 @@ from .agent import CodingAgent
 from .config import ConfigManager
 
 app = typer.Typer(
-    name="pig-code",
+    name="pig",
     help="Interactive coding agent CLI",
     add_completion=False,
     invoke_without_command=True,
@@ -174,7 +174,7 @@ def _validate_startup_name(name: str | None) -> None:
 def main(
     ctx: typer.Context,
     model: str | None = typer.Option(None, "--model", "-m", help="LLM model to use"),
-    provider: str = typer.Option("openai", "--provider", "-p", help="LLM provider"),
+    provider: str | None = typer.Option(None, "--provider", "-p", help="LLM provider"),
     workspace: Path = typer.Option(".", "--path", "-w", help="Workspace directory"),
     verbose: bool = typer.Option(True, "--verbose/--quiet", "-v/-q", help="Verbose output"),
     resume: bool = typer.Option(False, "--resume", "-r", help="Resume last session"),
@@ -209,6 +209,11 @@ def main(
         "--compat-mode",
         help="Explicit OpenAI-compatible request normalization mode",
     ),
+    web_search: bool = typer.Option(
+        False,
+        "--web-search/--no-web-search",
+        help="Enable the model provider's native web search (Anthropic)",
+    ),
 ):
     """Start interactive coding agent."""
     if ctx.invoked_subcommand is not None:
@@ -227,6 +232,7 @@ def main(
     resolved_exclude_tools = _resolve_option_value(exclude_tools)
     resolved_base_url = _resolve_option_value(base_url)
     resolved_compat_mode = _resolve_option_value(compat_mode)
+    resolved_web_search = bool(_resolve_option_value(web_search))
 
     _validate_session_selector_flags(
         fork=resolved_fork,
@@ -242,20 +248,38 @@ def main(
         if configured_session_dir:
             resolved_session_dir = Path(configured_session_dir).expanduser()
 
-    # Get API key
+    # Prompt for provider and model interactively when not supplied via flags.
+    # In protocol/json/rpc modes we can't prompt, so require explicit flags.
+    if not provider:
+        if protocol_mode:
+            console.print(f"[red]Error: --provider / -p is required in {mode} mode[/red]")
+            raise typer.Exit(1)
+        provider = typer.prompt("Provider (e.g. anthropic, openai, openrouter)")
+
+    # Get API key — prompt interactively when missing (non-protocol modes only).
     api_key = os.getenv(f"{provider.upper()}_API_KEY")
     if not api_key:
-        console.print(f"[red]Error: {provider.upper()}_API_KEY not set[/red]")
-        console.print(f"Please set your API key: export {provider.upper()}_API_KEY=your-key")
-        raise typer.Exit(1)
+        if protocol_mode:
+            console.print(f"[red]Error: {provider.upper()}_API_KEY not set[/red]")
+            console.print(f"  Set your API key:   export {provider.upper()}_API_KEY=your-key")
+            raise typer.Exit(1)
+        api_key = typer.prompt(f"{provider.upper()}_API_KEY", hide_input=True)
 
-    # Create LLM
+    # Prompt for model interactively when not supplied via -m.
+    resolved_model = model
+    if not resolved_model:
+        if protocol_mode:
+            console.print(f"[red]Error: --model / -m is required in {mode} mode[/red]")
+            raise typer.Exit(1)
+        resolved_model = typer.prompt(f"Model for {provider}")
+
     llm = LLM(
         provider=provider,
         api_key=api_key,
-        model=model or ("gpt-3.5-turbo" if provider == "openai" else None),
+        model=resolved_model,
         base_url=resolved_base_url,
         compat_mode=resolved_compat_mode,
+        enable_web_search=resolved_web_search,
     )
 
     # Handle session loading
@@ -446,7 +470,7 @@ def run_json_mode(agent):
             emit_shutdown("eof")
         else:
             # Interactive JSON mode
-            json_out.emit_event("ready", {"agent": "pig-code", "mode": "json"})
+            json_out.emit_event("ready", {"agent": "pig", "mode": "json"})
 
             while True:
                 try:

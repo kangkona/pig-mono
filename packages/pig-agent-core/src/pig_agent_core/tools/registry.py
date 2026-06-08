@@ -4,10 +4,13 @@ import asyncio
 import inspect
 import json
 import threading
+import time
 from collections.abc import Awaitable, Callable
 from typing import Any
 
+from .audit import ToolAuditLog
 from .base import CancelledError, ToolResult
+from .metrics import ToolMetricsCollector
 from .schemas import PARALLEL_SAFE_TOOLS, TOOL_PERMISSIONS
 
 
@@ -31,8 +34,21 @@ class ToolRegistry:
     - Schema/handler/budget consistency validation
     """
 
-    def __init__(self) -> None:
-        """Initialize tool registry."""
+    def __init__(
+        self,
+        audit_log: ToolAuditLog | None = None,
+        metrics: ToolMetricsCollector | None = None,
+    ) -> None:
+        """Initialize tool registry.
+
+        Args:
+            audit_log: Optional audit log. When provided, each ``execute()``
+                call records an entry (tool name, user, success/failure,
+                duration). Defaults to None (no auditing).
+            metrics: Optional metrics collector. When provided, each
+                ``execute()`` call records call count, success rate, and
+                duration statistics. Defaults to None (no metrics).
+        """
         self._handlers: dict[str, Callable] = {}
         self._schemas: dict[str, dict] = {}
         self._core_tools: set[str] = set()
@@ -42,6 +58,8 @@ class ToolRegistry:
         self._retries: dict[str, int] = {}  # tool_name -> max_retries
         self._fallbacks: dict[str, list[str]] = {}  # tool_name -> [fallback_tool_names]
         self._confirmed_tools: set[str] = set()  # Write tools that have been confirmed
+        self._audit_log: ToolAuditLog | None = audit_log
+        self._metrics: ToolMetricsCollector | None = metrics
 
     def register(
         self,
@@ -301,6 +319,7 @@ class ToolRegistry:
         user_id: str,
         meta: dict[str, Any],
         cancel: asyncio.Event | None = None,
+        on_update: Callable[[str], None] | None = None,
     ) -> ToolResult:
         """Execute a tool with timeout, retry, and fallback support.
 
@@ -309,6 +328,9 @@ class ToolRegistry:
             user_id: User ID for context
             meta: Additional metadata
             cancel: Optional cancellation event
+            on_update: Optional callback for streaming incremental tool output.
+                Injected into ``meta["on_update"]`` so context-aware handlers
+                (4-arg signature) can retrieve it and forward to their I/O layer.
 
         Returns:
             ToolResult with execution outcome
@@ -318,6 +340,10 @@ class ToolRegistry:
             args = json.loads(tool_call.function.arguments)
         except (json.JSONDecodeError, TypeError):
             args = {}
+
+        # Inject on_update into meta so context-aware handlers can stream output.
+        if on_update is not None:
+            meta = {**meta, "on_update": on_update}
 
         # Check cancellation before execution
         if cancel and cancel.is_set():
@@ -332,7 +358,9 @@ class ToolRegistry:
             )
 
         # Try primary tool
+        _t0 = time.monotonic()
         result = await self._execute_tool(name, args, user_id, meta, cancel)
+        _duration = time.monotonic() - _t0
 
         # If primary tool failed, try fallbacks
         if not result.ok:
@@ -349,7 +377,26 @@ class ToolRegistry:
                     # Add metadata about fallback usage
                     fallback_result.meta["fallback_from"] = name
                     fallback_result.meta["fallback_to"] = fallback_name
-                    return fallback_result
+                    result = fallback_result
+                    break
+
+        # Record audit and metrics for the final outcome.
+        if self._audit_log is not None:
+            self._audit_log.log(
+                tool_name=name,
+                user_id=user_id,
+                args=args,
+                success=result.ok,
+                error=result.error,
+                duration=_duration,
+            )
+        if self._metrics is not None:
+            self._metrics.record(
+                tool_name=name,
+                user_id=user_id,
+                success=result.ok,
+                duration=_duration,
+            )
 
         return result
 
