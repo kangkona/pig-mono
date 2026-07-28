@@ -48,8 +48,6 @@ class AgentConfig(BaseModel):
             "find_files",
             "ls_detailed",
             "run_command",
-            "git_status",
-            "git_diff",
         ]
     )
 
@@ -159,6 +157,20 @@ class ConfigManager:
             value: Value to set
             global_config: Set in global config
         """
-        config = self.load_config()
-        setattr(config, key, value)
-        self.save_config(config, global_config)
+        if key not in AgentConfig.model_fields:
+            raise ValueError(f"Unknown config key: {key}")
+
+        merged = self.load_config()
+        validated = AgentConfig(**{**merged.model_dump(), key: value})
+        path = self.global_config if global_config else self.project_config
+
+        data: dict[str, Any] = {}
+        if path.exists():
+            loaded = json.loads(path.read_text())
+            if not isinstance(loaded, dict):
+                raise ValueError(f"Config file must contain a JSON object: {path}")
+            data = loaded
+
+        data[key] = getattr(validated, key)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(data, indent=2))

@@ -15,6 +15,7 @@ from rich.console import Console
 
 from .agent import CodingAgent
 from .config import ConfigManager
+from .permissions import PermissionPolicy
 
 app = typer.Typer(
     name="pig",
@@ -341,7 +342,17 @@ def main(
                     if not protocol_mode:
                         console.print("[yellow]Starting new session[/yellow]")
 
+    piped_input = None
+    if not protocol_mode:
+        piped_input = _read_piped_stdin()
+
     # Create and run agent
+    permission_policy = None
+    if protocol_mode or piped_input is not None:
+        permission_policy = PermissionPolicy.deny_all(
+            "Permission denied: side-effectful tools require interactive confirmation"
+        )
+
     agent = CodingAgent(
         llm=llm,
         workspace=str(workspace),
@@ -356,11 +367,8 @@ def main(
         enable_resilience=not no_resilience,
         enable_cost_tracking=not no_cost_tracking,
         excluded_tools=_parse_excluded_tools(resolved_exclude_tools),
+        permission_policy=permission_policy,
     )
-
-    piped_input = None
-    if not protocol_mode:
-        piped_input = _read_piped_stdin()
 
     if not protocol_mode and piped_input is None:
         console.print("[green]✓ Coding Agent started[/green]")
@@ -554,9 +562,13 @@ def run_rpc_mode(agent):
 
             from .tools import ShellTools
 
+            permission_policy = getattr(agent, "permission_policy", None)
+            if not isinstance(permission_policy, PermissionPolicy):
+                permission_policy = PermissionPolicy.allow_all()
+
             # RPC bash is a discrete request/response with no turn-level cancel;
             # use the synchronous helper directly.
-            output = ShellTools()._run_command_sync(
+            output = ShellTools(permission_policy=permission_policy)._run_command_sync(
                 command,
                 cwd=params.get("cwd"),
                 exclude_from_context=bool(params.get("excludeFromContext")),
@@ -601,7 +613,13 @@ def gen(
         raise typer.Exit(1)
 
     llm = LLM(api_key=api_key, model=model or "gpt-3.5-turbo")
-    agent = CodingAgent(llm=llm, verbose=False)
+    agent = CodingAgent(
+        llm=llm,
+        verbose=False,
+        permission_policy=PermissionPolicy.deny_all(
+            "Permission denied: non-interactive generation commands require an explicit policy"
+        ),
+    )
 
     console.print(f"[cyan]Generating:[/cyan] {description}")
     result = agent.run_once(f"Generate code for: {description}")
@@ -629,7 +647,13 @@ def analyze(
         raise typer.Exit(1)
 
     llm = LLM(api_key=api_key, model=model or "gpt-3.5-turbo")
-    agent = CodingAgent(llm=llm, verbose=False)
+    agent = CodingAgent(
+        llm=llm,
+        verbose=False,
+        permission_policy=PermissionPolicy.deny_all(
+            "Permission denied: non-interactive analysis commands require an explicit policy"
+        ),
+    )
 
     console.print(f"[cyan]Analyzing:[/cyan] {path}")
     result = agent.run_once(f"Analyze the file {path} and provide insights")

@@ -4,10 +4,16 @@ import asyncio
 import sys
 
 import pytest
-from pig_coding_agent.tools import FileTools, ShellTools, build_coding_tools
+from pig_coding_agent.permissions import PermissionPolicy
+from pig_coding_agent.tools import FileTools, build_coding_tools
 
 
-def _run_cmd(command: str, cwd: str | None = None, exclude_from_context: bool = False) -> str:
+def _run_cmd(
+    command: str,
+    cwd: str | None = None,
+    exclude_from_context: bool = False,
+    permission_policy: PermissionPolicy | None = None,
+) -> str:
     """Drive run_command via the registry for tests (canonical path)."""
     import json
     from types import SimpleNamespace
@@ -15,7 +21,7 @@ def _run_cmd(command: str, cwd: str | None = None, exclude_from_context: bool = 
     from pig_agent_core.tools.registry import ToolRegistry
 
     registry = ToolRegistry()
-    schemas, handlers = build_coding_tools(".")
+    schemas, handlers = build_coding_tools(".", permission_policy=permission_policy)
     registry.register_package(schemas, handlers, is_core=True)
     args = {"command": command}
     if cwd is not None:
@@ -66,7 +72,7 @@ def test_read_nonexistent_file(temp_workspace):
 
 def test_write_file(temp_workspace):
     """Test writing a file."""
-    tools = FileTools(str(temp_workspace))
+    tools = FileTools(str(temp_workspace), permission_policy=PermissionPolicy.allow_all())
 
     result = tools.write_file("output.txt", "Test content")
     assert "Successfully wrote" in result
@@ -79,7 +85,7 @@ def test_write_file(temp_workspace):
 
 def test_write_file_creates_directories(temp_workspace):
     """Test writing file creates parent directories."""
-    tools = FileTools(str(temp_workspace))
+    tools = FileTools(str(temp_workspace), permission_policy=PermissionPolicy.allow_all())
 
     result = tools.write_file("subdir/nested/file.txt", "Content")
     assert "Successfully wrote" in result
@@ -141,19 +147,19 @@ def test_path_traversal_prevention(temp_workspace):
 
 def test_shell_tools_run_command():
     """Test running shell command."""
-    result = _run_cmd("echo 'Hello'")
+    result = _run_cmd("echo 'Hello'", permission_policy=PermissionPolicy.allow_all())
     assert "Hello" in result
 
 
 def test_shell_tools_run_command_with_error():
     """Test running command that fails."""
-    result = _run_cmd("exit 1")
+    result = _run_cmd("exit 1", permission_policy=PermissionPolicy.allow_all())
     assert isinstance(result, str)
 
 
 def test_shell_tools_timeout():
     """Test command timeout."""
-    result = _run_cmd("sleep 100")
+    result = _run_cmd("sleep 100", permission_policy=PermissionPolicy.allow_all())
     assert "timed out" in result.lower() or "error" in result.lower()
 
 
@@ -164,7 +170,7 @@ def test_shell_tools_truncates_large_line_output_without_counting_trailing_newli
         """sys.stdout.write('X' * 300000 + '\\n')"""
         '"'
     )
-    result = _run_cmd(command)
+    result = _run_cmd(command, permission_policy=PermissionPolicy.allow_all())
 
     assert "[Output truncated" in result
     assert "300001" not in result
@@ -180,7 +186,7 @@ def test_shell_tools_truncates_many_lines_without_extra_trailing_newline_line():
         """print(f'line-{i:04d}')"""
         '"'
     )
-    result = _run_cmd(command)
+    result = _run_cmd(command, permission_policy=PermissionPolicy.allow_all())
 
     assert "[Showing lines 2001-4000 of 4000." in result
     assert "line-2001" in result
@@ -188,28 +194,19 @@ def test_shell_tools_truncates_many_lines_without_extra_trailing_newline_line():
     assert "4001" not in result
 
 
-def test_shell_tools_git_status():
-    """Test git status command."""
-    tools = ShellTools()
+def test_build_coding_tools_does_not_expose_git_mutation_or_status_tools():
+    """Git-specific helpers should not be exposed as first-class model tools."""
+    schemas, handlers = build_coding_tools(".", permission_policy=PermissionPolicy.allow_all())
+    names = {schema["function"]["name"] for schema in schemas}
 
-    result = tools.git_status()
-    assert isinstance(result, str)
-
-
-def test_shell_tools_git_diff():
-    """Test git diff command."""
-    tools = ShellTools()
-
-    result = tools.git_diff()
-    assert isinstance(result, str)
-
-
-def test_shell_tools_git_diff_with_path():
-    """Test git diff with specific path."""
-    tools = ShellTools()
-
-    result = tools.git_diff("README.md")
-    assert isinstance(result, str)
+    assert "git_status" not in names
+    assert "git_diff" not in names
+    assert "git_commit" not in names
+    assert "git_push" not in names
+    assert "git_branch" not in names
+    assert "git_log" not in names
+    assert "git_status" not in handlers
+    assert "git_commit" not in handlers
 
 
 def test_file_tools_grep(temp_workspace):
@@ -279,7 +276,7 @@ def test_run_command_killed_when_turn_cancelled(tmp_path):
     from pig_agent_core.tools.registry import ToolRegistry
 
     registry = ToolRegistry()
-    schemas, handlers = build_coding_tools(".")
+    schemas, handlers = build_coding_tools(".", permission_policy=PermissionPolicy.allow_all())
     registry.register_package(schemas, handlers, is_core=True)
 
     sentinel = tmp_path / "done.txt"
@@ -311,7 +308,7 @@ def test_run_command_cancel_none_is_unaffected():
     from pig_agent_core.tools.registry import ToolRegistry
 
     registry = ToolRegistry()
-    schemas, handlers = build_coding_tools(".")
+    schemas, handlers = build_coding_tools(".", permission_policy=PermissionPolicy.allow_all())
     registry.register_package(schemas, handlers, is_core=True)
 
     tool_call = SimpleNamespace(
@@ -332,7 +329,7 @@ def test_execute_sync_drives_async_run_command():
     from pig_agent_core.tools.registry import ToolRegistry
 
     registry = ToolRegistry()
-    schemas, handlers = build_coding_tools(".")
+    schemas, handlers = build_coding_tools(".", permission_policy=PermissionPolicy.allow_all())
     registry.register_package(schemas, handlers, is_core=True)
 
     result = registry.execute_sync("run_command", {"command": "echo hi"})
@@ -469,7 +466,7 @@ def test_file_tools_route_write_through_ops(tmp_path):
     fake.seed_dir(str(tmp_path))
     fake.seed_dir(str(tmp_path / "sub"))
 
-    tools = FileTools(str(tmp_path), ops=fake)
+    tools = FileTools(str(tmp_path), ops=fake, permission_policy=PermissionPolicy.allow_all())
     tools.write_file("sub/out.txt", "written")
 
     methods = [c[0] for c in fake.calls]
@@ -494,7 +491,11 @@ def test_shell_tools_route_async_through_ops():
     from pig_agent_core.tools.registry import ToolRegistry
 
     fake = _FakeShellOperations(async_output="hello from fake")
-    schemas, handlers = build_coding_tools(".", shell_ops=fake)
+    schemas, handlers = build_coding_tools(
+        ".",
+        shell_ops=fake,
+        permission_policy=PermissionPolicy.allow_all(),
+    )
 
     registry = ToolRegistry()
     registry.register_package(schemas, handlers, is_core=True)
@@ -521,7 +522,11 @@ def test_shell_tools_on_update_forwarded_to_exec_async():
 
     chunks_received: list = []
     fake = _FakeShellOperations(async_output="streaming chunk")
-    schemas, handlers = build_coding_tools(".", shell_ops=fake)
+    schemas, handlers = build_coding_tools(
+        ".",
+        shell_ops=fake,
+        permission_policy=PermissionPolicy.allow_all(),
+    )
 
     registry = ToolRegistry()
     registry.register_package(schemas, handlers, is_core=True)
@@ -539,12 +544,110 @@ def test_shell_tools_on_update_forwarded_to_exec_async():
     assert fake.async_calls[0]["on_data"] is not None
 
 
-def test_shell_tools_route_sync_through_ops():
-    """git_status (sync shell) must use ops.exec_sync."""
-    fake = _FakeShellOperations(sync_output="M  file.txt")
-    tools = ShellTools(ops=fake)
-    result = tools.git_status()
+def test_write_file_requires_permission_by_default(tmp_path):
+    """Default file writes are denied unless the caller supplies a policy."""
+    tools = FileTools(str(tmp_path))
 
-    assert "file.txt" in result
-    assert len(fake.sync_calls) == 1
-    assert "git status" in fake.sync_calls[0]["command"]
+    result = tools.write_file("blocked.txt", "should not write")
+
+    assert "Permission denied" in result
+    assert not (tmp_path / "blocked.txt").exists()
+
+
+def test_write_file_can_be_confirmed_by_policy(tmp_path):
+    decisions = []
+
+    def confirm(request):
+        decisions.append((request.action, request.target))
+        return True
+
+    tools = FileTools(
+        str(tmp_path),
+        permission_policy=PermissionPolicy.confirm_all(confirm),
+    )
+
+    result = tools.write_file("allowed.txt", "ok")
+
+    assert "Successfully wrote" in result
+    assert (tmp_path / "allowed.txt").read_text() == "ok"
+    assert decisions == [("write_file", str(tmp_path / "allowed.txt"))]
+
+
+def test_write_file_custom_deny_reason_surfaces_as_tool_failure():
+    """Custom deny reasons must still propagate as ok=False at registry level."""
+    from pig_agent_core.tools.registry import ToolRegistry
+
+    registry = ToolRegistry()
+    schemas, handlers = build_coding_tools(
+        ".",
+        permission_policy=PermissionPolicy.deny_all("blocked by policy"),
+    )
+    registry.register_package(schemas, handlers, is_core=True)
+
+    result = registry.execute_sync("write_file", {"path": "blocked.txt", "content": "x"})
+
+    assert result.ok is False
+    assert result.error == "blocked by policy"
+
+
+def test_run_command_requires_permission_by_default():
+    """Default shell execution is denied unless the caller supplies a policy."""
+    result = _run_cmd("echo denied")
+
+    assert "Permission denied" in result
+
+
+def test_run_command_can_be_denied_by_policy():
+    import json
+    from types import SimpleNamespace
+
+    from pig_agent_core.tools.registry import ToolRegistry
+
+    fake = _FakeShellOperations(async_output="should not run")
+    schemas, handlers = build_coding_tools(
+        ".",
+        shell_ops=fake,
+        permission_policy=PermissionPolicy.deny_all("test deny"),
+    )
+    registry = ToolRegistry()
+    registry.register_package(schemas, handlers, is_core=True)
+    tool_call = SimpleNamespace(
+        function=SimpleNamespace(name="run_command", arguments=json.dumps({"command": "echo hi"}))
+    )
+
+    result = asyncio.run(registry.execute(tool_call, "default", {}, None))
+
+    assert result.ok is False
+    assert "test deny" in (result.error or "")
+    assert fake.async_calls == []
+
+
+def test_run_command_can_be_confirmed_by_policy():
+    import json
+    from types import SimpleNamespace
+
+    from pig_agent_core.tools.registry import ToolRegistry
+
+    decisions = []
+
+    def confirm(request):
+        decisions.append((request.action, request.target))
+        return True
+
+    fake = _FakeShellOperations(sync_output="M  file.txt")
+    schemas, handlers = build_coding_tools(
+        ".",
+        shell_ops=fake,
+        permission_policy=PermissionPolicy.confirm_all(confirm),
+    )
+    registry = ToolRegistry()
+    registry.register_package(schemas, handlers, is_core=True)
+    tool_call = SimpleNamespace(
+        function=SimpleNamespace(name="run_command", arguments=json.dumps({"command": "echo hi"}))
+    )
+
+    result = asyncio.run(registry.execute(tool_call, "default", {}, None))
+
+    assert result.ok is True
+    assert "fake output" in str(result.data)
+    assert decisions == [("run_command", "echo hi")]

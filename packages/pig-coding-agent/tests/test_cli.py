@@ -8,6 +8,7 @@ from unittest.mock import Mock, patch
 
 import pytest
 from pig_agent_core import ExtensionManager
+from pig_coding_agent.permissions import PermissionPolicy
 
 
 @pytest.fixture
@@ -41,6 +42,16 @@ def test_cli_imports():
     assert callable(main)
     assert callable(gen)
     assert callable(analyze)
+
+
+def test_cli_does_not_export_nonexistent_chat_or_refactor_commands():
+    """README and Typer app should not advertise unimplemented commands."""
+    from pig_coding_agent.cli import app
+
+    command_names = {command.name for command in app.registered_commands}
+
+    assert "chat" not in command_names
+    assert "refactor" not in command_names
 
 
 @patch("pig_coding_agent.cli.LLM")
@@ -91,6 +102,8 @@ def test_gen_command_with_output(mock_agent_class, mock_llm_class, mock_env, tmp
         assert output_file.exists()
         assert output_file.read_text() == "print('hello')"
         mock_console.print.assert_called()
+        assert isinstance(mock_agent_class.call_args.kwargs["permission_policy"], PermissionPolicy)
+        assert mock_agent_class.call_args.kwargs["permission_policy"].default == "deny"
 
 
 @patch("pig_coding_agent.cli.LLM")
@@ -116,6 +129,8 @@ def test_analyze_command(mock_agent_class, mock_llm_class, mock_env, tmp_path):
 
         mock_agent.run_once.assert_called_once()
         mock_console.print.assert_called()
+        assert isinstance(mock_agent_class.call_args.kwargs["permission_policy"], PermissionPolicy)
+        assert mock_agent_class.call_args.kwargs["permission_policy"].default == "deny"
 
 
 def test_analyze_command_missing_file(mock_env):
