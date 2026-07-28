@@ -216,3 +216,22 @@ def test_markdown_stream_writer_shows_input_affordance():
     assert "add an AI mode" in render(writer._renderable())
     writer.finalize()
     assert "You ›" not in render(writer._renderable())
+
+
+def test_markdown_stream_writer_keeps_runtime_events_in_transcript():
+    import io
+    import re
+
+    chat = ChatUI()
+    chat.console.file = io.StringIO()
+
+    with chat.assistant_stream_markdown(refresh_per_second=4) as writer:
+        writer.write("hello")
+        chat.user("!steer now")
+        chat.system("queued steer")
+        writer.write(" world")
+
+    plain = re.sub(r"\x1b\[[0-9;?]*[A-Za-z]", "", chat.console.file.getvalue())
+    assert "User: !steer now" in plain
+    assert "System: queued steer" in plain
+    assert "hello world" in plain
