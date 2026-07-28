@@ -8,6 +8,7 @@ from unittest.mock import Mock, patch
 
 import pytest
 from pig_agent_core import ExtensionManager
+from pig_coding_agent import AgentTurnResult, permissions
 from pig_coding_agent.permissions import PermissionPolicy
 
 
@@ -66,7 +67,9 @@ def test_gen_command(mock_agent_class, mock_llm_class, mock_env, tmp_path):
     mock_llm_class.return_value = mock_llm
 
     mock_agent = Mock()
-    mock_agent.run_once = Mock(return_value="# Generated code\nprint('hello')")
+    mock_agent.run_once_result = Mock(
+        return_value=AgentTurnResult(content="# Generated code\nprint('hello')")
+    )
     mock_agent_class.return_value = mock_agent
 
     # Test without output file
@@ -75,8 +78,11 @@ def test_gen_command(mock_agent_class, mock_llm_class, mock_env, tmp_path):
 
         mock_llm_class.assert_called_once()
         mock_agent_class.assert_called_once()
-        mock_agent.run_once.assert_called_once()
+        mock_agent.run_once_result.assert_called_once()
         mock_console.print.assert_called()
+        policy = mock_agent_class.call_args.kwargs["permission_policy"]
+        assert isinstance(policy, PermissionPolicy)
+        assert policy.deny_reason == permissions.UNATTENDED_PERMISSION_DENIAL
 
 
 @patch("pig_coding_agent.cli.LLM")
@@ -90,7 +96,7 @@ def test_gen_command_with_output(mock_agent_class, mock_llm_class, mock_env, tmp
     mock_llm_class.return_value = mock_llm
 
     mock_agent = Mock()
-    mock_agent.run_once = Mock(return_value="print('hello')")
+    mock_agent.run_once_result = Mock(return_value=AgentTurnResult(content="print('hello')"))
     mock_agent_class.return_value = mock_agent
 
     # Test with output file
@@ -104,6 +110,10 @@ def test_gen_command_with_output(mock_agent_class, mock_llm_class, mock_env, tmp
         mock_console.print.assert_called()
         assert isinstance(mock_agent_class.call_args.kwargs["permission_policy"], PermissionPolicy)
         assert mock_agent_class.call_args.kwargs["permission_policy"].default == "deny"
+        assert (
+            mock_agent_class.call_args.kwargs["permission_policy"].deny_reason
+            == permissions.UNATTENDED_PERMISSION_DENIAL
+        )
 
 
 @patch("pig_coding_agent.cli.LLM")
@@ -121,16 +131,22 @@ def test_analyze_command(mock_agent_class, mock_llm_class, mock_env, tmp_path):
     mock_llm_class.return_value = mock_llm
 
     mock_agent = Mock()
-    mock_agent.run_once = Mock(return_value="Analysis: Simple print statement")
+    mock_agent.run_once_result = Mock(
+        return_value=AgentTurnResult(content="Analysis: Simple print statement")
+    )
     mock_agent_class.return_value = mock_agent
 
     with patch("pig_coding_agent.cli.console") as mock_console:
         analyze(path=test_file, model=None)
 
-        mock_agent.run_once.assert_called_once()
+        mock_agent.run_once_result.assert_called_once()
         mock_console.print.assert_called()
         assert isinstance(mock_agent_class.call_args.kwargs["permission_policy"], PermissionPolicy)
         assert mock_agent_class.call_args.kwargs["permission_policy"].default == "deny"
+        assert (
+            mock_agent_class.call_args.kwargs["permission_policy"].deny_reason
+            == permissions.UNATTENDED_PERMISSION_DENIAL
+        )
 
 
 def test_analyze_command_missing_file(mock_env):
@@ -300,7 +316,7 @@ def test_run_json_mode_piped_input_emits_shutdown_reason_and_cleanup(monkeypatch
     from pig_coding_agent.cli import run_json_mode
 
     agent = Mock()
-    agent.agent.run.return_value = Mock(content="done")
+    agent.run_once_result.return_value = AgentTurnResult(content="done")
     agent.extension_manager = Mock()
     json_mode = Mock()
 
@@ -321,7 +337,7 @@ def test_run_json_mode_piped_input_emits_error_shutdown_reason(monkeypatch):
     from pig_coding_agent.cli import run_json_mode
 
     agent = Mock()
-    agent.agent.run.side_effect = RuntimeError("boom")
+    agent.run_once_result.side_effect = RuntimeError("boom")
     agent.extension_manager = Mock()
     json_mode = Mock()
 
@@ -420,7 +436,7 @@ def test_run_json_mode_interactive_emits_error_shutdown_reason() -> None:
     from pig_coding_agent.cli import run_json_mode
 
     agent = Mock()
-    agent.agent.run.side_effect = RuntimeError("boom")
+    agent.run_once_result.side_effect = RuntimeError("boom")
     agent.extension_manager = Mock()
     json_mode = Mock()
 
@@ -460,6 +476,7 @@ def test_main_installs_signal_cleanup_for_interactive_mode(mock_env, mock_ctx, t
         patch("pig_coding_agent.cli.LLM", return_value=mock_llm),
         patch("pig_coding_agent.cli.CodingAgent", return_value=mock_agent),
         patch("pig_coding_agent.cli.console"),
+        patch("sys.stdin", Mock(isatty=Mock(return_value=True))),
         patch("signal.signal", side_effect=fake_signal),
     ):
         main(ctx=mock_ctx, provider="openai", workspace=tmp_path)

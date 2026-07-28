@@ -4,6 +4,7 @@ import asyncio
 import sys
 
 import pytest
+from pig_coding_agent import permissions
 from pig_coding_agent.permissions import PermissionPolicy
 from pig_coding_agent.tools import FileTools, build_coding_tools
 
@@ -68,6 +69,17 @@ def test_read_nonexistent_file(temp_workspace):
 
     result = tools.read_file("nonexistent.txt")
     assert "does not exist" in result
+
+
+def test_file_tools_reject_prefix_sibling_outside_workspace(temp_workspace):
+    sibling = temp_workspace.parent / f"{temp_workspace.name}-sibling"
+    sibling.mkdir()
+    outside_file = sibling / "outside.txt"
+    outside_file.write_text("outside")
+    tools = FileTools(str(temp_workspace))
+
+    with pytest.raises(ValueError, match="outside workspace"):
+        tools.read_file(str(outside_file))
 
 
 def test_write_file(temp_workspace):
@@ -588,6 +600,8 @@ def test_write_file_custom_deny_reason_surfaces_as_tool_failure():
 
     assert result.ok is False
     assert result.error == "blocked by policy"
+    assert result.meta["permission_denial"]["code"] == permissions.PERMISSION_DENIED_CODE
+    assert result.meta["permission_denial"]["action"] == "write_file"
 
 
 def test_run_command_requires_permission_by_default():
@@ -619,6 +633,8 @@ def test_run_command_can_be_denied_by_policy():
 
     assert result.ok is False
     assert "test deny" in (result.error or "")
+    assert result.meta["permission_denial"]["code"] == permissions.PERMISSION_DENIED_CODE
+    assert result.meta["permission_denial"]["action"] == "run_command"
     assert fake.async_calls == []
 
 

@@ -7,7 +7,7 @@ from pathlib import Path
 
 from pig_llm import LLM
 
-from .agent import CodingAgent
+from .agent import AgentTurnResult, CodingAgent
 from .permissions import PermissionPolicy
 
 
@@ -28,6 +28,10 @@ class AgentSessionRuntime:
     def prompt(self, message: str) -> str:
         """Send one prompt and return the final assistant text."""
         return self.agent.run_once(message)
+
+    def prompt_result(self, message: str) -> AgentTurnResult:
+        """Send one prompt and return text plus machine-readable permission denials."""
+        return self.agent.run_once_result(message)
 
     def close(self, reason: str = "normal") -> None:
         """Release runtime resources and notify extensions."""
@@ -52,9 +56,7 @@ def create_agent_session(
     ``PermissionPolicy.allow_all()`` or ``PermissionPolicy.confirm_all(...)`` when
     the host application intentionally wants to allow writes or shell commands.
     """
-    policy = permission_policy or PermissionPolicy.deny_all(
-        "Permission denied: SDK hosts must supply an explicit permission policy"
-    )
+    policy = permission_policy or PermissionPolicy.unattended()
     agent = CodingAgent(
         llm=llm,
         workspace=str(workspace),

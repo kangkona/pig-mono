@@ -1,7 +1,11 @@
 """Coding agent with file operations and code generation."""
 
+import inspect
 import os
+from dataclasses import dataclass
+from functools import wraps
 from pathlib import Path
+from typing import Any
 
 from pig_agent_core import (
     Agent,
@@ -13,7 +17,7 @@ from pig_agent_core import (
     SkillManager,
     assert_valid_session_id,
 )
-from pig_agent_core.tools import Tool
+from pig_agent_core.tools import Tool, ToolResult
 from pig_llm import LLM
 
 from .app_actions import AppActions
@@ -23,7 +27,12 @@ from .file_reference import FileReferenceParser
 from .interaction_catalog import InteractionCatalog
 from .interaction_runtime import InteractionRuntime
 from .interactive_mode import InteractiveMode
-from .permissions import PermissionPolicy, PermissionRequest
+from .permissions import (
+    SIDE_EFFECTFUL_TOOL_NAMES,
+    PermissionPolicy,
+    PermissionRequest,
+    format_permission_denial,
+)
 from .resilience import create_profile_manager_from_env, get_profile_status
 from .results import ResultFactory
 from .tools import FileTools, build_coding_tools
@@ -31,6 +40,19 @@ from .tools import FileTools, build_coding_tools
 
 class SessionExitRequested(Exception):
     """Raised for explicit user-driven session exits like /exit and /quit."""
+
+
+@dataclass(frozen=True)
+class AgentTurnResult:
+    """One completed turn plus any permission denials observed during it."""
+
+    content: str
+    permission_denials: tuple[dict[str, str], ...] = ()
+
+    @property
+    def denied(self) -> bool:
+        """Return whether a side-effectful tool was denied during the turn."""
+        return bool(self.permission_denials)
 
 
 class CodingAgent:
@@ -283,7 +305,55 @@ class CodingAgent:
         """Register a tool unless it is excluded for this agent instance."""
         if tool.name in self.excluded_tools:
             return
-        Agent.add_tool(self.agent, tool)
+        Agent.add_tool(self.agent, self._guard_extension_tool(tool))
+
+    def _guard_extension_tool(self, tool: Tool) -> Tool:
+        """Apply the agent policy to side-effectful extension tool names."""
+        if tool.name not in SIDE_EFFECTFUL_TOOL_NAMES:
+            return tool
+
+        original = tool.func
+
+        def authorize(arguments: dict[str, Any]) -> ToolResult | None:
+            target_key = "command" if tool.name == "run_command" else "path"
+            target_value = arguments.get(target_key, arguments.get("target"))
+            if target_value is None and arguments:
+                target_value = next(iter(arguments.values()))
+            target = str(target_value if target_value is not None else tool.name)
+            return self.permission_policy.authorize(
+                tool.name,
+                target,
+                arguments=dict(arguments),
+            )
+
+        if inspect.iscoroutinefunction(original):
+
+            @wraps(original)
+            async def guarded_async(**kwargs: Any) -> Any:
+                denial = authorize(kwargs)
+                if denial is not None:
+                    return denial
+                return await original(**kwargs)
+
+            guarded = guarded_async
+
+        else:
+
+            @wraps(original)
+            def guarded_sync(**kwargs: Any) -> Any:
+                denial = authorize(kwargs)
+                if denial is not None:
+                    return denial
+                return original(**kwargs)
+
+            guarded = guarded_sync
+
+        return Tool(
+            guarded,
+            name=tool.name,
+            description=tool.description,
+            params_model=tool.params_model,
+        )
 
     @property
     def ui(self):
@@ -409,5 +479,12 @@ You can:
         Returns:
             Agent response
         """
+        return self.run_once_result(message).content
+
+    def run_once_result(self, message: str) -> AgentTurnResult:
+        """Run one turn and preserve permission denials across the model boundary."""
+        self.permission_policy.consume_denials()
         response = self.agent.run(message)
-        return response.content
+        denials = tuple(self.permission_policy.consume_denials())
+        content = format_permission_denial(denials[0]) if denials else response.content
+        return AgentTurnResult(content=content, permission_denials=denials)

@@ -1,7 +1,13 @@
 """Interactive coding agent CLI."""
 
-from .agent import CodingAgent
-from .permissions import PermissionPolicy, PermissionRequest
+from .agent import AgentTurnResult, CodingAgent
+from .permissions import (
+    PERMISSION_DENIED_CODE,
+    SIDE_EFFECTFUL_TOOL_NAMES,
+    UNATTENDED_PERMISSION_DENIAL,
+    PermissionPolicy,
+    PermissionRequest,
+)
 from .sdk import AgentSessionRuntime, create_agent_session
 from .tools import FileTools, ShellTools, build_coding_tools
 
@@ -9,11 +15,15 @@ __version__ = "0.1.1"
 
 __all__ = [
     "CodingAgent",
+    "AgentTurnResult",
     "AgentSessionRuntime",
     "FileTools",
+    "PERMISSION_DENIED_CODE",
     "PermissionPolicy",
     "PermissionRequest",
+    "SIDE_EFFECTFUL_TOOL_NAMES",
     "ShellTools",
+    "UNATTENDED_PERMISSION_DENIAL",
     "build_coding_tools",
     "create_agent_session",
 ]

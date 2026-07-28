@@ -9,7 +9,7 @@ and a terminal UI built on the `pig-tui` platform layer.
 ## Features
 
 - 💻 **Code Generation**: AI-powered code generation
-- 📁 **File Operations**: Read, write, edit files
+- 📁 **File Operations**: Read and write files inside the workspace
 - 🔍 **Code Analysis**: Understand and analyze code
 - 🛠️ **Refactoring**: Automated code refactoring
 - 🐚 **Shell Integration**: Execute shell commands
@@ -102,8 +102,7 @@ Agent will:
 ### Analyze Codebase
 
 ```bash
-$ pig analyze
-> Analyze this codebase and suggest improvements
+$ pig analyze .
 
 Agent will:
 1. Read relevant files
@@ -241,10 +240,29 @@ pig --no-cost-tracking
 
 ## Safety Features
 
-- File operation confirmations
-- Command execution confirmations
-- Workspace boundaries
-- Explicit SDK/JSON/RPC permission policy support
+- Interactive `pig` sessions require confirmation before `write_file`,
+  `run_command`, or an extension-provided `edit_file` can run.
+- JSON/RPC modes, piped stdin, `pig gen`, and `pig analyze` install the same
+  fail-closed unattended policy. Denials use the stable code
+  `tool_permission_denied` and the message
+  `Permission denied: side-effectful tools are disabled in unattended mode`.
+- JSON emits a `permission_denied` event, RPC `complete` returns a
+  `permissionDenials` array, and direct RPC `bash` returns the denial in
+  `result.error`. Piped stdin, `pig gen`, and `pig analyze` print the stable
+  `tool_permission_denied: ...` text and exit with status 2.
+- The embeddable SDK also defaults to that deny policy. A host must explicitly
+  pass `PermissionPolicy.confirm_all(...)` or `PermissionPolicy.allow_all()` to
+  enable side effects. `prompt()` returns the stable denial text, while
+  `prompt_result()` also exposes the machine-readable `permission_denials`.
+- `pig gen --output FILE` is an explicit CLI write to the requested file; model
+  tool calls remain denied during the generation turn, and a denied turn does
+  not create the output file.
+- File-tool paths remain constrained to the configured workspace.
+
+`edit_file` is not a built-in tool today. The permission boundary reserves that
+name so an extension cannot introduce an unconfirmed edit path. Registry/SDK
+tool failures carry a `permission_denial` metadata object with `code`,
+`message`, `action`, and `target`.
 
 ## Architecture
 

@@ -37,21 +37,23 @@ def _available_cleanup_signals() -> tuple[int, ...]:
 
 
 def _read_piped_stdin() -> str | None:
-    """Return piped stdin content when available in non-protocol modes."""
-    import select
-
+    """Read non-TTY stdin through EOF for non-protocol modes."""
     try:
-        ready = select.select([sys.stdin], [], [], 0.0)[0]
+        data = sys.stdin.read()
     except (OSError, ValueError, UnsupportedOperation):
         return None
 
-    if not ready:
-        return None
-
-    data = sys.stdin.read()
     if not data:
         return None
     return data.rstrip("\n")
+
+
+def _stdin_is_interactive() -> bool:
+    """Return whether stdin is attached to an interactive terminal."""
+    try:
+        return bool(sys.stdin.isatty())
+    except (AttributeError, OSError, ValueError, UnsupportedOperation):
+        return False
 
 
 def _resolve_option_value(value: T) -> T | None:
@@ -343,15 +345,16 @@ def main(
                         console.print("[yellow]Starting new session[/yellow]")
 
     piped_input = None
+    unattended_stdin = False
     if not protocol_mode:
-        piped_input = _read_piped_stdin()
+        unattended_stdin = not _stdin_is_interactive()
+        if unattended_stdin:
+            piped_input = _read_piped_stdin()
 
     # Create and run agent
     permission_policy = None
-    if protocol_mode or piped_input is not None:
-        permission_policy = PermissionPolicy.deny_all(
-            "Permission denied: side-effectful tools require interactive confirmation"
-        )
+    if protocol_mode or unattended_stdin:
+        permission_policy = PermissionPolicy.unattended()
 
     agent = CodingAgent(
         llm=llm,
@@ -400,12 +403,16 @@ def main(
     elif mode == "rpc":
         _run_with_signal_cleanup(agent, lambda: run_rpc_mode(agent))
     else:
-        if piped_input:
+        if unattended_stdin:
+            if not piped_input:
+                return
 
             def run_piped() -> None:
-                response = agent.agent.run(piped_input)
-                if response.content:
-                    print(response.content)
+                result = agent.run_once_result(piped_input)
+                if result.content:
+                    print(result.content)
+                if result.denied:
+                    raise typer.Exit(2)
 
             _run_with_signal_cleanup(agent, run_piped)
             return
@@ -460,11 +467,13 @@ def run_json_mode(agent):
                         json_out.message("user", message)
 
                         # Get response
-                        response = agent.agent.run(message)
+                        result = agent.run_once_result(message)
 
                         # Send response
-                        json_out.message("assistant", response.content)
-                        json_out.done(response.content)
+                        for denial in result.permission_denials:
+                            json_out.emit_event("permission_denied", denial)
+                        json_out.message("assistant", result.content)
+                        json_out.done(result.content)
 
                     except json.JSONDecodeError as e:
                         json_out.error(f"Invalid JSON: {e}")
@@ -487,9 +496,11 @@ def run_json_mode(agent):
                         continue
 
                     json_out.message("user", user_input)
-                    response = agent.agent.run(user_input)
-                    json_out.message("assistant", response.content)
-                    json_out.done()
+                    result = agent.run_once_result(user_input)
+                    for denial in result.permission_denials:
+                        json_out.emit_event("permission_denied", denial)
+                    json_out.message("assistant", result.content)
+                    json_out.done(result.content)
 
                 except KeyboardInterrupt:
                     emit_shutdown("interrupt")
@@ -541,8 +552,12 @@ def run_rpc_mode(agent):
             if not message:
                 raise ValueError("Missing 'message' parameter")
 
-            response = agent.agent.run(message)
-            return {"content": response.content, "model": agent.agent.llm.config.model}
+            result = agent.run_once_result(message)
+            return {
+                "content": result.content,
+                "model": agent.agent.llm.config.model,
+                "permissionDenials": list(result.permission_denials),
+            }
 
         elif method == "stream":
             message = params.get("message")
@@ -564,17 +579,28 @@ def run_rpc_mode(agent):
 
             permission_policy = getattr(agent, "permission_policy", None)
             if not isinstance(permission_policy, PermissionPolicy):
-                permission_policy = PermissionPolicy.allow_all()
+                permission_policy = PermissionPolicy.unattended()
 
             # RPC bash is a discrete request/response with no turn-level cancel;
             # use the synchronous helper directly.
-            output = ShellTools(permission_policy=permission_policy)._run_command_sync(
+            command_result = ShellTools(
+                permission_policy=permission_policy
+            )._run_command_sync_result(
                 command,
                 cwd=params.get("cwd"),
                 exclude_from_context=bool(params.get("excludeFromContext")),
             )
+            if not command_result.ok:
+                denial = command_result.meta.get("permission_denial")
+                if denial is not None:
+                    return {
+                        "output": None,
+                        "excludedFromContext": bool(params.get("excludeFromContext")),
+                        "error": denial,
+                    }
+                raise RuntimeError(command_result.error or "Command execution failed")
             return {
-                "output": output,
+                "output": command_result.data,
                 "excludedFromContext": bool(params.get("excludeFromContext")),
             }
 
@@ -616,19 +642,21 @@ def gen(
     agent = CodingAgent(
         llm=llm,
         verbose=False,
-        permission_policy=PermissionPolicy.deny_all(
-            "Permission denied: non-interactive generation commands require an explicit policy"
-        ),
+        permission_policy=PermissionPolicy.unattended(),
     )
 
     console.print(f"[cyan]Generating:[/cyan] {description}")
-    result = agent.run_once(f"Generate code for: {description}")
+    result = agent.run_once_result(f"Generate code for: {description}")
+
+    if result.denied:
+        console.print(f"[red]{result.content}[/red]")
+        raise typer.Exit(2)
 
     if output:
-        output.write_text(result)
+        output.write_text(result.content)
         console.print(f"[green]Saved to:[/green] {output}")
     else:
-        console.print(result)
+        console.print(result.content)
 
 
 @app.command()
@@ -650,14 +678,14 @@ def analyze(
     agent = CodingAgent(
         llm=llm,
         verbose=False,
-        permission_policy=PermissionPolicy.deny_all(
-            "Permission denied: non-interactive analysis commands require an explicit policy"
-        ),
+        permission_policy=PermissionPolicy.unattended(),
     )
 
     console.print(f"[cyan]Analyzing:[/cyan] {path}")
-    result = agent.run_once(f"Analyze the file {path} and provide insights")
-    console.print(result)
+    result = agent.run_once_result(f"Analyze the file {path} and provide insights")
+    console.print(f"[red]{result.content}[/red]" if result.denied else result.content)
+    if result.denied:
+        raise typer.Exit(2)
 
 
 if __name__ == "__main__":

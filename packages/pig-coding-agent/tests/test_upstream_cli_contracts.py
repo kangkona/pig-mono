@@ -9,7 +9,9 @@ from unittest.mock import Mock, patch
 import click
 import typer
 from pig_agent_core import ExtensionManager
+from pig_coding_agent import AgentTurnResult, permissions
 from pig_coding_agent.cli import JsonLineWriter, main, run_rpc_mode
+from pig_coding_agent.permissions import PermissionPolicy
 
 CLI_EXIT_EXCEPTIONS = (typer.Exit, click.exceptions.Exit, SystemExit)
 
@@ -536,6 +538,9 @@ def test_json_mode_does_not_print_rich_startup_to_stdout(
     run_json_mode.assert_called_once_with(mock_agent)
     console.print.assert_not_called()
     assert mock_agent_class.call_args.kwargs["verbose"] is False
+    policy = mock_agent_class.call_args.kwargs["permission_policy"]
+    assert isinstance(policy, PermissionPolicy)
+    assert policy.deny_reason == permissions.UNATTENDED_PERMISSION_DENIAL
 
 
 @patch.dict("os.environ", {"OPENAI_API_KEY": "test-key"})
@@ -553,7 +558,7 @@ def test_default_mode_merges_piped_stdin_into_initial_prompt(
     mock_agent.skill_manager = None
     mock_agent.extension_manager = None
     mock_agent.run_interactive = Mock()
-    mock_agent.agent.run = Mock(return_value=Mock(content="done"))
+    mock_agent.run_once_result = Mock(return_value=AgentTurnResult(content="done"))
     mock_agent_class.return_value = mock_agent
 
     fake_stdin = io.StringIO("stdin says hi\n")
@@ -565,9 +570,68 @@ def test_default_mode_merges_piped_stdin_into_initial_prompt(
     ):
         main(ctx=ctx, provider="openai", workspace=tmp_path)
 
-    mock_agent.agent.run.assert_called_once_with("stdin says hi")
+    mock_agent.run_once_result.assert_called_once_with("stdin says hi")
     mock_agent.run_interactive.assert_not_called()
     console.print.assert_not_called()
+    policy = mock_agent_class.call_args.kwargs["permission_policy"]
+    assert isinstance(policy, PermissionPolicy)
+    assert policy.deny_reason == permissions.UNATTENDED_PERMISSION_DENIAL
+
+
+@patch.dict("os.environ", {"OPENAI_API_KEY": "test-key"})
+@patch("pig_coding_agent.cli.LLM")
+@patch("pig_coding_agent.cli.CodingAgent")
+def test_non_tty_stdin_fails_closed_before_input_becomes_ready(
+    mock_agent_class, mock_llm_class, tmp_path
+):
+    ctx = Mock(invoked_subcommand=None)
+    mock_llm = Mock()
+    mock_llm.config = Mock(model="test-model")
+    mock_llm_class.return_value = mock_llm
+    mock_agent = Mock()
+    mock_agent.session = None
+    mock_agent.skill_manager = None
+    mock_agent.extension_manager = None
+    mock_agent.run_interactive = Mock()
+    mock_agent.run_once_result = Mock(return_value=AgentTurnResult(content="done"))
+    mock_agent_class.return_value = mock_agent
+
+    with (
+        patch("pig_coding_agent.cli.console"),
+        patch("select.select", return_value=([], [], [])),
+        patch("sys.stdin", io.StringIO("delayed input\n")),
+    ):
+        main(ctx=ctx, provider="openai", workspace=tmp_path)
+
+    mock_agent.run_once_result.assert_called_once_with("delayed input")
+    mock_agent.run_interactive.assert_not_called()
+    policy = mock_agent_class.call_args.kwargs["permission_policy"]
+    assert isinstance(policy, PermissionPolicy)
+    assert policy.deny_reason == permissions.UNATTENDED_PERMISSION_DENIAL
+
+
+@patch.dict("os.environ", {"OPENAI_API_KEY": "test-key"})
+@patch("pig_coding_agent.cli.LLM")
+@patch("pig_coding_agent.cli.CodingAgent")
+def test_empty_non_tty_stdin_does_not_launch_interactive_mode(
+    mock_agent_class, mock_llm_class, tmp_path
+):
+    ctx = Mock(invoked_subcommand=None)
+    mock_agent = Mock()
+    mock_agent.session = None
+    mock_agent.skill_manager = None
+    mock_agent.extension_manager = None
+    mock_agent.run_interactive = Mock()
+    mock_agent_class.return_value = mock_agent
+
+    with (
+        patch("pig_coding_agent.cli.console"),
+        patch("sys.stdin", io.StringIO("")),
+    ):
+        main(ctx=ctx, provider="openai", workspace=tmp_path)
+
+    mock_agent.run_once_result.assert_not_called()
+    mock_agent.run_interactive.assert_not_called()
 
 
 @patch.dict("os.environ", {"OPENAI_API_KEY": "test-key"})
@@ -595,6 +659,9 @@ def test_rpc_mode_reserves_stdout_by_disabling_verbose_startup(
     run_rpc_mode.assert_called_once_with(mock_agent)
     console.print.assert_not_called()
     assert mock_agent_class.call_args.kwargs["verbose"] is False
+    policy = mock_agent_class.call_args.kwargs["permission_policy"]
+    assert isinstance(policy, PermissionPolicy)
+    assert policy.deny_reason == permissions.UNATTENDED_PERMISSION_DENIAL
 
 
 def test_rpc_bash_can_exclude_output_from_context(monkeypatch) -> None:
@@ -613,6 +680,7 @@ def test_rpc_bash_can_exclude_output_from_context(monkeypatch) -> None:
     )
     out = io.StringIO()
     agent = Mock()
+    agent.permission_policy = PermissionPolicy.allow_all()
 
     monkeypatch.setattr("sys.stdin.readline", lambda: next(requests))
     monkeypatch.setattr("sys.stdout", out)
@@ -624,6 +692,42 @@ def test_rpc_bash_can_exclude_output_from_context(monkeypatch) -> None:
     assert response["error"] is None
     assert response["result"]["excludedFromContext"] is True
     assert response["result"]["output"] == "[Output excluded from model context]"
+
+
+def test_rpc_bash_without_explicit_policy_fails_closed(monkeypatch) -> None:
+    requests = iter(
+        [
+            json.dumps(
+                {
+                    "id": 1,
+                    "method": "bash",
+                    "params": {"command": "printf should-not-run"},
+                }
+            )
+            + "\n",
+            "",
+        ]
+    )
+    out = io.StringIO()
+    agent = Mock()
+
+    monkeypatch.setattr("sys.stdin.readline", lambda: next(requests))
+    monkeypatch.setattr("sys.stdout", out)
+
+    with patch("pig_coding_agent.operations.LocalShellOperations.exec_sync") as exec_sync:
+        run_rpc_mode(agent)
+
+    response = json.loads(out.getvalue().splitlines()[0])
+    assert response["id"] == 1
+    assert response["error"] is None
+    assert response["result"]["output"] is None
+    assert response["result"]["error"] == {
+        "code": permissions.PERMISSION_DENIED_CODE,
+        "message": permissions.UNATTENDED_PERMISSION_DENIAL,
+        "action": "run_command",
+        "target": "printf should-not-run",
+    }
+    exec_sync.assert_not_called()
 
 
 def test_rpc_mode_emits_shutdown_reason_on_eof(monkeypatch) -> None:
@@ -731,7 +835,7 @@ def test_rpc_mode_emits_error_shutdown_reason_on_handler_failure(monkeypatch) ->
     )
     out = io.StringIO()
     agent = Mock()
-    agent.agent.run.side_effect = RuntimeError("boom")
+    agent.run_once_result.side_effect = RuntimeError("boom")
     agent.extension_manager = Mock()
 
     monkeypatch.setattr("sys.stdin.readline", lambda: next(requests))

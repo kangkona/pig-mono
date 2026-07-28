@@ -26,6 +26,14 @@ def test_readme_does_not_advertise_unimplemented_cli_commands_or_tools():
     for snippet in forbidden_snippets:
         assert snippet not in readme
 
+    assert "Read, write, edit files" not in readme
+    assert "`edit_file` is not a built-in tool today" in readme
+    assert "tool_permission_denied" in readme
+    assert "`permission_denied` event" in readme
+    assert "`permissionDenials` array" in readme
+    assert "`prompt_result()`" in readme
+    assert "exit with status 2" in readme
+
 
 def test_parity_matrix_exists_and_is_self_contained():
     matrix_path = PACKAGE_ROOT / "docs" / "pi-parity-matrix.md"
@@ -48,8 +56,13 @@ def test_parity_matrix_exists_and_is_self_contained():
     assert "Full-screen key navigation is not part of this contract" in matrix
     assert "| Settings | Supported |" in matrix
     assert "auto_compact" in matrix
+    assert "| Tool permissions | Supported |" in matrix
+    assert "tool_permission_denied" in matrix
+    assert "plain CLI routes emit stable text and exit 2" in matrix
+    assert "`prompt_result()` exposes structured permission denials" in matrix
 
 
 def test_package_exports_runtime_entrypoints():
     assert hasattr(pig_coding_agent, "CodingAgent")
+    assert hasattr(pig_coding_agent, "AgentTurnResult")
     assert hasattr(pig_coding_agent, "create_agent_session")

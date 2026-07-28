@@ -15,8 +15,10 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from pig_agent_core.tools import ToolResult
+
 from .operations import FileOperations, LocalFileOperations, LocalShellOperations, ShellOperations
-from .permissions import PermissionPolicy
+from .permissions import PermissionPolicy, permission_denied_result
 
 MAX_COMMAND_OUTPUT_BYTES = 64_000
 MAX_COMMAND_OUTPUT_LINES = 2_000
@@ -75,7 +77,7 @@ class FileTools:
     def _resolve_path(self, path: str) -> Path:
         """Resolve path within workspace."""
         full_path = (self.workspace / path).resolve()
-        if not str(full_path).startswith(str(self.workspace)):
+        if not full_path.is_relative_to(self.workspace):
             raise ValueError(f"Path {path} is outside workspace")
         return full_path
 
@@ -238,8 +240,6 @@ class ShellTools:
         injected by callers of ``registry.execute(on_update=cb)`` for real-time
         streaming of command output to the TUI.
         """
-        from pig_agent_core.tools.base import ToolResult
-
         command: str = args.get("command", "")
         cwd: str | None = args.get("cwd")
         exclude_from_context: bool = bool(args.get("exclude_from_context", False))
@@ -255,7 +255,11 @@ class ShellTools:
             exclude_from_context=exclude_from_context,
         )
         if not allowed:
-            return ToolResult(ok=False, error=reason or "Permission denied")
+            return permission_denied_result(
+                "run_command",
+                command,
+                reason or "Permission denied",
+            )
 
         try:
             output = await self.ops.exec_async(command, cwd, timeout=30, on_data=on_update)
@@ -274,7 +278,17 @@ class ShellTools:
         cwd: str | None = None,
         exclude_from_context: bool = False,
     ) -> str:
-        """Synchronous shell execution used by the git helpers (not cancellable)."""
+        """Return text from the synchronous shell execution compatibility path."""
+        result = self._run_command_sync_result(command, cwd, exclude_from_context)
+        return str(result.data if result.ok else result.error)
+
+    def _run_command_sync_result(
+        self,
+        command: str,
+        cwd: str | None = None,
+        exclude_from_context: bool = False,
+    ) -> ToolResult:
+        """Return a structured result for direct synchronous shell callers."""
         allowed, reason = self.permission_policy.check(
             "run_command",
             command,
@@ -282,11 +296,15 @@ class ShellTools:
             exclude_from_context=exclude_from_context,
         )
         if not allowed:
-            return reason or "Permission denied"
+            return permission_denied_result(
+                "run_command",
+                command,
+                reason or "Permission denied",
+            )
         output = self.ops.exec_sync(command, cwd, timeout=30)
         if exclude_from_context:
-            return "[Output excluded from model context]"
-        return _truncate_command_output(output)
+            return ToolResult(ok=True, data="[Output excluded from model context]")
+        return ToolResult(ok=True, data=_truncate_command_output(output))
 
 
 def _fn(name: str, description: str, properties: dict, required: list[str]) -> dict[str, Any]:
@@ -394,11 +412,13 @@ def build_coding_tools(
     shell_tools = ShellTools(ops=shell_ops, permission_policy=permission_policy)
 
     def _write_file_handler(path: str, content: str) -> Any:
-        from pig_agent_core.tools.base import ToolResult
-
         allowed, reason, file_path = file_tools.check_write_permission(path, content)
         if not allowed:
-            return ToolResult(ok=False, error=reason or "Permission denied")
+            return permission_denied_result(
+                "write_file",
+                str(file_path),
+                reason or "Permission denied",
+            )
         file_tools.ops.mkdir(file_path.parent)
         file_tools.ops.write_text(file_path, content)
         return f"Successfully wrote to {path}"

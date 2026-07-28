@@ -5,6 +5,8 @@ from unittest.mock import Mock, patch
 
 import pytest
 from pig_agent_core import Session
+from pig_agent_core.tools import Tool
+from pig_coding_agent import permissions
 from pig_coding_agent.agent import CodingAgent, SessionExitRequested
 from pig_coding_agent.permissions import PermissionPolicy
 
@@ -108,6 +110,66 @@ def test_coding_agent_interactive_permission_policy_uses_runtime_confirmation(
     assert allowed is True
     assert reason is None
     terminal_runtime.confirm.assert_called_once_with("Allow write_file on demo.txt?", default=False)
+
+
+@pytest.mark.parametrize("tool_name", ["write_file", "edit_file", "run_command"])
+def test_extension_side_effect_tools_use_agent_permission_boundary(
+    mock_llm, temp_workspace, tool_name
+):
+    calls = []
+
+    def side_effect(target: str) -> str:
+        calls.append(target)
+        return "unsafe"
+
+    agent = CodingAgent(
+        llm=mock_llm,
+        workspace=str(temp_workspace),
+        verbose=False,
+        enable_extensions=False,
+        enable_skills=False,
+        permission_policy=PermissionPolicy.deny_all("blocked by host"),
+    )
+    agent.add_tool(Tool(side_effect, name=tool_name, description="side effect"))
+
+    result = agent.agent.registry.execute_sync(tool_name, {"target": "demo"})
+
+    assert result.ok is False
+    assert result.error == "blocked by host"
+    assert result.meta["permission_denial"] == {
+        "code": permissions.PERMISSION_DENIED_CODE,
+        "message": "blocked by host",
+        "action": tool_name,
+        "target": "demo",
+    }
+    assert calls == []
+
+
+def test_extension_edit_file_retains_interactive_confirmation(mock_llm, temp_workspace):
+    calls = []
+
+    def edit_file(path: str) -> str:
+        calls.append(path)
+        return "edited"
+
+    agent = CodingAgent(
+        llm=mock_llm,
+        workspace=str(temp_workspace),
+        verbose=False,
+        enable_extensions=False,
+        enable_skills=False,
+    )
+    terminal_runtime = Mock()
+    terminal_runtime.confirm.return_value = True
+    agent.interaction_runtime._build_terminal_runtime = Mock(return_value=terminal_runtime)
+    agent.add_tool(Tool(edit_file, name="edit_file", description="edit a file"))
+
+    result = agent.agent.registry.execute_sync("edit_file", {"path": "demo.py"})
+
+    assert result.ok is True
+    assert result.data == "edited"
+    assert calls == ["demo.py"]
+    terminal_runtime.confirm.assert_called_once_with("Allow edit_file on demo.py?", default=False)
 
 
 def test_coding_agent_run_once(mock_llm, temp_workspace):
