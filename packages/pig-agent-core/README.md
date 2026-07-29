@@ -197,6 +197,22 @@ async for chunk in resilient_streaming_call(
     print(chunk.content, end="")
 ```
 
+Retry lifecycle events use `AgentEventType.SPAN_START` for backwards
+compatibility and carry a stable `retry_id` for one logical call:
+
+| `event_subtype` | `phase` | Stable meaning |
+| --- | --- | --- |
+| `resilience_retry` | `failed` | One provider attempt failed. `reason`, `attempt`, `max_retries`, `model`, and `error` are present. Streaming events also include `partial_output`. |
+| `resilience_profile_rotation` | `strategy` | The runtime selected another credential profile. `from_profile` and `to_profile` are stable one-way fingerprints, never raw keys or key prefixes. |
+| `resilience_compact` | `strategy` | Overflow recovery reduced the request context. `checkpoint_id`, `original_count`, and `compressed_count` identify that transition. |
+| `resilience_fallback` | `strategy` | Overflow recovery selected another model; `from_model` and `to_model` are present. |
+| `resilience_retry_succeeded` | `succeeded` | A later attempt completed. If overflow compaction occurred, `compaction_checkpoint_id` correlates it. |
+| `resilience_retry_exhausted` | `exhausted` | No safe attempt remains. A stream that already yielded output terminates here with reason `partial_output` and is not replayed. |
+
+Within a retry lifecycle, `failed` precedes any selected `strategy`, and the
+sequence ends once with `succeeded` or `exhausted`. Consumers should key durable
+receipts by `retry_id`, not by event timestamp.
+
 #### Context Compression
 
 ```python

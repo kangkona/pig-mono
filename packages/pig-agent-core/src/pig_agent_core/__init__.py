@@ -2,6 +2,7 @@
 
 from .agent import Agent
 from .auth import AuthManager, OAuthFlow, OAuthProvider, TokenInfo
+from .compaction import CompactionCheckpoint, CompactionReason
 from .context import (
     CompressionConfig,
     ContextLoader,
@@ -27,7 +28,12 @@ from .output_modes import JSONOutputMode, OutputModeManager, RPCMode
 from .prompts import PromptManager, PromptTemplate
 from .registry import ToolRegistry
 from .resilience.profile import FailoverReason, ProfileManager, classify_failure
-from .resilience.retry import ResilienceExhaustedError, resilient_call, resilient_streaming_call
+from .resilience.retry import (
+    ResilienceExhaustedError,
+    resilient_call,
+    resilient_streaming_call,
+    resilient_sync_call,
+)
 from .session import Session, SessionEntry, SessionTree
 from .session_manager import SessionInfo, SessionManager, assert_valid_session_id
 from .share import GistSharer
@@ -38,6 +44,7 @@ from .tools.audit import ToolAuditEntry, ToolAuditLog
 from .tools.base import ToolResult as EnhancedToolResult
 from .tools.metrics import ToolMetrics, ToolMetricsCollector
 from .tools.registry import ToolRegistry as EnhancedToolRegistry
+from .usage import UsageKind, UsageLedger, UsageRecord
 
 __version__ = "0.1.1"
 
@@ -60,6 +67,8 @@ __all__ = [
     "SystemPromptBuilder",
     "CompressionConfig",
     "compress_messages",
+    "CompactionReason",
+    "CompactionCheckpoint",
     # Observability
     "AgentEvent",
     "AgentEventType",
@@ -74,9 +83,13 @@ __all__ = [
     "classify_failure",
     "resilient_call",
     "resilient_streaming_call",
+    "resilient_sync_call",
     "ResilienceExhaustedError",
     # Token counting
     "count_tokens",
+    "UsageKind",
+    "UsageRecord",
+    "UsageLedger",
     # Tool system
     "EnhancedToolRegistry",
     "EnhancedToolResult",

@@ -161,14 +161,14 @@ class InteractionCommands:
         if owner.skill_manager:
             old_count = len(owner.skill_manager)
             owner.skill_manager.skills.clear()
-            owner.skill_manager.discover_skills([])
+            owner._load_skills()
             new_count = len(owner.skill_manager)
             reloaded.append(f"Skills: {new_count} (was {old_count})")
 
         if owner.prompt_manager:
             old_count = len(owner.prompt_manager)
             owner.prompt_manager.templates.clear()
-            owner.prompt_manager.discover_prompts([])
+            owner._load_prompts()
             new_count = len(owner.prompt_manager)
             reloaded.append(f"Prompts: {new_count} (was {old_count})")
 

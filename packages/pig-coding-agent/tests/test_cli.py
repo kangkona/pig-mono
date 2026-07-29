@@ -217,6 +217,43 @@ def test_main_with_workspace(mock_agent_class, mock_llm_class, mock_env, mock_ct
         assert mock_agent_class.call_args.kwargs.get("workspace") == str(tmp_path)
 
 
+@pytest.mark.parametrize("approve", [True, False])
+@patch("pig_coding_agent.cli.LLM")
+@patch("pig_coding_agent.cli.CodingAgent")
+def test_main_passes_explicit_project_trust_override(
+    mock_agent_class,
+    mock_llm_class,
+    mock_env,
+    mock_ctx,
+    tmp_path,
+    approve,
+):
+    """--approve/--no-approve must deterministically override project trust."""
+    from pig_coding_agent.cli import main
+
+    (tmp_path / ".agents").mkdir()
+    (tmp_path / ".agents" / "config.json").write_text("{}")
+    mock_llm = Mock()
+    mock_llm.config = Mock(model="test-model")
+    mock_llm_class.return_value = mock_llm
+    mock_agent = Mock(
+        session=None,
+        skill_manager=None,
+        extension_manager=None,
+    )
+    mock_agent_class.return_value = mock_agent
+
+    with (
+        patch("pig_coding_agent.cli.console"),
+        patch("pig_coding_agent.cli._stdin_is_interactive", return_value=True),
+        patch("pig_coding_agent.cli.typer.confirm") as confirm,
+    ):
+        main(ctx=mock_ctx, workspace=tmp_path, provider="openai", approve=approve)
+
+    confirm.assert_not_called()
+    assert mock_agent_class.call_args.kwargs["project_trust"] is approve
+
+
 def test_run_json_mode_emits_shutdown_reason():
     """Interactive JSON mode should emit shutdown with a concrete reason."""
     from pig_coding_agent.cli import run_json_mode

@@ -61,7 +61,7 @@ async def test_resilient_streaming_call_success():
         yield {"content": "Hello"}
         yield {"content": " world"}
 
-    llm.astream = mock_stream
+    llm.achat_stream = mock_stream
 
     messages = [{"role": "user", "content": "Hi"}]
     chunks = []
@@ -88,7 +88,7 @@ async def test_resilient_streaming_call_retry():
             raise Exception("Network timeout")
         yield {"content": "Success"}
 
-    llm.astream = mock_stream
+    llm.achat_stream = mock_stream
 
     messages = [{"role": "user", "content": "Hi"}]
     chunks = []
@@ -120,7 +120,7 @@ async def test_resilient_streaming_call_context_compression():
         assert len(messages) == 1
         yield {"content": "Success"}
 
-    llm.astream = mock_stream
+    llm.achat_stream = mock_stream
 
     messages = [
         {"role": "user", "content": "First"},

@@ -21,6 +21,10 @@ dependencies = [
     "rich>=13.7.0",
 ]
 
+[tool.uv.sources]
+pig-agent-core = { path = "../pig-agent-core", editable = true }
+pig-llm = { path = "../pig-llm", editable = true }
+
 [project.urls]
 Homepage = "https://github.com/kangkona/pig-mono"
 Repository = "https://github.com/kangkona/pig-mono"

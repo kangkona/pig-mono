@@ -56,8 +56,10 @@ class TestEmitProfileRotated:
         assert len(events) == 1
         event = events[0]
         assert event.type == AgentEventType.PROFILE_ROTATED
-        assert event.data["from_key"] == "old-key-123"
-        assert event.data["to_key"] == "new-key-456"
+        assert event.data["from_key"].startswith("sha256:")
+        assert event.data["to_key"].startswith("sha256:")
+        assert "old-key-123" not in str(event.data)
+        assert "new-key-456" not in str(event.data)
 
     def test_emit_profile_rotated_with_reason(self):
         """Test emitting profile rotated event with reason."""

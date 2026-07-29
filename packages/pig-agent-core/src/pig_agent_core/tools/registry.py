@@ -8,8 +8,11 @@ import time
 from collections.abc import Awaitable, Callable
 from typing import Any
 
+from pig_agent_core.models import ToolModelCapabilities
+
 from .audit import ToolAuditLog
 from .base import CancelledError, ToolResult
+from .contracts import prepare_tool_schema
 from .metrics import ToolMetricsCollector
 from .schemas import PARALLEL_SAFE_TOOLS, TOOL_PERMISSIONS
 
@@ -228,6 +231,42 @@ class ToolRegistry:
             active_names = self._core_tools | self._discovered
             return [self._schemas[name] for name in sorted(active_names) if name in self._schemas]
 
+    def get_provider_schemas(
+        self,
+        capabilities: ToolModelCapabilities,
+        *,
+        available_tool_names: set[str] | None = None,
+    ) -> list[dict[str, Any]]:
+        """Build a stable, capability-gated tool definition list for a provider.
+
+        When deferred loading is supported, registered definitions that are not
+        yet available at the selected transcript point are marked for deferred
+        loading. Otherwise only transcript-available definitions are sent.
+
+        ``available_tool_names`` should come from
+        :meth:`Session.available_tool_names_at` during replay/branching.  When
+        omitted, the registry's legacy global active set is used.
+        """
+        with self._lock:
+            available = (
+                set(available_tool_names)
+                if available_tool_names is not None
+                else self._core_tools | self._discovered
+            )
+            names = (
+                set(self._schemas)
+                if capabilities.supports_deferred_tools
+                else available & set(self._schemas)
+            )
+            return [
+                prepare_tool_schema(
+                    self._schemas[name],
+                    capabilities,
+                    deferred=name not in available,
+                )
+                for name in sorted(names)
+            ]
+
     def activate_tools(self, names: list[str]) -> list[str]:
         """Activate deferred tools by name (lazy loading).
 
@@ -423,6 +462,8 @@ class ToolRegistry:
         if not handler:
             return ToolResult(ok=False, error=f"Tool '{name}' not found")
 
+        activated_on_call = self._activate_deferred_tool(name)
+
         try:
             signature = inspect.signature(handler)
             params = list(signature.parameters)
@@ -437,10 +478,37 @@ class ToolRegistry:
             else:
                 value = handler(**args)
             if isinstance(value, ToolResult):
-                return value
-            return ToolResult(ok=True, data=value)
+                return self._with_activation_anchor(name, value, activated_on_call)
+            return self._with_activation_anchor(
+                name,
+                ToolResult(ok=True, data=value),
+                activated_on_call,
+            )
         except Exception as exc:
-            return ToolResult(ok=False, error=str(exc))
+            return self._with_activation_anchor(
+                name,
+                ToolResult(ok=False, error=str(exc)),
+                activated_on_call,
+            )
+
+    def _activate_deferred_tool(self, name: str) -> bool:
+        """Activate a registered non-core tool called directly by a provider."""
+        with self._lock:
+            if name in self._core_tools or name in self._discovered or name not in self._schemas:
+                return False
+            self._discovered.add(name)
+            return True
+
+    @staticmethod
+    def _with_activation_anchor(
+        name: str,
+        result: ToolResult,
+        activated_on_call: bool,
+    ) -> ToolResult:
+        """Attach a durable activation fact to the direct call's result."""
+        if activated_on_call and name not in result.added_tool_names:
+            result.added_tool_names.append(name)
+        return result
 
     async def _execute_tool(
         self,
@@ -462,10 +530,13 @@ class ToolRegistry:
         Returns:
             ToolResult from execution
         """
-        # Auto-activate deferred tools
-        if name not in self._core_tools and name not in self._discovered and name in self._schemas:
-            with self._lock:
-                self._discovered.add(name)
+        # A provider may call a deferred definition directly after native tool
+        # search. Preserve that transition on the transcript, not only in this
+        # registry instance.
+        activated_on_call = self._activate_deferred_tool(name)
+
+        def with_activation(result: ToolResult) -> ToolResult:
+            return self._with_activation_anchor(name, result, activated_on_call)
 
         # Get handler
         handler = self._handlers.get(name)
@@ -480,7 +551,7 @@ class ToolRegistry:
         last_error = None
         for attempt in range(max_retries + 1):
             if cancel and cancel.is_set():
-                return ToolResult(ok=False, error="Cancelled during execution")
+                return with_activation(ToolResult(ok=False, error="Cancelled during execution"))
 
             try:
                 # Execute with timeout, racing against cancellation so an
@@ -492,22 +563,22 @@ class ToolRegistry:
                     cancel,
                 )
                 if isinstance(result, ToolResult):
-                    return result
-                return ToolResult(ok=True, data=result)
+                    return with_activation(result)
+                return with_activation(ToolResult(ok=True, data=result))
             except asyncio.TimeoutError:
                 last_error = f"Tool execution timed out after {timeout}s"
                 if attempt < max_retries:
                     await asyncio.sleep(0.5 * (attempt + 1))  # Exponential backoff
                     continue
             except CancelledError:
-                return ToolResult(ok=False, error="Cancelled by user")
+                return with_activation(ToolResult(ok=False, error="Cancelled by user"))
             except Exception as e:
                 last_error = str(e)
                 if attempt < max_retries:
                     await asyncio.sleep(0.5 * (attempt + 1))
                     continue
 
-        return ToolResult(ok=False, error=last_error or "Unknown error")
+        return with_activation(ToolResult(ok=False, error=last_error or "Unknown error"))
 
     async def _run_with_cancel(
         self,
@@ -666,6 +737,11 @@ class ToolRegistry:
         """
         with self._lock:
             return sorted(self._handlers.keys())
+
+    def list_core_tools(self) -> list[str]:
+        """List tools that are available before transcript-driven activation."""
+        with self._lock:
+            return sorted(self._core_tools)
 
     def list_active_tools(self) -> list[str]:
         """List currently active tool names (core + discovered).

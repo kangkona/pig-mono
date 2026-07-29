@@ -65,7 +65,7 @@ async def test_resilient_streaming_call_success():
         yield {"content": "Hello"}
         yield {"content": " world"}
 
-    llm.astream = mock_stream
+    llm.achat_stream = mock_stream
 
     # Call
     messages = [{"role": "user", "content": "Hi"}]
@@ -95,7 +95,7 @@ async def test_resilient_streaming_call_retry():
             raise Exception("Network timeout")
         yield {"content": "Success"}
 
-    llm.astream = mock_stream
+    llm.achat_stream = mock_stream
 
     # Call
     messages = [{"role": "user", "content": "Hi"}]
@@ -132,7 +132,7 @@ async def test_resilient_streaming_call_profile_rotation():
             raise Exception("Rate limit exceeded")
         yield {"content": "Success"}
 
-    llm.astream = mock_stream
+    llm.achat_stream = mock_stream
 
     # Call
     messages = [{"role": "user", "content": "Hi"}]
@@ -171,7 +171,7 @@ async def test_resilient_streaming_call_context_compression():
         assert len(messages) == 1
         yield {"content": "Success"}
 
-    llm.astream = mock_stream
+    llm.achat_stream = mock_stream
 
     # Call with 2 messages
     messages = [
@@ -214,7 +214,7 @@ async def test_resilient_streaming_call_fallback_model():
         assert model == "gpt-3.5-turbo"
         yield {"content": "Success"}
 
-    llm.astream = mock_stream
+    llm.achat_stream = mock_stream
 
     # Call
     messages = [{"role": "user", "content": "Hi"}]
@@ -239,7 +239,7 @@ async def test_resilient_streaming_call_max_retries():
         raise Exception("Permanent failure")
         yield  # unreachable — required to make this an async generator
 
-    llm.astream = mock_stream
+    llm.achat_stream = mock_stream
 
     messages = [{"role": "user", "content": "Hi"}]
     with pytest.raises(ResilienceExhaustedError) as exc_info:

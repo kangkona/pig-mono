@@ -10,8 +10,10 @@ from typing import Any, cast
 
 from pydantic import BaseModel, Field
 
+from .compaction import CompactionCheckpoint, CompactionReason
 from .session_manager import resolve_session_dir
 from .tools import ToolResult
+from .usage import UsageLedger
 
 _UUID_LIKE_ID_RE = re.compile(
     r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
@@ -146,6 +148,29 @@ class SessionTree:
 
         return self.get_path_to_entry(self.current_id)
 
+    def available_tool_names_at(
+        self,
+        entry_id: str | None = None,
+        *,
+        initial_tool_names: Iterable[str] = (),
+    ) -> set[str]:
+        """Reconstruct tools available at one transcript point.
+
+        Tool activation is branch-local because only anchors on the selected
+        root-to-entry path are considered.
+        """
+        target_id = entry_id if entry_id is not None else self.current_id
+        names = set(initial_tool_names)
+        if target_id is None:
+            return names
+        if target_id not in self.entries:
+            raise ValueError(f"Entry {target_id} not found")
+        for entry in self.get_path_to_entry(target_id):
+            added = entry.metadata.get("added_tool_names", ())
+            if isinstance(added, list | tuple | set):
+                names.update(name for name in added if isinstance(name, str) and name)
+        return names
+
     def to_jsonl(self) -> str:
         """Export tree to JSONL format.
 
@@ -250,6 +275,19 @@ class Session:
             "cost": 0.0,
             "model": None,
         }
+        self.usage_ledger = UsageLedger()
+        self.metadata["usage"] = self.usage_ledger.snapshot()
+
+    @property
+    def last_compaction_checkpoint(self) -> CompactionCheckpoint | None:
+        """Return the most recent completed compaction receipt, if any."""
+        value = self.metadata.get("last_compaction_checkpoint")
+        if not isinstance(value, dict):
+            return None
+        try:
+            return CompactionCheckpoint.from_dict(value)
+        except (KeyError, TypeError, ValueError):
+            return None
 
     def add_message(
         self, role: str, content: str, parent_id: str | None = None, **metadata: Any
@@ -281,6 +319,37 @@ class Session:
         """
         return self.tree.get_current_path()
 
+    def add_tool_result(
+        self,
+        result: ToolResult,
+        *,
+        name: str,
+        parent_id: str | None = None,
+        **metadata: Any,
+    ) -> SessionEntry:
+        """Persist a tool result and its transcript activation anchor."""
+        if result.added_tool_names:
+            metadata["added_tool_names"] = list(dict.fromkeys(result.added_tool_names))
+        return self.add_message(
+            "tool",
+            result.serialize(),
+            parent_id,
+            name=name,
+            **metadata,
+        )
+
+    def available_tool_names_at(
+        self,
+        entry_id: str | None = None,
+        *,
+        initial_tool_names: Iterable[str] = (),
+    ) -> set[str]:
+        """Return the branch-local active tool set at a transcript point."""
+        return self.tree.available_tool_names_at(
+            entry_id,
+            initial_tool_names=initial_tool_names,
+        )
+
     def branch_to(self, entry_id: str) -> None:
         """Branch to a different point in history.
 
@@ -298,28 +367,45 @@ class Session:
         instructions: str | None = None,
         *,
         max_tool_chars: int = 1000,
+        reason: CompactionReason | str = CompactionReason.MANUAL,
+        usage: dict[str, int | None] | None = None,
+        checkpoint_id: str | None = None,
+        replacement_messages: Iterable[Any] | None = None,
     ) -> list[SessionEntry]:
         """Compact old messages.
 
         Args:
             instructions: Custom compaction instructions
+            max_tool_chars: Maximum serialized characters per summarized tool result
+            reason: Why compaction was requested
+            usage: Optional before/after token counts
+            checkpoint_id: Correlation identifier supplied by overflow recovery
+            replacement_messages: Exact successful retry context to persist. A
+                leading host-owned base system prompt is omitted because the
+                host reconstructs it independently.
 
         Returns:
             Compacted messages
         """
+        reason = CompactionReason(reason)
+
         # Get current path
         path = self.get_current_conversation()
 
-        if len(path) <= 10:  # Don't compact if too short
+        if len(path) <= 10 and reason is not CompactionReason.OVERFLOW:
+            return path
+
+        if len(path) <= 1:
             return path
 
         # Keep recent messages
-        recent = path[-5:]
+        recent_count = min(5, max(1, len(path) - 1))
+        recent = path[-recent_count:]
 
         # Compact older messages without embedding full tool payloads.
-        old = path[:-5]
-        old_ids = {entry.id for entry in old}
-        existing_entries = list(self.tree.entries.values())
+        old = path[:-recent_count]
+        before_root_id = path[0].id
+        before_current_id = self.tree.current_id
 
         tool_summaries = []
         for entry in old:
@@ -337,29 +423,110 @@ class Session:
         if tool_summaries:
             summary_content += "\nTool outputs:\n" + "\n".join(tool_summaries[:10])
 
-        summary_entry = SessionEntry(
-            role="system",
-            content=summary_content,
-            metadata={
-                "compacted": True,
-                "original_count": len(old),
-            },
+        summary_metadata: dict[str, Any] = {
+            "compacted": True,
+            "original_count": len(old),
+            "compaction_reason": reason.value,
+        }
+        replacement_specs: list[tuple[str, str, dict[str, Any]]] = []
+        if replacement_messages is not None:
+            for index, message in enumerate(replacement_messages):
+                if isinstance(message, dict):
+                    role = message.get("role")
+                    content = message.get("content")
+                    raw_metadata = message.get("metadata")
+                else:
+                    role = getattr(message, "role", None)
+                    content = getattr(message, "content", None)
+                    raw_metadata = getattr(message, "metadata", None)
+                if not isinstance(role, str) or not isinstance(content, str):
+                    continue
+                metadata = dict(raw_metadata) if isinstance(raw_metadata, dict) else {}
+                # The base agent system prompt is reconstructed independently
+                # by the product host; only compacted system messages belong in
+                # the Session transcript.
+                if index == 0 and role == "system" and not metadata.get("compacted"):
+                    continue
+                replacement_specs.append((role, content, metadata))
+
+        if not replacement_specs:
+            replacement_specs = [
+                ("system", summary_content, summary_metadata),
+                *[(entry.role, entry.content, dict(entry.metadata)) for entry in recent],
+            ]
+
+        inherited_tool_names: list[str] = []
+        for entry in path:
+            added = entry.metadata.get("added_tool_names", ())
+            if isinstance(added, list | tuple | set):
+                inherited_tool_names.extend(
+                    name for name in added if isinstance(name, str) and name
+                )
+
+        compacted_path: list[SessionEntry] = []
+        parent_id: str | None = None
+        for role, content, metadata in replacement_specs:
+            entry = SessionEntry(
+                parent_id=parent_id,
+                role=role,
+                content=content,
+                metadata=dict(metadata),
+            )
+            compacted_path.append(entry)
+            parent_id = entry.id
+
+        compacted_root = compacted_path[0]
+        compacted_root.metadata.update(summary_metadata)
+        if inherited_tool_names:
+            existing_names = compacted_root.metadata.get("added_tool_names", ())
+            prior_names = (
+                [name for name in existing_names if isinstance(name, str) and name]
+                if isinstance(existing_names, list | tuple | set)
+                else []
+            )
+            compacted_root.metadata["added_tool_names"] = list(
+                dict.fromkeys([*prior_names, *inherited_tool_names])
+            )
+
+        after_current_id = compacted_path[-1].id
+        after_token_value = usage.get("after_tokens") if usage else None
+        before_token_value = usage.get("before_tokens") if usage else None
+        after_tokens = int(after_token_value) if after_token_value is not None else None
+        if before_token_value is not None and after_tokens is None:
+            from .token_counter import count_message_tokens
+
+            after_tokens = count_message_tokens(
+                [{"role": entry.role, "content": entry.content} for entry in compacted_path],
+                self.metadata.get("model"),
+            )
+        checkpoint = CompactionCheckpoint(
+            id=checkpoint_id or str(uuid.uuid4()),
+            reason=reason,
+            original_count=len(old),
+            compacted_count=len(compacted_path),
+            before_root_id=before_root_id,
+            before_current_id=before_current_id,
+            after_root_id=compacted_root.id,
+            after_current_id=after_current_id,
+            before_tokens=int(before_token_value) if before_token_value is not None else None,
+            after_tokens=after_tokens,
         )
-        new_entries: dict[str, SessionEntry] = {summary_entry.id: summary_entry}
-        for entry in existing_entries:
-            if entry.id in old_ids:
-                continue
-            if entry.parent_id is None or entry.parent_id in old_ids:
-                entry.parent_id = summary_entry.id
-            new_entries[entry.id] = entry
+        compacted_root.metadata["compaction_checkpoint"] = checkpoint.to_dict()
+        # Preserve the original tree as historical branches. The compacted
+        # current path is detached, so no sibling can inherit this branch's
+        # summary or tool payloads.
+        self.tree.entries.update({entry.id: entry for entry in compacted_path})
+        self.tree.root_id = compacted_root.id
+        self.tree.current_id = after_current_id
 
-        self.tree.entries = new_entries
-        self.tree.root_id = summary_entry.id
-
-        if recent:
-            self.tree.current_id = recent[-1].id
-        else:
-            self.tree.current_id = summary_entry.id
+        self.usage_ledger.record_compaction(
+            reason=reason,
+            before_tokens=checkpoint.before_tokens,
+            after_tokens=checkpoint.after_tokens,
+            metadata={"checkpoint_id": checkpoint.id},
+        )
+        self.metadata["usage"] = self.usage_ledger.snapshot()
+        self.metadata["last_compaction_checkpoint"] = checkpoint.to_dict()
 
         self.updated_at = datetime.utcnow()
 
@@ -414,6 +581,7 @@ class Session:
         else:
             path = Path(path)
 
+        self.metadata["usage"] = self.usage_ledger.snapshot()
         metadata = dict(self.metadata)
         metadata["entries"] = len(self.tree.entries)
 
@@ -470,6 +638,11 @@ class Session:
         session.created_at = datetime.fromisoformat(header["created_at"])
         session.updated_at = datetime.fromisoformat(header["updated_at"])
         session.metadata = header["metadata"]
+        usage_snapshot = session.metadata.get("usage")
+        session.usage_ledger = UsageLedger(
+            usage_snapshot if isinstance(usage_snapshot, dict) else None
+        )
+        session.metadata["usage"] = session.usage_ledger.snapshot()
         session.tree = tree
         session._save_path = path.resolve()
 

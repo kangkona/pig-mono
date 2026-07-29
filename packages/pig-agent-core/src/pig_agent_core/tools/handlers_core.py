@@ -162,6 +162,7 @@ async def handle_discover_tools(
             "loaded": [{"name": n, "description": d} for n, d in matched.items()],
             "_activate": list(matched.keys()),  # Internal field for registry
         },
+        added_tool_names=list(matched.keys()),
     )
 
 

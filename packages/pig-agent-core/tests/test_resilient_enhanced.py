@@ -194,7 +194,8 @@ class TestResilientCallWithEvents:
             )
 
         error = exc_info.value
-        assert error.attempts == 2
+        # max_retries is additional retries: one initial call + two retries.
+        assert error.attempts == 3
         assert isinstance(error.original_error, Exception)
         assert "Persistent error" in str(error.original_error)
 
@@ -247,7 +248,7 @@ class TestResilientStreamingCallWithEvents:
             yield Mock(content="chunk2")
 
         llm = Mock()
-        llm.astream = mock_stream
+        llm.achat_stream = mock_stream
         llm.config.model = "gpt-4"
 
         chunks = []
@@ -281,7 +282,7 @@ class TestResilientStreamingCallWithEvents:
             yield Mock(content="chunk1")
 
         llm = Mock()
-        llm.astream = mock_stream
+        llm.achat_stream = mock_stream
         llm.config.model = "gpt-4"
 
         chunks = []
@@ -308,7 +309,7 @@ class TestResilientStreamingCallWithEvents:
             yield  # Never reached
 
         llm = Mock()
-        llm.astream = mock_stream
+        llm.achat_stream = mock_stream
         llm.config.model = "gpt-4"
 
         with pytest.raises(ResilienceExhaustedError) as exc_info:
@@ -320,7 +321,8 @@ class TestResilientStreamingCallWithEvents:
                 pass
 
         error = exc_info.value
-        assert error.attempts == 2
+        # max_retries is additional retries: one initial call + two retries.
+        assert error.attempts == 3
         assert isinstance(error.original_error, Exception)
 
 
@@ -348,7 +350,7 @@ class TestBackwardCompatibility:
             yield Mock(content="chunk1")
 
         llm = Mock()
-        llm.astream = mock_stream
+        llm.achat_stream = mock_stream
         llm.config.model = "gpt-4"
 
         # Should work without event_callback

@@ -9,6 +9,7 @@ from pig_agent_core.tools import Tool
 from pig_coding_agent import permissions
 from pig_coding_agent.agent import CodingAgent, SessionExitRequested
 from pig_coding_agent.permissions import PermissionPolicy
+from pig_llm import Response
 
 
 @pytest.fixture
@@ -185,6 +186,48 @@ def test_coding_agent_run_once(mock_llm, temp_workspace):
 
         assert result == "Test response"
         mock_agent_instance.run.assert_called_once()
+        assert [entry.role for entry in agent.session.get_current_conversation()] == [
+            "user",
+            "assistant",
+        ]
+
+
+def test_coding_agent_run_once_persists_transcript_and_usage(mock_llm, temp_workspace):
+    mock_llm.config.model = "test-model"
+    mock_llm.config.max_retries = 1
+    mock_llm.chat.return_value = Response(
+        content="Persisted response",
+        model="test-model",
+        usage={"input_tokens": 13, "output_tokens": 5},
+    )
+    agent = CodingAgent(
+        llm=mock_llm,
+        workspace=str(temp_workspace),
+        enable_extensions=False,
+        enable_skills=False,
+    )
+
+    result = agent.run_once("Persist this prompt")
+
+    assert result == "Persisted response"
+    conversation = agent.session.get_current_conversation()
+    assert [(entry.role, entry.content) for entry in conversation] == [
+        ("user", "Persist this prompt"),
+        ("assistant", "Persisted response"),
+    ]
+    assert agent.session.usage_ledger.snapshot()["by_kind"]["assistant"] == {
+        "calls": 1,
+        "input_tokens": 13,
+        "output_tokens": 5,
+        "cached_tokens": 0,
+    }
+
+    loaded = Session.load(agent.session.save())
+    assert [(entry.role, entry.content) for entry in loaded.get_current_conversation()] == [
+        ("user", "Persist this prompt"),
+        ("assistant", "Persisted response"),
+    ]
+    assert loaded.usage_ledger.snapshot()["by_kind"]["assistant"]["input_tokens"] == 13
 
 
 def test_coding_agent_handle_exit_command(mock_llm, temp_workspace):
@@ -491,6 +534,18 @@ def test_coding_agent_compact_and_export_return_structured_results(
     assert export_result["exported"] == str(export_path)
 
 
+def test_coding_agent_short_compaction_does_not_reuse_stale_checkpoint(mock_llm, temp_workspace):
+    agent = CodingAgent(llm=mock_llm, workspace=str(temp_workspace), verbose=False)
+    for i in range(12):
+        agent.session.add_message("user", f"Message {i}")
+
+    first = agent.app_actions.compact_session(None)
+    second = agent.app_actions.compact_session(None)
+
+    assert first["checkpoint_id"]
+    assert second["checkpoint_id"] is None
+
+
 def test_coding_agent_app_actions_cover_session_tree_and_settings_flows(mock_llm, temp_workspace):
     agent = CodingAgent(llm=mock_llm, workspace=str(temp_workspace), verbose=False)
 
@@ -643,6 +698,7 @@ def test_coding_agent_uses_project_config_session_dir_when_env_missing(mock_llm,
         llm=mock_llm,
         workspace=str(workspace),
         verbose=False,
+        project_trust=True,
     )
 
     saved = agent.session.save()
@@ -701,6 +757,7 @@ def test_coding_agent_project_config_session_dir_overrides_global_config(
         llm=mock_llm,
         workspace=str(workspace),
         verbose=False,
+        project_trust=True,
     )
 
     saved = agent.session.save()
@@ -817,6 +874,7 @@ def extension(api):
         workspace=str(temp_workspace),
         verbose=False,
         enable_extensions=True,
+        project_trust=True,
     )
     agent.ui = Mock()
     entry = agent.session.add_message("user", "choose me")

@@ -37,6 +37,7 @@ def create_profile_manager_from_env() -> ProfileManager | None:
                 APIProfile(
                     api_key=primary_key,
                     model=model,
+                    provider=provider_name,
                     metadata={"provider": provider_name, "key_index": 0},
                 )
             )
@@ -49,6 +50,7 @@ def create_profile_manager_from_env() -> ProfileManager | None:
                     APIProfile(
                         api_key=key,
                         model=model,
+                        provider=provider_name,
                         metadata={"provider": provider_name, "key_index": i},
                     )
                 )
@@ -65,6 +67,11 @@ def create_profile_manager_from_env() -> ProfileManager | None:
             "claude-3-5-sonnet-20241022",
             "claude-3-haiku-20240307",
         ],
+        provider_fallback_models={
+            "openai": ["gpt-4", "gpt-3.5-turbo"],
+            "anthropic": ["claude-3-5-sonnet-20241022", "claude-3-haiku-20240307"],
+            "google": ["gemini-pro"],
+        },
     )
 
 
@@ -77,7 +84,7 @@ def get_profile_status(manager: ProfileManager) -> dict[str, Any]:
     Returns:
         Status dictionary with profile information
     """
-    status = {
+    status: dict[str, Any] = {
         "total_profiles": len(manager.profiles),
         "available_profiles": 0,
         "cooldown_profiles": 0,
@@ -94,7 +101,7 @@ def get_profile_status(manager: ProfileManager) -> dict[str, Any]:
 
         profile_info = {
             "model": profile.model,
-            "provider": profile.metadata.get("provider", "unknown"),
+            "provider": profile.provider_id or "unknown",
             "key_index": profile.metadata.get("key_index", 0),
             "available": is_available,
             "cooldown_until": profile.cooldown_until if not is_available else None,

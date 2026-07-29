@@ -16,6 +16,7 @@ from rich.console import Console
 from .agent import CodingAgent
 from .config import ConfigManager
 from .permissions import PermissionPolicy
+from .project_trust import ProjectTrustRequest, ProjectTrustResponse, resolve_project_trust
 
 app = typer.Typer(
     name="pig",
@@ -217,6 +218,11 @@ def main(
         "--web-search/--no-web-search",
         help="Enable the model provider's native web search (Anthropic)",
     ),
+    approve: bool | None = typer.Option(
+        None,
+        "--approve/--no-approve",
+        help="Allow or deny project-local settings, instructions, and extensions",
+    ),
 ):
     """Start interactive coding agent."""
     if ctx.invoked_subcommand is not None:
@@ -236,6 +242,31 @@ def main(
     resolved_base_url = _resolve_option_value(base_url)
     resolved_compat_mode = _resolve_option_value(compat_mode)
     resolved_web_search = bool(_resolve_option_value(web_search))
+    resolved_approve = _resolve_option_value(approve)
+
+    unattended_stdin = False
+    piped_input = None
+    if not protocol_mode:
+        unattended_stdin = not _stdin_is_interactive()
+        if unattended_stdin:
+            piped_input = _read_piped_stdin()
+
+    def decide_project_trust(request: ProjectTrustRequest) -> ProjectTrustResponse:
+        console.print(
+            f"[yellow]Project-local agent resources found in {request.workspace}[/yellow]"
+        )
+        allow = typer.confirm(
+            "Trust this workspace and load its settings, instructions, and extensions?",
+            default=False,
+        )
+        return ProjectTrustResponse(allow=allow, remember=True)
+
+    project_trusted = resolve_project_trust(
+        workspace,
+        override=resolved_approve,
+        decider=None if protocol_mode or unattended_stdin else decide_project_trust,
+        unattended=protocol_mode or unattended_stdin,
+    )
 
     _validate_session_selector_flags(
         fork=resolved_fork,
@@ -247,7 +278,10 @@ def main(
     _validate_startup_name(resolved_name)
 
     if resolved_session_dir is None and os.environ.get("PIG_CODING_AGENT_SESSION_DIR") is None:
-        configured_session_dir = ConfigManager(workspace).get_session_dir()
+        configured_session_dir = ConfigManager(
+            workspace,
+            project_trusted=project_trusted,
+        ).get_session_dir()
         if configured_session_dir:
             resolved_session_dir = Path(configured_session_dir).expanduser()
 
@@ -344,13 +378,6 @@ def main(
                     if not protocol_mode:
                         console.print("[yellow]Starting new session[/yellow]")
 
-    piped_input = None
-    unattended_stdin = False
-    if not protocol_mode:
-        unattended_stdin = not _stdin_is_interactive()
-        if unattended_stdin:
-            piped_input = _read_piped_stdin()
-
     # Create and run agent
     permission_policy = None
     if protocol_mode or unattended_stdin:
@@ -371,6 +398,7 @@ def main(
         enable_cost_tracking=not no_cost_tracking,
         excluded_tools=_parse_excluded_tools(resolved_exclude_tools),
         permission_policy=permission_policy,
+        project_trust=project_trusted,
     )
 
     if not protocol_mode and piped_input is None:

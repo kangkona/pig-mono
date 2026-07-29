@@ -50,6 +50,8 @@ class CompactActionResult(ActionResult):
     before: int | None = None
     after: int | None = None
     instructions: str | None = None
+    reason: str | None = None
+    checkpoint_id: str | None = None
 
 
 @dataclass(frozen=True)

@@ -22,6 +22,7 @@ class ToolResult:
     data: Any = None
     error: str | None = None
     meta: dict[str, Any] = field(default_factory=dict)
+    added_tool_names: list[str] = field(default_factory=list)
 
     def serialize(self, max_chars: int = 4000) -> str:
         """Serialize result to JSON string with structure-aware truncation.
@@ -32,11 +33,18 @@ class ToolResult:
         Returns:
             JSON string representation of the result
         """
+
+        def with_activation(payload: dict[str, Any]) -> dict[str, Any]:
+            if self.added_tool_names:
+                payload["added_tool_names"] = self.added_tool_names
+            return payload
+
         d: dict[str, Any] = {"ok": self.ok}
         if self.ok:
             d["data"] = self.data
         else:
             d["error"] = self.error
+        with_activation(d)
 
         payload = json.dumps(d, ensure_ascii=False, default=str)
         if len(payload) <= max_chars:
@@ -47,7 +55,9 @@ class ToolResult:
             shrunk = _try_shrink(self.data, max_chars)
             if shrunk is not None:
                 candidate = json.dumps(
-                    {"ok": True, "data": shrunk}, ensure_ascii=False, default=str
+                    with_activation({"ok": True, "data": shrunk}),
+                    ensure_ascii=False,
+                    default=str,
                 )
                 if len(candidate) <= max_chars:
                     return candidate
@@ -55,7 +65,8 @@ class ToolResult:
         # Hard fallback (loses structure)
         if self.ok:
             wrapper = json.dumps(
-                {"ok": True, "truncated": True, "data_preview": ""}, ensure_ascii=False
+                with_activation({"ok": True, "truncated": True, "data_preview": ""}),
+                ensure_ascii=False,
             )
             avail = max(0, max_chars - len(wrapper))
             fallback: dict[str, Any] = {
@@ -64,11 +75,14 @@ class ToolResult:
                 "data_preview": str(self.data)[:avail],
             }
         else:
-            wrapper = json.dumps({"ok": False, "truncated": True, "error": ""}, ensure_ascii=False)
+            wrapper = json.dumps(
+                with_activation({"ok": False, "truncated": True, "error": ""}),
+                ensure_ascii=False,
+            )
             avail = max(0, max_chars - len(wrapper))
             fallback = {"ok": False, "truncated": True, "error": str(self.error or "")[:avail]}
 
-        return json.dumps(fallback, ensure_ascii=False, default=str)
+        return json.dumps(with_activation(fallback), ensure_ascii=False, default=str)
 
 
 class CancelledError(Exception):

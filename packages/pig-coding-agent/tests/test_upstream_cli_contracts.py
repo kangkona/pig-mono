@@ -349,6 +349,7 @@ def test_main_uses_project_config_session_dir_for_lookup(
             provider="openai",
             workspace=tmp_path,
             session_name="source-1234",
+            approve=True,
         )
 
     mock_session_manager_class.assert_called_once_with(tmp_path, session_dir=custom_session_dir)

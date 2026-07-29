@@ -1,7 +1,7 @@
 """Tests for Agent class."""
 
 import asyncio
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import Mock
 
 import pytest
 from pig_agent_core import Agent, tool
@@ -144,11 +144,12 @@ async def test_agent_respond_stream_basic():
     mock_llm.config = Mock(model="test-model")
 
     # Mock streaming response (StreamChunk shape: text deltas as .content)
-    async def mock_stream():
+    async def mock_stream(*, messages, **kwargs):
+        del messages, kwargs
         yield StreamChunk(content="Hello")
         yield StreamChunk(content=" world")
 
-    mock_llm.achat_stream = AsyncMock(return_value=mock_stream())
+    mock_llm.achat_stream = mock_stream
 
     agent = Agent(llm=mock_llm)
 
@@ -169,11 +170,12 @@ async def test_agent_respond_non_streaming():
     mock_llm.config = Mock(model="test-model")
 
     # Mock streaming response (StreamChunk shape)
-    async def mock_stream():
+    async def mock_stream(*, messages, **kwargs):
+        del messages, kwargs
         yield StreamChunk(content="Complete")
         yield StreamChunk(content=" response")
 
-    mock_llm.achat_stream = AsyncMock(return_value=mock_stream())
+    mock_llm.achat_stream = mock_stream
 
     agent = Agent(llm=mock_llm)
 
@@ -191,7 +193,8 @@ async def test_agent_respond_with_cancellation():
     mock_llm.config = Mock(model="test-model")
 
     # Mock streaming response
-    async def mock_stream():
+    async def mock_stream(*, messages, **kwargs):
+        del messages, kwargs
         chunk = Mock()
         chunk.choices = [Mock()]
         chunk.choices[0].delta = Mock()
@@ -199,7 +202,7 @@ async def test_agent_respond_with_cancellation():
         chunk.choices[0].delta.tool_calls = None
         yield chunk
 
-    mock_llm.achat_stream = AsyncMock(return_value=mock_stream())
+    mock_llm.achat_stream = mock_stream
 
     agent = Agent(llm=mock_llm)
 

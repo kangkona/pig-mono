@@ -186,7 +186,11 @@ class InteractiveMode:
         )
         try:
             self.interaction_runtime.views.report_compact_result(
-                owner.app_actions.compact_session(None)
+                owner.app_actions.compact_session(
+                    None,
+                    reason="threshold",
+                    before_tokens=ctx,
+                )
             )
             owner.app_actions.rebuild_history_from_session()
             owner.agent.last_llm_usage = None
@@ -196,6 +200,9 @@ class InteractiveMode:
     async def run_turn(self, user_input: str, cancel: asyncio.Event | None = None) -> None:
         owner = self.agent_owner
         cancel = cancel or asyncio.Event()
+
+        if owner.session:
+            owner.session.add_message("user", user_input)
 
         def on_steering(line: str) -> None:
             parsed = self._parse_running_message(line)
@@ -222,10 +229,8 @@ class InteractiveMode:
         if result.aborted:
             self.interaction_runtime.show_system("[aborted]")
 
-        if owner.session:
-            owner.session.add_message("user", user_input)
-            if result.content:
-                owner.session.add_message("assistant", result.content)
+        if owner.session and result.content:
+            owner.session.add_message("assistant", result.content)
 
     def run_interactive(self) -> None:
         owner = self.agent_owner

@@ -4,6 +4,7 @@ from collections.abc import AsyncIterator, Iterator
 
 from .config import Config
 from .models import Message, Response, StreamChunk
+from .runtime import ModelRuntime, get_default_runtime
 
 
 class LLM:
@@ -16,6 +17,7 @@ class LLM:
         config: Config | None = None,
         enable_web_search: bool = False,
         web_search_max_uses: int = 5,
+        runtime: ModelRuntime | None = None,
         **kwargs,
     ):
         """Initialize LLM client.
@@ -29,6 +31,8 @@ class LLM:
                 support it (currently Anthropic), which translate it into their
                 native tool spec.
             web_search_max_uses: Max distinct searches per request (Anthropic).
+            runtime: Explicit provider/model runtime. Defaults to the built-in
+                process runtime for backwards compatibility.
             **kwargs: Additional config parameters
         """
         if config is None:
@@ -39,6 +43,7 @@ class LLM:
             config = Config(**config_dict)
 
         self.config = config
+        self.runtime = runtime or get_default_runtime()
         self.enable_web_search = enable_web_search
         self.web_search_max_uses = web_search_max_uses
         self._provider = self._init_provider()
@@ -64,46 +69,29 @@ class LLM:
         """Return the configured model name (validated at construction time)."""
         return self.config.model  # type: ignore[return-value]
 
-    # Maps provider name to (module, class_name) for lazy import
-    _PROVIDER_MAP = {
-        "openai": ("openai", "OpenAIProvider"),
-        "anthropic": ("anthropic", "AnthropicProvider"),
-        "google": ("google", "GoogleProvider"),
-        "azure": ("azure", "AzureOpenAIProvider"),
-        "groq": ("groq", "GroqProvider"),
-        "mistral": ("mistral", "MistralProvider"),
-        "openrouter": ("openrouter", "OpenRouterProvider"),
-        "bedrock": ("bedrock", "BedrockProvider"),
-        "xai": ("xai", "XAIProvider"),
-        "cerebras": ("cerebras", "CerebrasProvider"),
-        "cohere": ("cohere", "CohereProvider"),
-        "perplexity": ("perplexity", "PerplexityProvider"),
-        "deepseek": ("deepseek", "DeepSeekProvider"),
-        "together": ("together", "TogetherProvider"),
-    }
-
     def _init_provider(self):
         """Initialize the provider client."""
-        entry = self._PROVIDER_MAP.get(self.config.provider)
-        if entry:
-            if self.config.provider != "bedrock" and not self.config.api_key:
-                raise ValueError(f"No API key for provider: {self.config.provider}")
-            module_name, class_name = entry
-            import importlib
+        return self.runtime.create_provider(self.config)
 
-            mod = importlib.import_module(f".providers.{module_name}", package="pig_llm")
-            provider_class = getattr(mod, class_name)
-            return provider_class(self.config)
+    def with_profile(self, *, api_key: str, model: str | None = None) -> "LLM":
+        """Create an equivalent client bound to an explicitly selected credential.
 
-        # Unknown provider → OpenAI-compatible with base_url
-        if not self.config.base_url:
-            raise ValueError(
-                f"Unknown provider '{self.config.provider}'. "
-                f"Provide base_url for OpenAI-compatible custom providers."
-            )
-        from .providers.openai import OpenAIProvider
-
-        return OpenAIProvider(self.config)
+        Resilience code uses this immutable clone operation so a profile-rotation
+        event always corresponds to a real provider client rebuilt with the new
+        key.  The original client and its frozen configuration remain unchanged.
+        """
+        config = self.config.model_copy(
+            update={
+                "api_key": api_key,
+                "model": model or self.config.model,
+            }
+        )
+        return LLM(
+            config=config,
+            runtime=self.runtime,
+            enable_web_search=self.enable_web_search,
+            web_search_max_uses=self.web_search_max_uses,
+        )
 
     def complete(
         self,

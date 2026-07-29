@@ -4,6 +4,7 @@ from unittest.mock import Mock
 
 from pig_coding_agent import CodingAgent, create_agent_session, permissions
 from pig_coding_agent.permissions import PermissionPolicy
+from pig_coding_agent.project_trust import ProjectTrustResponse, ProjectTrustStore
 
 
 def test_create_agent_session_returns_stable_runtime_contract(tmp_path):
@@ -59,3 +60,29 @@ def test_sdk_defaults_to_structured_fail_closed_write_policy(tmp_path):
         "target": str(tmp_path / "blocked.txt"),
     }
     assert not (tmp_path / "blocked.txt").exists()
+
+
+def test_sdk_host_can_decide_and_remember_project_trust(tmp_path):
+    workspace = tmp_path / "workspace"
+    skill_dir = workspace / ".agents" / "skills" / "trusted"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text("# Trusted")
+    store = ProjectTrustStore(tmp_path / "trust.json")
+    requests = []
+    llm = Mock()
+    llm.config = Mock(model="test-model", provider="openai")
+
+    runtime = create_agent_session(
+        workspace=workspace,
+        llm=llm,
+        verbose=False,
+        enable_extensions=False,
+        project_trust_decider=lambda request: (
+            requests.append(request) or ProjectTrustResponse(True, remember=True)
+        ),
+        project_trust_store=store,
+    )
+
+    assert len(requests) == 1
+    assert "trusted" in runtime.agent.skill_manager
+    assert store.get(requests[0].identity) == "allow"

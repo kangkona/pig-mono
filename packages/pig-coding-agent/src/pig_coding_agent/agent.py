@@ -18,7 +18,7 @@ from pig_agent_core import (
     assert_valid_session_id,
 )
 from pig_agent_core.tools import Tool, ToolResult
-from pig_llm import LLM
+from pig_llm import LLM, Message
 
 from .app_actions import AppActions
 from .billing import CostTracker
@@ -32,6 +32,11 @@ from .permissions import (
     PermissionPolicy,
     PermissionRequest,
     format_permission_denial,
+)
+from .project_trust import (
+    ProjectTrustDecider,
+    ProjectTrustStore,
+    resolve_project_trust,
 )
 from .resilience import create_profile_manager_from_env, get_profile_status
 from .results import ResultFactory
@@ -55,8 +60,63 @@ class AgentTurnResult:
         return bool(self.permission_denials)
 
 
+class _TrustedContextManager(ContextManager):
+    """Load global instructions always and workspace instructions only when trusted."""
+
+    def __init__(self, workspace: Path, *, project_trusted: bool) -> None:
+        super().__init__(workspace)
+        self.project_trusted = project_trusted
+
+    def find_context_files(self, filename: str) -> list[Path]:
+        """Return global files, plus the inherited project hierarchy when trusted."""
+        if self.project_trusted:
+            return super().find_context_files(filename)
+
+        found: list[Path] = []
+        global_candidates = (
+            Path.home() / ".agents" / filename,
+            Path.home() / ".pi" / "agent" / filename,
+        )
+        for path in global_candidates:
+            if path.exists() and path not in found:
+                found.append(path)
+
+        return found
+
+
 class CodingAgent:
     """Interactive coding agent with file and code tools."""
+
+    @staticmethod
+    def _compress_overflow_messages(messages: list[Message]) -> list[Message]:
+        """Build a deterministic retry context that is strictly shorter."""
+        if len(messages) <= 3:
+            return messages
+
+        leading: list[Message] = []
+        body = messages
+        if messages[0].role == "system":
+            leading = [messages[0]]
+            body = messages[1:]
+        keep_count = min(4, max(1, len(body) - 2))
+        older = body[:-keep_count]
+        recent = body[-keep_count:]
+        if len(older) < 2:
+            return messages
+
+        excerpts = []
+        for item in older[-6:]:
+            compact = " ".join(item.content.split())
+            excerpts.append(f"{item.role}: {compact[:160]}")
+        summary = Message(
+            role="system",
+            content=(
+                f"[Overflow recovery compacted {len(older)} earlier messages]\n"
+                + "\n".join(excerpts)
+            ),
+            metadata={"compacted": True, "reason": "overflow"},
+        )
+        return [*leading, summary, *recent]
 
     def __init__(
         self,
@@ -74,6 +134,10 @@ class CodingAgent:
         enable_cost_tracking: bool = True,
         excluded_tools: set[str] | None = None,
         permission_policy: PermissionPolicy | None = None,
+        project_trust: bool | None = None,
+        project_trust_decider: ProjectTrustDecider | None = None,
+        project_trust_store: ProjectTrustStore | None = None,
+        unattended_project_trust: bool = True,
     ):
         """Initialize coding agent.
 
@@ -92,14 +156,30 @@ class CodingAgent:
             enable_cost_tracking: Enable cost tracking
             excluded_tools: Tool names to disable for this agent
             permission_policy: Permission gate for write_file and run_command
+            project_trust: Explicit per-invocation project trust override
+            project_trust_decider: Interactive host callback for unknown workspaces
+            project_trust_store: Persistent allow/deny decision store
+            unattended_project_trust: Fail closed when no trust decision exists
         """
         self.workspace = Path(workspace).resolve()
+        self.project_trusted = resolve_project_trust(
+            self.workspace,
+            override=project_trust,
+            decider=project_trust_decider,
+            store=project_trust_store,
+            # Supplying a decider is the host's explicit opt-in to an
+            # interactive decision even though embedding defaults unattended.
+            unattended=unattended_project_trust and project_trust_decider is None,
+        )
         self.llm = llm or LLM()
         self.verbose = verbose
         self.excluded_tools = set(excluded_tools or set())
         self.permission_policy = permission_policy or self._build_interactive_permission_policy()
         self._extensions_shutdown_done = False
-        self.config_manager = ConfigManager(self.workspace)
+        self.config_manager = ConfigManager(
+            self.workspace,
+            project_trusted=self.project_trusted,
+        )
         self.result_factory = ResultFactory()
         self.app_actions = AppActions(self)
         self.interaction_catalog = InteractionCatalog(self)
@@ -144,13 +224,16 @@ class CodingAgent:
         )
 
         # Initialize context manager (needed by _get_system_prompt)
-        self.context_manager = ContextManager(self.workspace)
+        self.context_manager = _TrustedContextManager(
+            self.workspace,
+            project_trusted=self.project_trusted,
+        )
 
         # Initialize skill manager
         self.skill_manager = None
         if enable_skills:
             self.skill_manager = SkillManager()
-            self.skill_manager.discover_skills([])
+            self._load_skills()
             if verbose and len(self.skill_manager) > 0:
                 print(f"✓ Loaded {len(self.skill_manager)} skills")
 
@@ -161,6 +244,7 @@ class CodingAgent:
             system_prompt=self._get_system_prompt(),
             verbose=verbose,
             profile_manager=self.profile_manager,
+            compress_fn=self._compress_overflow_messages,
             billing_hook=self.cost_tracker,
             # No iteration cap (pi-mono parity): turns run until natural
             # completion, a terminate tool result, or user abort (Esc/Ctrl-C).
@@ -175,6 +259,8 @@ class CodingAgent:
             self.agent.registry.unregister(name)
 
         self.agent.session = self.session
+        if hasattr(self.session, "usage_ledger"):
+            self.agent.usage = self.session.usage_ledger
         self.agent.add_tool = self.add_tool
 
         # When resuming/forking an existing session at startup, replay its
@@ -277,10 +363,14 @@ class CodingAgent:
 
         # Standard extension paths
         ext_paths = [
-            self.workspace / ".agents" / "extensions",
-            self.workspace / ".pi" / "extensions",
             Path.home() / ".agents" / "extensions",
+            Path.home() / ".pi" / "agent" / "extensions",
         ]
+        if self.project_trusted:
+            ext_paths[:0] = [
+                self.workspace / ".agents" / "extensions",
+                self.workspace / ".pi" / "extensions",
+            ]
 
         for path in ext_paths:
             if path.exists():
@@ -296,10 +386,53 @@ class CodingAgent:
 
     def _initialize_prompt_manager(self, verbose: bool) -> PromptManager:
         manager = PromptManager()
-        manager.discover_prompts([])
+        self.prompt_manager = manager
+        self._load_prompts()
         if verbose and len(manager) > 0:
             print(f"✓ Loaded {len(manager)} prompt templates")
         return manager
+
+    def _skill_paths(self) -> list[Path]:
+        paths = [
+            Path.home() / ".agents" / "skills",
+            Path.home() / ".pi" / "agent" / "skills",
+        ]
+        if self.project_trusted:
+            paths.extend(
+                [
+                    self.workspace / ".agents" / "skills",
+                    self.workspace / ".pi" / "skills",
+                ]
+            )
+        return paths
+
+    def _load_skills(self) -> None:
+        if self.skill_manager is not None:
+            self.skill_manager.discover_skills(self._skill_paths())
+
+    def _prompt_paths(self) -> list[Path]:
+        paths = [
+            Path.home() / ".agents" / "prompts",
+            Path.home() / ".pi" / "agent" / "prompts",
+        ]
+        if self.project_trusted:
+            paths.extend(
+                [
+                    self.workspace / ".agents" / "prompts",
+                    self.workspace / ".pi" / "prompts",
+                ]
+            )
+        return paths
+
+    def _load_prompts(self) -> None:
+        if self.prompt_manager is None:
+            return
+        for directory in self._prompt_paths():
+            if not directory.exists():
+                continue
+            for template_file in directory.glob("*.md"):
+                if not template_file.name.startswith("_"):
+                    self.prompt_manager.load_template(template_file)
 
     def add_tool(self, tool: Tool) -> None:
         """Register a tool unless it is excluded for this agent instance."""
@@ -348,12 +481,16 @@ class CodingAgent:
 
             guarded = guarded_sync
 
-        return Tool(
-            guarded,
-            name=tool.name,
-            description=tool.description,
-            params_model=tool.params_model,
-        )
+        tool_kwargs: dict[str, Any] = {
+            "name": tool.name,
+            "description": tool.description,
+            "params_model": tool.params_model,
+        }
+        supported = inspect.signature(Tool).parameters
+        for field in ("strict_json", "grammar", "deferred"):
+            if field in supported:
+                tool_kwargs[field] = getattr(tool, field, False if field == "deferred" else None)
+        return Tool(guarded, **tool_kwargs)
 
     @property
     def ui(self):
@@ -484,7 +621,11 @@ You can:
     def run_once_result(self, message: str) -> AgentTurnResult:
         """Run one turn and preserve permission denials across the model boundary."""
         self.permission_policy.consume_denials()
+        if self.session:
+            self.session.add_message("user", message)
         response = self.agent.run(message)
         denials = tuple(self.permission_policy.consume_denials())
         content = format_permission_denial(denials[0]) if denials else response.content
+        if self.session:
+            self.session.add_message("assistant", content)
         return AgentTurnResult(content=content, permission_denials=denials)

@@ -347,6 +347,10 @@ class AppActions:
                     )
                 )
         self.owner.agent.history = history
+        if self.owner.session:
+            self.owner.agent.session = self.owner.session
+            if hasattr(self.owner.session, "usage_ledger"):
+                self.owner.agent.usage = self.owner.session.usage_ledger
 
     def switch_tree(self, entry_id_or_prefix: str) -> TreeActionResult:
         if not self.owner.session:
@@ -383,6 +387,8 @@ class AppActions:
 
         self.owner.session.branch_to(entry_id)
         self.owner.agent.session = self.owner.session
+        if hasattr(self.owner.session, "usage_ledger"):
+            self.owner.agent.usage = self.owner.session.usage_ledger
         self.rebuild_history_from_session()
 
         if self.owner.extension_manager:
@@ -407,6 +413,8 @@ class AppActions:
             )
         self.owner.session = new_session
         self.owner.agent.session = self.owner.session
+        if hasattr(self.owner.session, "usage_ledger"):
+            self.owner.agent.usage = self.owner.session.usage_ledger
         self.rebuild_history_from_session()
         if self.owner.extension_manager:
             self.owner._load_extensions()
@@ -604,7 +612,10 @@ class AppActions:
                     error="auto_compact_threshold must be between 0.0 and 1.0",
                 )
 
-        self.owner.config_manager.set_config_value(key, value)
+        try:
+            self.owner.config_manager.set_config_value(key, value)
+        except PermissionError as exc:
+            return self.owner.result_factory.setting(ok=False, error=str(exc))
         return self.owner.result_factory.setting(
             ok=True,
             key=key,
@@ -613,17 +624,39 @@ class AppActions:
             needs_restart=self.setting_apply_mode(key) != "live",
         )
 
-    def compact_session(self, instructions: str | None) -> CompactActionResult:
+    def compact_session(
+        self,
+        instructions: str | None,
+        *,
+        reason: str = "manual",
+        before_tokens: int | None = None,
+    ) -> CompactActionResult:
         if not self.owner.session:
             return self.owner.result_factory.compact(ok=False, error="No session loaded")
 
         before = len(self.owner.session.tree.entries)
-        compacted = self.owner.session.compact(instructions)
+        previous_checkpoint = getattr(self.owner.session, "last_compaction_checkpoint", None)
+        previous_checkpoint_id = previous_checkpoint.id if previous_checkpoint else None
+        compact_params = inspect.signature(self.owner.session.compact).parameters
+        if "reason" in compact_params:
+            compacted = self.owner.session.compact(
+                instructions,
+                reason=reason,
+                usage={"before_tokens": before_tokens, "after_tokens": None},
+            )
+        else:
+            compacted = self.owner.session.compact(instructions)
+        checkpoint = getattr(self.owner.session, "last_compaction_checkpoint", None)
+        checkpoint_id = (
+            checkpoint.id if checkpoint and checkpoint.id != previous_checkpoint_id else None
+        )
         return self.owner.result_factory.compact(
             ok=True,
             before=before,
             after=len(compacted),
             instructions=instructions,
+            reason=reason,
+            checkpoint_id=checkpoint_id,
         )
 
     def export_session(self, filename: str | None) -> ExportActionResult:

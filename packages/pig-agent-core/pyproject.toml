@@ -20,6 +20,9 @@ dependencies = [
     "typing-extensions>=4.9.0",
 ]
 
+[tool.uv.sources]
+pig-llm = { path = "../pig-llm", editable = true }
+
 [project.urls]
 Homepage = "https://github.com/kangkona/pig-mono"
 Repository = "https://github.com/kangkona/pig-mono"

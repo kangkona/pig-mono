@@ -15,6 +15,7 @@ class Config(BaseModel):
     max_retries: int = Field(default=3, ge=0)
     base_url: str | None = None
     compat_mode: str | None = None
+    headers: dict[str, str] = Field(default_factory=dict)
 
     class Config:
         """Pydantic config."""

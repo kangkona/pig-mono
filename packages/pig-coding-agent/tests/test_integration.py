@@ -94,6 +94,7 @@ def extension(api):
         workspace=str(temp_workspace),
         enable_extensions=True,
         verbose=False,
+        project_trust=True,
     )
 
     # Extension should be loaded
@@ -126,6 +127,7 @@ def extension(api):
         workspace=str(temp_workspace),
         enable_extensions=True,
         verbose=False,
+        project_trust=True,
     )
 
     assert log_file.read_text().splitlines() == ["start:startup"]
@@ -168,6 +170,7 @@ def extension(api):
         session_path=session_path,
         enable_extensions=True,
         verbose=False,
+        project_trust=True,
     )
 
     assert log_file.read_text().splitlines() == ["start:resume"]
@@ -208,6 +211,7 @@ def extension(api):
         session_path=session_path,
         enable_extensions=True,
         verbose=False,
+        project_trust=True,
     )
 
     assert log_file.read_text().splitlines() == [f"previous:{session_path}"]
@@ -254,6 +258,7 @@ def extension(api):
         enable_extensions=True,
         verbose=False,
         fork_source_path=session_path,
+        project_trust=True,
     )
 
     assert log_file.read_text().splitlines() == [f"start:fork:{session_path}:existing-fork"]
@@ -285,6 +290,7 @@ def extension(api):
         workspace=str(temp_workspace),
         enable_extensions=True,
         verbose=False,
+        project_trust=True,
     )
 
     assert log_file.read_text().splitlines() == ["ui_ready:True"]
@@ -318,6 +324,7 @@ def extension(api):
         enable_extensions=True,
         verbose=False,
         excluded_tools={"ask_question"},
+        project_trust=True,
     )
 
     schemas = agent.agent.registry.get_schemas()
@@ -434,6 +441,7 @@ def extension(api):
         session_name="original",
         enable_extensions=True,
         verbose=False,
+        project_trust=True,
     )
     agent.ui = Mock()
     agent.session.add_message("user", "Message")
@@ -510,6 +518,7 @@ def test_extensions_command(mock_llm, temp_workspace):
         workspace=str(temp_workspace),
         enable_extensions=True,
         verbose=False,
+        project_trust=True,
     )
     agent.ui = Mock()
 
@@ -538,6 +547,7 @@ def extension(api):
         workspace=str(temp_workspace),
         enable_extensions=True,
         verbose=False,
+        project_trust=True,
     )
     agent.ui = Mock()
 
@@ -581,6 +591,7 @@ def extension(api):
         workspace=str(temp_workspace),
         enable_extensions=True,
         verbose=False,
+        project_trust=True,
     )
     agent.ui = Mock()
     session_path = agent.session.save()
@@ -638,6 +649,7 @@ def extension(api):
         workspace=str(temp_workspace),
         enable_extensions=True,
         verbose=False,
+        project_trust=True,
     )
     agent.ui = Mock()
 

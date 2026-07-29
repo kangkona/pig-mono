@@ -9,6 +9,7 @@ from pig_llm import LLM
 
 from .agent import AgentTurnResult, CodingAgent
 from .permissions import PermissionPolicy
+from .project_trust import ProjectTrustDecider, ProjectTrustStore
 
 
 @dataclass
@@ -49,12 +50,17 @@ def create_agent_session(
     enable_extensions: bool = True,
     enable_skills: bool = True,
     permission_policy: PermissionPolicy | None = None,
+    project_trust: bool | None = None,
+    project_trust_decider: ProjectTrustDecider | None = None,
+    project_trust_store: ProjectTrustStore | None = None,
 ) -> AgentSessionRuntime:
     """Create an embeddable coding-agent runtime.
 
     Side-effectful tools default to deny in SDK usage. Pass
     ``PermissionPolicy.allow_all()`` or ``PermissionPolicy.confirm_all(...)`` when
     the host application intentionally wants to allow writes or shell commands.
+    Project-local resources independently default to deny unless an explicit or
+    persisted decision exists. Interactive hosts may provide a trust decider.
     """
     policy = permission_policy or PermissionPolicy.unattended()
     agent = CodingAgent(
@@ -67,5 +73,8 @@ def create_agent_session(
         enable_extensions=enable_extensions,
         enable_skills=enable_skills,
         permission_policy=policy,
+        project_trust=project_trust,
+        project_trust_decider=project_trust_decider,
+        project_trust_store=project_trust_store,
     )
     return AgentSessionRuntime(agent=agent)

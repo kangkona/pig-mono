@@ -139,6 +139,14 @@ Create `.agents/config.json`:
 }
 ```
 
+Project-local configuration, instructions, prompts, skills, package roots, and
+extensions are loaded only after the canonical workspace is trusted. Interactive
+TTY runs can remember that decision. JSON/RPC, piped input, and the SDK fail
+closed unless the host supplies an explicit trust decision; global resources
+under `~/.agents` and `~/.pi/agent` remain independent of project trust.
+An explicit `/settings` edit may create a new project config in an untrusted
+workspace, but it will not parse or merge a pre-existing untrusted config.
+
 ## Chat Commands
 
 Inside the agent:
@@ -240,6 +248,14 @@ pig --no-cost-tracking
 
 ## Safety Features
 
+- Project-local `.agents`/`.pi` settings, instructions, prompts, skills,
+  packages, and extensions are gated by a separate workspace trust decision.
+  The decision is keyed by the canonical workspace path and remembered in
+  `~/.agents/project-trust.json`. Unknown workspaces fail closed in JSON/RPC,
+  piped, and SDK usage. Interactive CLI sessions ask once; `--approve` and
+  `--no-approve` provide explicit per-run overrides.
+- Global resources under `~/.agents` and `~/.pi/agent` remain available even
+  when project-local resources are denied.
 - Interactive `pig` sessions require confirmation before `write_file`,
   `run_command`, or an extension-provided `edit_file` can run.
 - JSON/RPC modes, piped stdin, `pig gen`, and `pig analyze` install the same

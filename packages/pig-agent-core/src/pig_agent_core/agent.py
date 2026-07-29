@@ -1,6 +1,7 @@
 """Main Agent class with tool calling and state management."""
 
 import asyncio
+import inspect
 import json
 from collections.abc import AsyncIterator, Callable
 from pathlib import Path
@@ -11,12 +12,17 @@ from pig_llm import LLM, Message, Response
 from .context import SystemPromptBuilder
 from .memory import InMemoryProvider, MemoryProvider
 from .message_queue import MessageQueue
-from .models import AgentState
-from .observability.events import AgentEventCallback, BillingHook, emit_agent_end
+from .models import AgentState, ToolModelCapabilities
+from .observability.events import AgentEvent, AgentEventCallback, BillingHook, emit, emit_agent_end
 from .resilience.profile import ProfileManager
-from .resilience.retry import resilient_streaming_call
+from .resilience.retry import (
+    ResilienceExhaustedError,
+    resilient_streaming_call,
+    resilient_sync_call,
+)
 from .tools import Tool, ToolResult
 from .tools.registry import ToolRegistry
+from .usage import UsageKind, UsageLedger
 
 
 class Agent:
@@ -44,6 +50,7 @@ class Agent:
         before_tool_call: Callable[[str, dict[str, Any]], ToolResult | None] | None = None,
         after_tool_call: Callable[[str, dict[str, Any], ToolResult], ToolResult | None]
         | None = None,
+        tool_capabilities: ToolModelCapabilities | None = None,
     ):
         """Initialize agent.
 
@@ -86,6 +93,8 @@ class Agent:
         self.billing_hook = billing_hook
         self.before_tool_call = before_tool_call
         self.after_tool_call = after_tool_call
+        self.tool_capabilities = tool_capabilities
+        self.session = None
 
         # Use enhanced ToolRegistry from tools/registry.py
         self.registry = ToolRegistry()
@@ -97,7 +106,7 @@ class Agent:
                     name=tool.name,
                     handler=tool.func,
                     schema=schema,
-                    is_core=True,
+                    is_core=not tool.deferred,
                 )
 
         self.history: list[Message] = []
@@ -106,6 +115,8 @@ class Agent:
 
         self.message_queue = MessageQueue()
         self.last_llm_usage: dict[str, int] | None = None  # last round's token usage
+        self.usage = UsageLedger()
+        self._pending_overflow_compactions: dict[str, dict[str, Any]] = {}
         self._plan_used = False  # Track if plan tool has been used
         self._rounds_since_plan = 0  # Track rounds since plan tool
 
@@ -162,13 +173,14 @@ class Agent:
 
         return self._tool_message(tool_call, tool_name, result), False
 
-    @staticmethod
     def _tool_message(
+        self,
         tool_call: dict[str, Any],
         tool_name: str,
         result: ToolResult,
     ) -> dict[str, Any]:
         """Convert ToolResult into a history-ready tool message."""
+        self._observe_tool_result(tool_name, result)
         content = result.data if result.ok else result.error
         return {
             "tool_call_id": tool_call.get("id"),
@@ -177,6 +189,80 @@ class Agent:
             "content": str(content),
             "result": result,
         }
+
+    def _resolve_tool_capabilities(self) -> ToolModelCapabilities:
+        """Map model-runtime capabilities into the provider-neutral tool contract."""
+        if self.tool_capabilities is not None:
+            return self.tool_capabilities
+        runtime = getattr(self.llm, "runtime", None)
+        config = getattr(self.llm, "config", None)
+        if runtime is None or config is None:
+            return ToolModelCapabilities()
+        try:
+            model = runtime.get_model(config.provider, config.model)
+        except Exception:
+            return ToolModelCapabilities()
+        if model is None:
+            return ToolModelCapabilities()
+        capabilities = model.capabilities
+        grammar_types = getattr(capabilities, "grammar_types", ())
+        if not isinstance(grammar_types, set | frozenset | list | tuple):
+            grammar_types = ()
+        return ToolModelCapabilities(
+            supports_strict_tools=bool(getattr(capabilities, "strict_json", False)),
+            supported_grammar_tools={item for item in grammar_types if item in {"regex", "lark"}},
+            supports_deferred_tools=bool(getattr(capabilities, "deferred_tools", False)),
+        )
+
+    def _available_tool_names(self) -> set[str]:
+        """Restore branch-local tool availability when a Session is attached."""
+        core = self.registry.list_core_tools()
+        if self.session is not None and hasattr(self.session, "available_tool_names_at"):
+            return set(self.session.available_tool_names_at(initial_tool_names=core))
+        return set(self.registry.list_active_tools())
+
+    def _get_tool_schemas(self) -> list[dict[str, Any]] | None:
+        """Render tool definitions using current model and transcript capabilities."""
+        if len(self.registry) == 0:
+            return None
+        return self.registry.get_provider_schemas(
+            self._resolve_tool_capabilities(),
+            available_tool_names=self._available_tool_names(),
+        )
+
+    def _observe_tool_result(self, tool_name: str, result: ToolResult) -> None:
+        """Record one tool attempt and persist any transcript activation anchor."""
+        record = self.usage.record_tool(tool_name)
+        if self.billing_hook:
+            try:
+                self._call_compatible_hook(
+                    self.billing_hook.on_tool_call,
+                    tool_name=tool_name,
+                    metadata={
+                        "usage_kind": UsageKind.TOOL.value,
+                        "usage_record_id": record.id,
+                    },
+                )
+            except Exception:
+                pass
+        if result.added_tool_names:
+            self.registry.activate_tools(result.added_tool_names)
+        if self.session is not None and hasattr(self.session, "add_tool_result"):
+            self.session.add_tool_result(result, name=tool_name)
+
+    @staticmethod
+    def _call_compatible_hook(callback: Callable[..., Any], **kwargs: Any) -> None:
+        """Call a hook once, omitting optional fields its signature does not accept."""
+        try:
+            parameters = inspect.signature(callback).parameters.values()
+        except (TypeError, ValueError):
+            callback(**kwargs)
+            return
+        if any(parameter.kind is inspect.Parameter.VAR_KEYWORD for parameter in parameters):
+            callback(**kwargs)
+            return
+        accepted_names = {parameter.name for parameter in parameters}
+        callback(**{key: value for key, value in kwargs.items() if key in accepted_names})
 
     def _log(self, message: str, style: str = "") -> None:
         """Log message if verbose.
@@ -246,7 +332,11 @@ class Agent:
         return response
 
     def _record_llm_usage(
-        self, content_parts: list[str], usage: dict[str, int] | None = None
+        self,
+        content_parts: list[str],
+        usage: dict[str, int] | None = None,
+        *,
+        kind: UsageKind = UsageKind.ASSISTANT,
     ) -> None:
         """Record an LLM round's token usage (and bill it if a hook is set).
 
@@ -255,7 +345,7 @@ class Agent:
         indicator regardless of whether billing is enabled.
         """
         try:
-            model = self.llm.config.model
+            model = self.llm.config.model or "unknown"
             cached_tokens = 0
             if usage and usage.get("input_tokens") is not None:
                 input_tokens = int(usage.get("input_tokens", 0))
@@ -272,23 +362,65 @@ class Agent:
                 "output_tokens": output_tokens,
                 "cached_tokens": cached_tokens,
             }
+            record = self.usage.record_llm(
+                kind=kind,
+                model=model,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                cached_tokens=cached_tokens,
+            )
             if self.billing_hook:
-                # Pass cached_tokens when the hook accepts it (older hooks don't).
-                try:
-                    self.billing_hook.on_llm_call(
-                        model=model,
-                        input_tokens=input_tokens,
-                        output_tokens=output_tokens,
-                        cached_tokens=cached_tokens,
-                    )
-                except TypeError:
-                    self.billing_hook.on_llm_call(
-                        model=model,
-                        input_tokens=input_tokens,
-                        output_tokens=output_tokens,
-                    )
+                metadata = {
+                    "usage_kind": kind.value,
+                    "usage_record_id": record.id,
+                }
+                self._call_compatible_hook(
+                    self.billing_hook.on_llm_call,
+                    model=model,
+                    input_tokens=input_tokens,
+                    output_tokens=output_tokens,
+                    cached_tokens=cached_tokens,
+                    metadata=metadata,
+                )
         except Exception:
             pass
+
+    def _handle_resilience_event(self, event: AgentEvent) -> None:
+        """Commit a successful overflow recovery to the attached session."""
+        data = event.data
+        retry_id = data.get("retry_id")
+        if isinstance(retry_id, str):
+            if data.get("event_subtype") == "resilience_compact":
+                self._pending_overflow_compactions[retry_id] = dict(data)
+            elif data.get("phase") == "succeeded":
+                pending = self._pending_overflow_compactions.pop(retry_id, None)
+                checkpoint_id = data.get("compaction_checkpoint_id")
+                if pending and checkpoint_id == pending.get("checkpoint_id"):
+                    durable_checkpoint = None
+                    if self.session is not None:
+                        self.session.compact(
+                            reason="overflow",
+                            checkpoint_id=checkpoint_id,
+                            replacement_messages=self.history,
+                        )
+                        completed = self.session.last_compaction_checkpoint
+                        if completed is not None and completed.id == checkpoint_id:
+                            durable_checkpoint = {
+                                **completed.to_dict(),
+                                "retry_id": retry_id,
+                                "completed": True,
+                            }
+                            self.session.metadata["last_overflow_checkpoint"] = durable_checkpoint
+                            if self.session.auto_save:
+                                self.session.save()
+                    if durable_checkpoint is None:
+                        self.usage.record_compaction(
+                            reason="overflow",
+                            metadata={"checkpoint_id": checkpoint_id, "retry_id": retry_id},
+                        )
+            elif data.get("phase") == "exhausted":
+                self._pending_overflow_compactions.pop(retry_id, None)
+        emit(self.event_callback, event)
 
     def _emit_agent_end(self, *, success: bool, error: str | None = None) -> None:
         """Emit a terminal agent_end event for the current run."""
@@ -350,7 +482,7 @@ class Agent:
             name=tool.name,
             handler=tool.func,
             schema=schema,
-            is_core=True,
+            is_core=not tool.deferred,
         )
 
     def run(self, message: str, check_queue: bool = True) -> Response:
@@ -373,18 +505,35 @@ class Agent:
             self._log(f"Iteration {iterations}", style="dim")
 
             # Get tool schemas
-            tools_schema = self.registry.get_schemas() if len(self.registry) > 0 else None
+            tools_schema = self._get_tool_schemas()
 
             # Call LLM
             try:
-                response = self.llm.chat(
+                configured_retries = getattr(self.llm.config, "max_retries", 3)
+                max_retries = max(
+                    0, configured_retries if isinstance(configured_retries, int) else 3
+                )
+                response = resilient_sync_call(
+                    self.llm,
                     messages=self.history,
+                    profile_manager=self.profile_manager,
+                    compress_fn=self.compress_fn,
+                    max_retries=max_retries,
+                    event_callback=self._handle_resilience_event,
                     tools=tools_schema,
                 )
             except Exception as e:
-                self._log(f"LLM call failed: {e}", style="red")
-                self._emit_agent_end(success=False, error=str(e))
+                failure = e.original_error if isinstance(e, ResilienceExhaustedError) else e
+                self._log(f"LLM call failed: {failure}", style="red")
+                self._emit_agent_end(success=False, error=str(failure))
+                if failure is not e:
+                    raise failure from e
                 raise
+
+            self._record_llm_usage(
+                [response.content or ""],
+                getattr(response, "usage", None),
+            )
 
             # Check if tool calls are needed
             if hasattr(response, "tool_calls") and response.tool_calls:
@@ -520,7 +669,7 @@ class Agent:
                 return Response(content="", model=self.llm.config.model)
 
             # Get tool schemas
-            tools_schema = self.registry.get_schemas() if len(self.registry) > 0 else None
+            tools_schema = self._get_tool_schemas()
 
             # Use resilient_streaming_call for LLM call
             response_content = ""
@@ -529,12 +678,17 @@ class Agent:
             aborted = False
 
             try:
+                configured_retries = getattr(self.llm.config, "max_retries", 3)
+                max_retries = max(
+                    0, configured_retries if isinstance(configured_retries, int) else 3
+                )
                 async for chunk in resilient_streaming_call(
                     llm=self.llm,
                     messages=self.history,
                     profile_manager=self.profile_manager,
                     compress_fn=self.compress_fn,
-                    event_callback=self.event_callback,
+                    max_retries=max_retries,
+                    event_callback=self._handle_resilience_event,
                     tools=tools_schema,
                 ):
                     if cancel and cancel.is_set():
@@ -595,6 +749,7 @@ class Agent:
                             preflight = self.before_tool_call(tool_name, tool_args)
                             if preflight is not None:
                                 result = self._as_tool_result(preflight)
+                                self._observe_tool_result(tool_name, result)
                                 tool_results.append(
                                     {
                                         "tool_call_id": tool_call.get("id"),
@@ -610,9 +765,6 @@ class Agent:
 
                         if self.on_tool_start:
                             self.on_tool_start(tool_name, tool_args)
-
-                        if self.billing_hook:
-                            self.billing_hook.on_tool_call(tool_name=tool_name)
 
                         try:
                             from types import SimpleNamespace
@@ -661,15 +813,18 @@ class Agent:
 
                             if self.on_tool_end:
                                 self.on_tool_end(tool_name, result)
+                            self._observe_tool_result(tool_name, result)
                         except Exception as e:
                             error_msg = f"Error: {e}"
+                            result = ToolResult(ok=False, error=error_msg)
+                            self._observe_tool_result(tool_name, result)
                             tool_results.append(
                                 {
                                     "tool_call_id": tool_call.get("id"),
                                     "role": "tool",
                                     "name": tool_name,
                                     "content": error_msg,
-                                    "result": ToolResult(ok=False, error=error_msg),
+                                    "result": result,
                                 }
                             )
                             self._log(f"✗ {error_msg}")
@@ -891,42 +1046,45 @@ class Agent:
                 return
 
             # Get tool schemas
-            tools_schema = self.registry.get_schemas() if len(self.registry) > 0 else None
-
-            # Call LLM with streaming. achat_stream yields StreamChunks: text
-            # deltas (content) and, on completion, a chunk carrying the fully
-            # assembled tool_calls.
-            stream_call = self.llm.achat_stream(
-                messages=self.history,
-                tools=tools_schema,
-            )
-            try:
-                if asyncio.iscoroutine(stream_call):
-                    response_stream = await stream_call
-                else:
-                    response_stream = stream_call
-            except Exception as e:
-                self._log(f"Streaming LLM call failed: {e}", style="red")
-                self._emit_agent_end(success=False, error=str(e))
-                raise
+            tools_schema = self._get_tool_schemas()
 
             # Consume the stream: yield text tokens live, capture tool calls + usage.
             content_parts: list[str] = []
             streamed_tool_calls: list[dict[str, Any]] | None = None
             streamed_usage: dict[str, int] | None = None
             aborted = False
-
-            async for chunk in response_stream:
-                if cancel and cancel.is_set():
-                    aborted = True
-                    break
-                if chunk.content:
-                    content_parts.append(chunk.content)
-                    yield chunk.content
-                if getattr(chunk, "tool_calls", None):
-                    streamed_tool_calls = chunk.tool_calls
-                if getattr(chunk, "usage", None):
-                    streamed_usage = chunk.usage
+            configured_retries = getattr(self.llm.config, "max_retries", 3)
+            max_retries = max(0, configured_retries if isinstance(configured_retries, int) else 3)
+            try:
+                async for chunk in resilient_streaming_call(
+                    self.llm,
+                    messages=self.history,
+                    profile_manager=self.profile_manager,
+                    compress_fn=self.compress_fn,
+                    max_retries=max_retries,
+                    event_callback=self._handle_resilience_event,
+                    tools=tools_schema,
+                ):
+                    if cancel and cancel.is_set():
+                        aborted = True
+                        break
+                    if chunk.content:
+                        content_parts.append(chunk.content)
+                        yield chunk.content
+                    if getattr(chunk, "tool_calls", None):
+                        streamed_tool_calls = chunk.tool_calls
+                    if getattr(chunk, "usage", None):
+                        streamed_usage = chunk.usage
+            except Exception as e:
+                partial = "".join(content_parts)
+                if partial:
+                    self.history.append(Message(role="assistant", content=partial))
+                failure = e.original_error if isinstance(e, ResilienceExhaustedError) else e
+                self._log(f"Streaming LLM call failed: {failure}", style="red")
+                self._emit_agent_end(success=False, error=str(failure))
+                if failure is not e:
+                    raise failure from e
+                raise
 
             # Record this LLM round's usage (for the context indicator + billing).
             self._record_llm_usage(content_parts, streamed_usage)
@@ -1058,13 +1216,11 @@ class Agent:
                 f"→ Calling tool: {tool_name}({self._format_tool_args(tool_args)})", style="cyan"
             )
 
-            if self.billing_hook:
-                self.billing_hook.on_tool_call(tool_name=tool_name)
-
             if self.before_tool_call:
                 preflight = self.before_tool_call(tool_name, tool_args)
                 if preflight is not None:
                     result = self._as_tool_result(preflight)
+                    self._observe_tool_result(tool_name, result)
                     self.history.append(
                         Message(
                             role="tool",
@@ -1124,9 +1280,12 @@ class Agent:
 
                 if self.on_tool_end:
                     self.on_tool_end(tool_name, result)
+                self._observe_tool_result(tool_name, result)
                 terminate_any = terminate_any or bool(result.ok and result.meta.get("terminate"))
             except Exception as e:
                 error_msg = f"Error: {e}"
+                result = ToolResult(ok=False, error=error_msg)
+                self._observe_tool_result(tool_name, result)
                 self.history.append(
                     Message(
                         role="tool",

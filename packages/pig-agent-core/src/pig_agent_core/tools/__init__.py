@@ -4,6 +4,7 @@ import sys  # noqa: E402
 from pathlib import Path  # noqa: E402
 
 from .base import CancelledError, ToolResult
+from .contracts import GrammarType, StrictJsonMode, ToolCapabilityError, prepare_tool_schema
 from .handlers_core import HANDLERS
 from .registry import ToolRegistry
 from .schemas import CORE_TOOL_NAMES, TOOL_BUDGETS, TOOL_PERMISSIONS, TOOL_SCHEMAS
@@ -40,6 +41,10 @@ __all__ = [
     "tool",  # Old tool decorator for backward compatibility
     "ToolResult",
     "CancelledError",
+    "ToolCapabilityError",
+    "StrictJsonMode",
+    "GrammarType",
+    "prepare_tool_schema",
     "ToolRegistry",
     "HANDLERS",
     "CORE_TOOL_NAMES",

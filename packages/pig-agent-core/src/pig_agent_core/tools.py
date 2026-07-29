@@ -16,6 +16,9 @@ class Tool:
         name: str | None = None,
         description: str | None = None,
         params_model: type[BaseModel] | None = None,
+        strict_json: str | None = None,
+        grammar: dict[str, str] | None = None,
+        deferred: bool = False,
     ):
         """Initialize tool.
 
@@ -24,11 +27,19 @@ class Tool:
             name: Tool name (defaults to function name)
             description: Tool description for LLM
             params_model: Optional Pydantic model for parameters
+            strict_json: Optional ``prefer`` or ``require`` strict-schema policy
+            grammar: Optional ``{"type": "regex"|"lark", "value": ...}`` constraint
+            deferred: Whether this definition may be loaded lazily by supporting models
         """
         self.func = func
         self.name = name or func.__name__
         self.description = description or (func.__doc__ or "").strip()
         self.params_model = params_model or self._create_params_model(func)
+        if strict_json not in {None, "prefer", "require"}:
+            raise ValueError("strict_json must be 'prefer', 'require', or None")
+        self.strict_json = strict_json
+        self.grammar = dict(grammar) if grammar is not None else None
+        self.deferred = deferred
 
     def __set_name__(self, owner, name):
         """Called when the Tool is assigned as a class attribute."""
@@ -46,6 +57,9 @@ class Tool:
             name=self.name,
             description=self.description,
             params_model=self.params_model,
+            strict_json=self.strict_json,
+            grammar=self.grammar,
+            deferred=self.deferred,
         )
         return bound
 
@@ -68,13 +82,20 @@ class Tool:
 
     def to_openai_schema(self) -> dict[str, Any]:
         """Convert tool to OpenAI function calling schema."""
+        function: dict[str, Any] = {
+            "name": self.name,
+            "description": self.description,
+            "parameters": self.params_model.model_json_schema(),
+        }
+        if self.strict_json is not None:
+            function["strict_json"] = self.strict_json
+        if self.grammar is not None:
+            function["grammar"] = dict(self.grammar)
+        if self.deferred:
+            function["defer_loading"] = True
         return {
             "type": "function",
-            "function": {
-                "name": self.name,
-                "description": self.description,
-                "parameters": self.params_model.model_json_schema(),
-            },
+            "function": function,
         }
 
     def execute(self, **kwargs) -> Any:
@@ -106,6 +127,9 @@ def tool(
     name: str | None = None,
     description: str | None = None,
     params_model: type[BaseModel] | None = None,
+    strict_json: str | None = None,
+    grammar: dict[str, str] | None = None,
+    deferred: bool = False,
 ) -> Callable:
     """Decorator to create a tool from a function.
 
@@ -125,6 +149,9 @@ def tool(
             name=name,
             description=description,
             params_model=params_model,
+            strict_json=strict_json,
+            grammar=grammar,
+            deferred=deferred,
         )
 
     if func is None:

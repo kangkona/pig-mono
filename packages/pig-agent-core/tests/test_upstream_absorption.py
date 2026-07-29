@@ -147,7 +147,10 @@ def test_session_compact_updates_current_path_to_summary_plus_recent_tail() -> N
 
     assert compacted == current
     assert current[0].metadata["compacted"] is True
-    assert [entry.id for entry in current[1:]] == [entry.id for entry in tail_before]
+    assert [(entry.role, entry.content) for entry in current[1:]] == [
+        (entry.role, entry.content) for entry in tail_before
+    ]
+    assert not ({entry.id for entry in current} & {entry.id for entry in tail_before})
     assert current[-1].role == tail_before[-1].role
 
 
@@ -182,7 +185,7 @@ def test_session_compact_save_load_preserves_recent_tail_after_reload(tmp_path) 
     ]
 
 
-def test_session_compact_save_discards_old_entries_and_persists_single_root(tmp_path) -> None:
+def test_session_compact_save_preserves_history_and_authoritative_current_root(tmp_path) -> None:
     session = Session(name="compact-save", workspace=str(tmp_path), auto_save=False)
     for i in range(12):
         session.add_message("user", f"user {i}")
@@ -191,8 +194,15 @@ def test_session_compact_save_discards_old_entries_and_persists_single_root(tmp_
     save_path = session.save()
     persisted_entries = [json.loads(line) for line in save_path.read_text().splitlines()[1:]]
 
-    assert len(persisted_entries) == len(compacted)
-    assert sum(1 for entry in persisted_entries if entry.get("parent_id") is None) == 1
+    assert len(persisted_entries) == len(session.tree.entries)
+    assert len(persisted_entries) > len(compacted)
+    assert sum(1 for entry in persisted_entries if entry.get("parent_id") is None) == 2
+
+    loaded = Session.load(save_path)
+    assert loaded.tree.root_id == compacted[0].id
+    assert [(entry.role, entry.content) for entry in loaded.get_current_conversation()] == [
+        (entry.role, entry.content) for entry in compacted
+    ]
 
 
 def test_agent_before_tool_call_abort_skips_sibling_tools() -> None:
@@ -307,7 +317,7 @@ async def test_arun_before_tool_call_abort_skips_sibling_tools() -> None:
         def __init__(self):
             self.calls = 0
 
-        async def astream(self, messages, **kwargs):
+        async def achat_stream(self, messages, **kwargs):
             self.calls += 1
             if self.calls == 1:
                 yield FakeChunk(
@@ -370,7 +380,7 @@ async def test_arun_after_tool_call_exception_becomes_error_tool_result() -> Non
         def __init__(self):
             self.calls = 0
 
-        async def astream(self, messages, **kwargs):
+        async def achat_stream(self, messages, **kwargs):
             self.calls += 1
             if self.calls == 1:
                 yield FakeChunk(
@@ -420,7 +430,7 @@ async def test_arun_awaits_async_tool_handlers_from_registry() -> None:
         def __init__(self):
             self.calls = 0
 
-        async def astream(self, messages, **kwargs):
+        async def achat_stream(self, messages, **kwargs):
             self.calls += 1
             if self.calls == 1:
                 yield FakeChunk(
@@ -469,7 +479,7 @@ async def test_arun_executes_parallel_safe_async_tools_concurrently() -> None:
         def __init__(self):
             self.calls = 0
 
-        async def astream(self, messages, **kwargs):
+        async def achat_stream(self, messages, **kwargs):
             self.calls += 1
             if self.calls == 1:
                 yield FakeChunk(
@@ -817,6 +827,8 @@ async def test_respond_stream_llm_failure_emits_agent_end_failure_event() -> Non
         config = SimpleNamespace(model="fake")
 
         async def achat_stream(self, messages, tools=None):
+            if False:
+                yield None
             raise RuntimeError("stream boom")
 
     events = []
@@ -1538,7 +1550,7 @@ async def test_arun_cancel_mid_stream_aborts_and_preserves_partial() -> None:
     class FakeLLM:
         config = SimpleNamespace(model="fake")
 
-        async def astream(self, messages, **kwargs):
+        async def achat_stream(self, messages, **kwargs):
             yield FakeChunk(content="partial ")
             cancel.set()
             yield FakeChunk(content="dropped")
