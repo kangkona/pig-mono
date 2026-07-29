@@ -19,6 +19,6 @@ ruff format --check packages/
 
 # Run mypy
 echo "→ Running mypy..."
-mypy packages/
+./scripts/typecheck.sh
 
 echo "✓ All checks passed!"

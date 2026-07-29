@@ -6,9 +6,9 @@ import inspect
 from dataclasses import dataclass, replace
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any, Literal, cast
 
-from pig_agent_core import Session, SessionManager
+from pig_agent_core import Session, SessionEntry, SessionManager
 from pig_llm import Message
 from pig_tui import (
     SelectOption,
@@ -27,6 +27,9 @@ from .results import (
     TreeActionResult,
 )
 
+if TYPE_CHECKING:
+    from .agent import CodingAgent
+
 
 @dataclass
 class AppActions:
@@ -34,18 +37,18 @@ class AppActions:
 
     _LIVE_SETTINGS = frozenset({"auto_compact", "auto_compact_threshold"})
 
-    owner: Any
+    owner: CodingAgent
 
     @classmethod
     def setting_apply_mode(cls, key: str) -> str:
         """Describe when a persisted setting takes effect in the current process."""
         return "live" if key in cls._LIVE_SETTINGS else "unsupported"
 
-    def _tree_children_by_parent(self) -> dict[str | None, list[Any]]:
+    def _tree_children_by_parent(self) -> dict[str | None, list[SessionEntry]]:
         if not self.owner.session or not self.owner.session.tree.entries:
             return {}
 
-        children_by_parent: dict[str | None, list[Any]] = {}
+        children_by_parent: dict[str | None, list[SessionEntry]] = {}
         for entry in self.owner.session.tree.entries.values():
             children_by_parent.setdefault(entry.parent_id, []).append(entry)
 
@@ -54,12 +57,12 @@ class AppActions:
         return children_by_parent
 
     @staticmethod
-    def _entry_preview(entry: Any, *, limit: int) -> str:
+    def _entry_preview(entry: SessionEntry, *, limit: int) -> str:
         return entry.content[:limit].replace("\n", " ")
 
     def _entry_display_label(
         self,
-        entry: Any,
+        entry: SessionEntry,
         *,
         preview_limit: int,
         depth: int | None = None,
@@ -152,13 +155,14 @@ class AppActions:
     def session_list_items(self, limit: int = 20) -> tuple[list[tuple[str, str | None]], bool]:
         session_mgr = SessionManager(self.owner.workspace, session_dir=self.owner.sessions_dir)
         sessions = session_mgr.list_sessions(limit=limit)
-        items = [
-            (
-                info.session_name,
-                f"{session_mgr._format_age(info.modified)} ({info.entries} entries)",
+        items: list[tuple[str, str | None]] = []
+        for info in sessions:
+            items.append(
+                (
+                    str(info.session_name),
+                    f"{session_mgr._format_age(info.modified)} ({info.entries} entries)",
+                )
             )
-            for info in sessions
-        ]
         return items, len(sessions) == limit
 
     def session_info(self) -> dict[str, Any] | None:
@@ -235,8 +239,8 @@ class AppActions:
                 if self.owner.session.tree.entries[option.value].parent_id == target_id
             ]
         elif scope == "siblings" and target_id is not None:
-            target = self.owner.session.tree.entries.get(target_id)
-            parent_id = target.parent_id if target is not None else None
+            sibling_target = self.owner.session.tree.entries.get(target_id)
+            parent_id = sibling_target.parent_id if sibling_target is not None else None
             options = [
                 option
                 for option in options
@@ -341,7 +345,10 @@ class AppActions:
                     continue
                 history.append(
                     Message(
-                        role=entry.role,
+                        role=cast(
+                            Literal["system", "developer", "user", "assistant", "tool"],
+                            entry.role,
+                        ),
                         content=entry.content,
                         metadata=entry.metadata or None,
                     )
@@ -365,25 +372,17 @@ class AppActions:
 
         previous_session_file = str(self.owner.session.save()) if self.owner.session else None
         if self.owner.extension_manager:
-            cleanup_params = inspect.signature(self.owner.extension_manager.cleanup).parameters
-            if "target_entry_id" in cleanup_params:
-                self.owner.extension_manager.cleanup(
-                    reason="tree",
-                    target_session_file=previous_session_file,
-                    target_entry_id=entry_id,
-                )
-            else:
-                self.owner.extension_manager.emit_event(
-                    "session_shutdown",
-                    {
-                        "reason": "tree",
-                        "targetSessionFile": previous_session_file,
-                        "targetEntryId": entry_id,
-                    },
-                )
-                self.owner.extension_manager.extensions.clear()
-                self.owner.extension_manager.api._commands.clear()
-                self.owner.extension_manager.api._event_handlers.clear()
+            self.owner.extension_manager.emit_event(
+                "session_shutdown",
+                {
+                    "reason": "tree",
+                    "targetSessionFile": previous_session_file,
+                    "targetEntryId": entry_id,
+                },
+            )
+            self.owner.extension_manager.extensions.clear()
+            self.owner.extension_manager.api._commands.clear()
+            self.owner.extension_manager.api._event_handlers.clear()
 
         self.owner.session.branch_to(entry_id)
         self.owner.agent.session = self.owner.session

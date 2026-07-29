@@ -1,20 +1,51 @@
 """Regression coverage for compaction, retry, and usage lifecycle semantics."""
 
+from collections.abc import AsyncIterator
 from types import SimpleNamespace
+from typing import Any, cast
 from unittest.mock import AsyncMock, Mock
 
 import pytest
-from pig_agent_core import Agent, CompactionReason, Session, UsageKind, UsageLedger
+from pig_agent_core import Agent as CoreAgent
+from pig_agent_core import CompactionReason, Session, UsageKind, UsageLedger
 from pig_agent_core.models import ToolModelCapabilities
 from pig_agent_core.observability.events import AgentEvent, AgentEventType
 from pig_agent_core.resilience.profile import APIProfile, ProfileManager
 from pig_agent_core.resilience.retry import (
     ResilienceExhaustedError,
-    resilient_call,
-    resilient_streaming_call,
+)
+from pig_agent_core.resilience.retry import (
+    resilient_call as _resilient_call,
+)
+from pig_agent_core.resilience.retry import (
+    resilient_streaming_call as _resilient_streaming_call,
 )
 from pig_agent_core.tools import ToolResult
 from pig_llm import LLM, Message, ModelRuntime, ProviderRegistration, Response, StreamChunk
+
+
+class Agent(CoreAgent):
+    """Test adapter for fake LLMs/hooks plus explicitly attached sessions."""
+
+    session: Any
+
+    def __init__(self, *args: Any, llm: object | None = None, **kwargs: Any) -> None:
+        if llm is not None:
+            kwargs["llm"] = cast(LLM, llm)
+        super().__init__(*args, **kwargs)
+
+
+async def resilient_call(llm: object, messages: object, *args: Any, **kwargs: Any) -> Any:
+    return await _resilient_call(cast(LLM, llm), cast(list[Message], messages), *args, **kwargs)
+
+
+async def resilient_streaming_call(
+    llm: object, messages: object, *args: Any, **kwargs: Any
+) -> AsyncIterator[Any]:
+    async for chunk in _resilient_streaming_call(
+        cast(LLM, llm), cast(list[Message], messages), *args, **kwargs
+    ):
+        yield chunk
 
 
 def test_usage_ledger_keeps_categories_separate() -> None:
@@ -51,7 +82,7 @@ def test_usage_ledger_keeps_categories_separate() -> None:
     assert snapshot["by_kind"]["tool"]["calls"] == 1
 
 
-def test_session_compaction_persists_reason_checkpoint_and_usage(tmp_path) -> None:
+def test_session_compaction_persists_reason_checkpoint_and_usage(tmp_path: Any) -> None:
     session = Session(name="checkpoint", workspace=str(tmp_path), auto_save=False)
     for index in range(12):
         session.add_message("user", f"message {index}")
@@ -76,6 +107,7 @@ def test_session_compaction_persists_reason_checkpoint_and_usage(tmp_path) -> No
     assert checkpoint.after_tokens == 420
     assert checkpoint.tokens_reclaimed == 780
 
+    assert session.tree.root_id is not None
     root = session.tree.entries[session.tree.root_id]
     assert root.metadata["compaction_checkpoint"]["reason"] == "threshold"
     assert session.metadata["usage"]["by_kind"]["compaction"]["tokens_reclaimed"] == 780
@@ -159,6 +191,7 @@ def test_agent_maps_runtime_capabilities_and_anchors_added_tools() -> None:
         supports_deferred_tools=True,
     )
     schemas = agent._get_tool_schemas()
+    assert schemas is not None
     assert schemas[0]["function"]["strict"] is True
     assert schemas[0]["function"]["defer_loading"] is True
 
@@ -169,6 +202,7 @@ def test_agent_maps_runtime_capabilities_and_anchors_added_tools() -> None:
     assert agent.session.available_tool_names_at() == {"late_tool"}
     assert agent.usage.snapshot()["by_kind"]["tool"]["calls"] == 1
     schemas = agent._get_tool_schemas()
+    assert schemas is not None
     assert "defer_loading" not in schemas[0]["function"]
 
 
@@ -222,7 +256,7 @@ def test_agent_does_not_reinvoke_a_hook_that_raises_type_error() -> None:
     assert hook.calls == 1
 
 
-def test_session_save_flushes_current_usage_ledger(tmp_path) -> None:
+def test_session_save_flushes_current_usage_ledger(tmp_path: Any) -> None:
     path = tmp_path / "usage.jsonl"
     session = Session(name="usage", auto_save=False)
     session.usage_ledger.record_tool("read_file")
@@ -281,7 +315,7 @@ def test_agent_persists_overflow_checkpoint_only_after_retry_success() -> None:
 
 
 @pytest.mark.asyncio
-async def test_primary_stream_path_recovers_overflow_and_persists_checkpoint(tmp_path) -> None:
+async def test_primary_stream_path_recovers_overflow_and_persists_checkpoint(tmp_path: Any) -> None:
     events: list[AgentEvent] = []
 
     class OverflowLLM:
@@ -289,7 +323,7 @@ async def test_primary_stream_path_recovers_overflow_and_persists_checkpoint(tmp
             self.config = SimpleNamespace(model="test-model", max_retries=2)
             self.calls = 0
 
-        async def achat_stream(self, *, messages, **kwargs):
+        async def achat_stream(self, *, messages: Any, **kwargs: Any) -> Any:
             del messages, kwargs
             self.calls += 1
             if self.calls == 1:
@@ -343,7 +377,7 @@ async def test_primary_stream_path_never_replays_partial_output() -> None:
             self.config = SimpleNamespace(model="test-model", max_retries=3)
             self.calls = 0
 
-        async def achat_stream(self, *, messages, **kwargs):
+        async def achat_stream(self, *, messages: Any, **kwargs: Any) -> Any:
             del messages, kwargs
             self.calls += 1
             yield StreamChunk(content="partial")
@@ -438,10 +472,10 @@ async def test_profile_rotation_rebuilds_client_before_emitting_strategy() -> No
             self.api_key = api_key
             self.config = SimpleNamespace(model=model)
 
-        def with_profile(self, *, api_key: str, model: str):
+        def with_profile(self, *, api_key: str, model: str) -> Any:
             return RotatableLLM(api_key, model)
 
-        async def achat(self, *, messages, **kwargs):
+        async def achat(self, *, messages: Any, **kwargs: Any) -> Any:
             del messages
             used_profiles.append((self.api_key, kwargs.get("model")))
             if self.api_key == "key-one":
@@ -484,11 +518,11 @@ async def test_real_pig_llm_client_rotates_profile_through_local_runtime() -> No
     created_profiles: list[tuple[str | None, str | None]] = []
 
     class ProfileAwareProvider:
-        def __init__(self, config) -> None:
+        def __init__(self, config: Any) -> None:
             self.config = config
             created_profiles.append((config.api_key, config.model))
 
-        async def acomplete(self, *, messages, model, **kwargs):
+        async def acomplete(self, *, messages: Any, model: Any, **kwargs: Any) -> Any:
             del messages, kwargs
             if self.config.api_key == "key-one":
                 raise Exception("rate limit exceeded")
@@ -498,7 +532,7 @@ async def test_real_pig_llm_client_rotates_profile_through_local_runtime() -> No
     runtime.register_provider(
         ProviderRegistration(
             "integration",
-            ProfileAwareProvider,
+            cast(Any, ProfileAwareProvider),
             requires_api_key=True,
         )
     )
@@ -539,10 +573,10 @@ async def test_streaming_rotation_uses_public_api_with_new_key_and_model() -> No
             self.api_key = api_key
             self.config = SimpleNamespace(model=model)
 
-        def with_profile(self, *, api_key: str, model: str):
+        def with_profile(self, *, api_key: str, model: str) -> Any:
             return RotatableStreamingLLM(api_key, model)
 
-        async def achat_stream(self, *, messages, **kwargs):
+        async def achat_stream(self, *, messages: Any, **kwargs: Any) -> Any:
             del messages
             used_profiles.append((self.api_key, kwargs.get("model")))
             if self.api_key == "key-one":
@@ -629,7 +663,7 @@ async def test_overflow_compaction_event_is_correlated_to_successful_retry() -> 
 async def test_streaming_does_not_retry_after_partial_output() -> None:
     attempts = 0
 
-    async def partial_stream(*args, **kwargs):
+    async def partial_stream(*args: Any, **kwargs: Any) -> Any:
         nonlocal attempts
         attempts += 1
         yield Mock(content="partial")
@@ -680,10 +714,10 @@ async def test_last_attempt_strategy_still_emits_terminal_exhaustion() -> None:
             self.api_key = api_key
             self.config = SimpleNamespace(model=model)
 
-        def with_profile(self, *, api_key: str, model: str):
+        def with_profile(self, *, api_key: str, model: str) -> Any:
             return AlwaysLimitedLLM(api_key, model)
 
-        async def achat(self, *, messages, **kwargs):
+        async def achat(self, *, messages: Any, **kwargs: Any) -> Any:
             del messages, kwargs
             raise Exception("rate limit exceeded")
 

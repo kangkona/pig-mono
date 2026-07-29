@@ -4,17 +4,21 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING
 
 from pig_tui import ShellLoopSession
+
+if TYPE_CHECKING:
+    from .agent import CodingAgent
+    from .interaction_runtime import InteractionRuntime
 
 
 @dataclass
 class InteractiveMode:
     """Own the interactive shell loop and per-turn runtime orchestration."""
 
-    agent_owner: Any
-    interaction_runtime: Any
+    agent_owner: CodingAgent
+    interaction_runtime: InteractionRuntime
 
     _CONTEXT_WINDOWS = {
         "gpt-4.1": 1_000_000,
@@ -185,6 +189,7 @@ class InteractiveMode:
             "— auto-compacting to free space…"
         )
         try:
+            assert self.interaction_runtime.views is not None
             self.interaction_runtime.views.report_compact_result(
                 owner.app_actions.compact_session(
                     None,

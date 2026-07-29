@@ -19,7 +19,7 @@ class CostTracker:
         "gemini-pro": {"input": 0.5, "output": 1.5},
     }
 
-    def __init__(self, workspace: Path | None = None):
+    def __init__(self, workspace: Path | None = None) -> None:
         """Initialize cost tracker.
 
         Args:
@@ -35,7 +35,7 @@ class CostTracker:
         # Load existing usage
         self._load_usage()
 
-    def _load_usage(self):
+    def _load_usage(self) -> None:
         """Load usage data from file."""
         if self.usage_file.exists():
             try:
@@ -45,7 +45,7 @@ class CostTracker:
             except Exception:
                 pass
 
-    def _save_usage(self):
+    def _save_usage(self) -> None:
         """Save usage data to file."""
         self.usage_file.parent.mkdir(parents=True, exist_ok=True)
         data = {"llm_calls": self.llm_calls, "tool_calls": self.tool_calls}
@@ -183,7 +183,7 @@ class CostTracker:
             "by_tool": by_tool,
         }
 
-    def reset_usage(self):
+    def reset_usage(self) -> None:
         """Reset all usage tracking."""
         self.llm_calls = []
         self.tool_calls = []
@@ -228,3 +228,40 @@ class CostTracker:
                 lines.append(f"  {tool}: {count} calls")
 
         return "\n".join(lines)
+
+
+class CostTrackerBillingHook:
+    """Adapt the legacy CostTracker call shape to the core BillingHook protocol."""
+
+    def __init__(self, tracker: CostTracker) -> None:
+        self.tracker = tracker
+
+    def on_llm_call(
+        self,
+        model: str,
+        input_tokens: int,
+        output_tokens: int,
+        user_id: str | None = None,
+        metadata: dict[str, Any] | None = None,
+        *,
+        cached_tokens: int = 0,
+    ) -> None:
+        self.tracker.on_llm_call(
+            model,
+            input_tokens,
+            output_tokens,
+            cached_tokens,
+            user_id,
+            metadata,
+        )
+
+    def on_tool_call(
+        self,
+        tool_name: str,
+        user_id: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> None:
+        self.tracker.on_tool_call(tool_name, user_id, metadata)
+
+    def get_usage_summary(self, user_id: str | None = None) -> dict[str, Any]:
+        return self.tracker.get_usage_summary(user_id)

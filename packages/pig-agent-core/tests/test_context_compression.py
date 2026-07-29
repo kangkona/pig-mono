@@ -1,5 +1,7 @@
 """Tests for context compression functionality."""
 
+from typing import Any
+
 import pytest
 from pig_agent_core.context import (
     CompressionConfig,
@@ -13,9 +15,9 @@ from pig_agent_core.context import (
 class TestCompressionLevel1:
     """Test Level 1 compression (truncate tool results)."""
 
-    def test_truncate_long_tool_result(self):
+    def test_truncate_long_tool_result(self) -> None:
         """Test truncating long tool results."""
-        messages = [
+        messages: list[dict[str, Any]] = [
             {"role": "user", "content": "Hello"},
             {"role": "tool", "content": "x" * 2000, "tool_call_id": "call_1"},
         ]
@@ -27,9 +29,9 @@ class TestCompressionLevel1:
         assert len(compressed[1]["content"]) < 2000
         assert "truncated" in compressed[1]["content"]
 
-    def test_keep_short_tool_result(self):
+    def test_keep_short_tool_result(self) -> None:
         """Test that short tool results are not truncated."""
-        messages = [
+        messages: list[dict[str, Any]] = [
             {"role": "tool", "content": "Short result", "tool_call_id": "call_1"},
         ]
 
@@ -37,9 +39,9 @@ class TestCompressionLevel1:
 
         assert compressed == messages
 
-    def test_non_tool_messages_unchanged(self):
+    def test_non_tool_messages_unchanged(self) -> None:
         """Test that non-tool messages are not affected."""
-        messages = [
+        messages: list[dict[str, Any]] = [
             {"role": "system", "content": "System prompt"},
             {"role": "user", "content": "User message"},
             {"role": "assistant", "content": "Assistant response"},
@@ -49,9 +51,9 @@ class TestCompressionLevel1:
 
         assert compressed == messages
 
-    def test_multiple_tool_results(self):
+    def test_multiple_tool_results(self) -> None:
         """Test truncating multiple tool results."""
-        messages = [
+        messages: list[dict[str, Any]] = [
             {"role": "tool", "content": "x" * 2000, "tool_call_id": "call_1"},
             {"role": "tool", "content": "y" * 1500, "tool_call_id": "call_2"},
             {"role": "tool", "content": "Short", "tool_call_id": "call_3"},
@@ -68,9 +70,9 @@ class TestCompressionLevel1:
 class TestCompressionLevel2:
     """Test Level 2 compression (replace with summaries)."""
 
-    def test_replace_tool_call_with_summary(self):
+    def test_replace_tool_call_with_summary(self) -> None:
         """Test replacing tool call/result pairs with summary."""
-        messages = [
+        messages: list[dict[str, Any]] = [
             {"role": "user", "content": "Search for Python"},
             {
                 "role": "assistant",
@@ -95,9 +97,9 @@ class TestCompressionLevel2:
         assert "search_web" in compressed[1]["content"]
         assert compressed[2] == messages[3]
 
-    def test_multiple_tool_calls(self):
+    def test_multiple_tool_calls(self) -> None:
         """Test summarizing multiple tool calls."""
-        messages = [
+        messages: list[dict[str, Any]] = [
             {
                 "role": "assistant",
                 "content": "",
@@ -117,7 +119,7 @@ class TestCompressionLevel2:
         assert "read" in compressed[0]["content"]
         assert "2 results" in compressed[0]["content"]
 
-    def test_no_tool_calls(self):
+    def test_no_tool_calls(self) -> None:
         """Test that messages without tool calls are unchanged."""
         messages = [
             {"role": "user", "content": "Hello"},
@@ -133,11 +135,11 @@ class TestCompressionLevel3:
     """Test Level 3 compression (LLM summarization)."""
 
     @pytest.mark.asyncio
-    async def test_summarize_middle_messages(self):
+    async def test_summarize_middle_messages(self) -> None:
         """Test LLM summarization of middle messages."""
 
         class MockLLM:
-            async def achat(self, messages, max_tokens):
+            async def achat(self, messages: Any, max_tokens: Any) -> Any:
                 class Response:
                     content = "User asked about Python, assistant explained basics."
 
@@ -164,7 +166,7 @@ class TestCompressionLevel3:
         assert compressed[-1]["content"] == "Thanks!"
 
     @pytest.mark.asyncio
-    async def test_short_conversation_unchanged(self):
+    async def test_short_conversation_unchanged(self) -> None:
         """Test that short conversations are not compressed."""
         messages = [
             {"role": "user", "content": "Hello"},
@@ -179,11 +181,11 @@ class TestCompressionLevel3:
         assert compressed == messages
 
     @pytest.mark.asyncio
-    async def test_fallback_on_error(self):
+    async def test_fallback_on_error(self) -> None:
         """Test fallback to Level 2 on LLM error."""
 
         class FailingLLM:
-            async def achat(self, messages, max_tokens):
+            async def achat(self, messages: Any, max_tokens: Any) -> Any:
                 raise Exception("LLM error")
 
         messages = [
@@ -205,7 +207,7 @@ class TestCompressionLevel3:
 class TestCompressionConfig:
     """Test compression configuration."""
 
-    def test_default_config(self):
+    def test_default_config(self) -> None:
         """Test default compression thresholds."""
         config = CompressionConfig()
 
@@ -214,7 +216,7 @@ class TestCompressionConfig:
         assert config.level3_threshold == 0.9
         assert config.max_tool_result_chars == 1000
 
-    def test_custom_config(self):
+    def test_custom_config(self) -> None:
         """Test custom compression thresholds."""
         config = CompressionConfig(
             level1_threshold=0.6,
@@ -232,7 +234,7 @@ class TestCompressionConfig:
 class TestCompressMessages:
     """Test unified compression function."""
 
-    def test_no_compression_needed(self):
+    def test_no_compression_needed(self) -> None:
         """Test that no compression is applied when under threshold."""
         messages = [
             {"role": "user", "content": "Hello"},
@@ -247,7 +249,7 @@ class TestCompressMessages:
 
         assert compressed == messages
 
-    def test_level1_compression(self):
+    def test_level1_compression(self) -> None:
         """Test Level 1 compression is applied."""
         messages = [
             {"role": "tool", "content": "x" * 2000, "tool_call_id": "call_1"},
@@ -261,9 +263,9 @@ class TestCompressMessages:
 
         assert len(compressed[0]["content"]) < 2000
 
-    def test_level2_compression(self):
+    def test_level2_compression(self) -> None:
         """Test Level 2 compression is applied."""
-        messages = [
+        messages: list[dict[str, Any]] = [
             {
                 "role": "assistant",
                 "content": "",
@@ -281,7 +283,7 @@ class TestCompressMessages:
         assert len(compressed) == 1
         assert "Tool execution" in compressed[0]["content"]
 
-    def test_level3_compression(self):
+    def test_level3_compression(self) -> None:
         """Test Level 3 compression is applied."""
         messages = [
             {"role": "user", "content": "Message 1"},
@@ -299,7 +301,7 @@ class TestCompressMessages:
 
         assert isinstance(compressed, list)
 
-    def test_custom_config(self):
+    def test_custom_config(self) -> None:
         """Test compression with custom config."""
         config = CompressionConfig(
             level1_threshold=0.5,

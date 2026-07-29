@@ -44,7 +44,7 @@ class ProviderCompat:
     send_session_affinity_headers: bool = False
     thinking_level_map: dict[str, Any | None] = field(default_factory=dict)
     reasoning_effort_models: frozenset[str] = frozenset()
-    reasoning_effort_level_map: dict[str, dict[str, str | None]] = field(default_factory=dict)
+    reasoning_effort_level_map: dict[str, dict[str, Any | None]] = field(default_factory=dict)
     unsupported_params: frozenset[str] = frozenset()
     context_overflow_patterns: tuple[re.Pattern[str], ...] = ()
     quota_or_billing_patterns: tuple[re.Pattern[str], ...] = ()
@@ -504,7 +504,9 @@ def normalize_messages(
     public model currently only exposes `system`, but this helper also handles
     role values injected through metadata or future model expansion.
     """
-    target_role = "developer" if compat.system_role_policy == "developer" else "system"
+    target_role: Literal["system", "developer"] = (
+        "developer" if compat.system_role_policy == "developer" else "system"
+    )
     if target_role == "developer" and not supports_developer_role:
         target_role = "system"
 

@@ -7,7 +7,7 @@ import pytest
 from pig_llm import LLM, Config, Message
 
 
-def test_llm_initialization_with_provider():
+def test_llm_initialization_with_provider() -> None:
     """Test LLM initialization with provider."""
     with patch("pig_llm.providers.openai.OpenAIProvider") as MockProvider:
         MockProvider.return_value = Mock()
@@ -16,7 +16,7 @@ def test_llm_initialization_with_provider():
         assert llm.config.api_key == "test-key"
 
 
-def test_llm_initialization_with_config():
+def test_llm_initialization_with_config() -> None:
     """Test LLM initialization with config."""
     config = Config(provider="openai", api_key="test-key", model="gpt-4")
     with patch("pig_llm.providers.openai.OpenAIProvider") as MockProvider:
@@ -25,19 +25,19 @@ def test_llm_initialization_with_config():
         assert llm.config == config
 
 
-def test_llm_unknown_provider():
+def test_llm_unknown_provider() -> None:
     """Test unknown provider raises error."""
     with pytest.raises((ValueError, Exception)):
         LLM(provider="unknown", api_key="test")
 
 
-def test_llm_requires_explicit_api_key_for_known_provider():
+def test_llm_requires_explicit_api_key_for_known_provider() -> None:
     """Known providers should not silently rely on ambient SDK env fallbacks."""
     with pytest.raises(ValueError, match="No API key for provider: openai"):
         LLM(provider="openai")
 
 
-def test_llm_allows_bedrock_without_api_key():
+def test_llm_allows_bedrock_without_api_key() -> None:
     mock_provider = Mock()
     mock_bedrock_class = Mock(return_value=mock_provider)
     fake_bedrock_module = SimpleNamespace(BedrockProvider=mock_bedrock_class)
@@ -51,7 +51,7 @@ def test_llm_allows_bedrock_without_api_key():
     mock_bedrock_class.assert_called_once()
 
 
-def test_llm_complete_creates_messages():
+def test_llm_complete_creates_messages() -> None:
     """Test complete method creates proper messages."""
     with patch("pig_llm.providers.openai.OpenAIProvider") as MockProvider:
         mock_provider = Mock()
@@ -69,7 +69,7 @@ def test_llm_complete_creates_messages():
         assert messages[1].role == "user"
 
 
-def test_llm_complete_without_system():
+def test_llm_complete_without_system() -> None:
     """Test complete without system message."""
     with patch("pig_llm.providers.openai.OpenAIProvider") as MockProvider:
         mock_provider = Mock()
@@ -85,7 +85,7 @@ def test_llm_complete_without_system():
         assert messages[0].role == "user"
 
 
-def test_llm_chat():
+def test_llm_chat() -> None:
     """Test chat method with message list."""
     with patch("pig_llm.providers.openai.OpenAIProvider") as MockProvider:
         mock_provider = Mock()

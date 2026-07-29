@@ -7,7 +7,7 @@ import pig_coding_agent
 PACKAGE_ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_readme_does_not_advertise_unimplemented_cli_commands_or_tools():
+def test_readme_does_not_advertise_unimplemented_cli_commands_or_tools() -> None:
     readme = (PACKAGE_ROOT / "README.md").read_text()
 
     forbidden_snippets = [
@@ -35,7 +35,7 @@ def test_readme_does_not_advertise_unimplemented_cli_commands_or_tools():
     assert "exit with status 2" in readme
 
 
-def test_parity_matrix_exists_and_is_self_contained():
+def test_parity_matrix_exists_and_is_self_contained() -> None:
     matrix_path = PACKAGE_ROOT / "docs" / "pi-parity-matrix.md"
     matrix = matrix_path.read_text()
 
@@ -62,7 +62,7 @@ def test_parity_matrix_exists_and_is_self_contained():
     assert "`prompt_result()` exposes structured permission denials" in matrix
 
 
-def test_package_exports_runtime_entrypoints():
+def test_package_exports_runtime_entrypoints() -> None:
     assert hasattr(pig_coding_agent, "CodingAgent")
     assert hasattr(pig_coding_agent, "AgentTurnResult")
     assert hasattr(pig_coding_agent, "create_agent_session")

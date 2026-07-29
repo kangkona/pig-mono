@@ -1,10 +1,16 @@
 """Main LLM client."""
 
+from __future__ import annotations
+
 from collections.abc import AsyncIterator, Iterator
+from typing import TYPE_CHECKING, Any, cast
 
 from .config import Config
 from .models import Message, Response, StreamChunk
 from .runtime import ModelRuntime, get_default_runtime
+
+if TYPE_CHECKING:
+    from .providers._base import Provider
 
 
 class LLM:
@@ -18,8 +24,8 @@ class LLM:
         enable_web_search: bool = False,
         web_search_max_uses: int = 5,
         runtime: ModelRuntime | None = None,
-        **kwargs,
-    ):
+        **kwargs: Any,
+    ) -> None:
         """Initialize LLM client.
 
         Args:
@@ -36,7 +42,7 @@ class LLM:
             **kwargs: Additional config parameters
         """
         if config is None:
-            config_dict = {"provider": provider or "openai"}
+            config_dict: dict[str, Any] = {"provider": provider or "openai"}
             if api_key:
                 config_dict["api_key"] = api_key
             config_dict.update(kwargs)
@@ -53,7 +59,7 @@ class LLM:
                 "Pass --model / -m or set the model in your config."
             )
 
-    def _inject_web_search(self, kwargs: dict) -> None:
+    def _inject_web_search(self, kwargs: dict[str, Any]) -> None:
         """Add the native web-search intent for providers that support it.
 
         Gated by provider so the control flags never reach an SDK that would
@@ -67,13 +73,13 @@ class LLM:
     @property
     def model(self) -> str:
         """Return the configured model name (validated at construction time)."""
-        return self.config.model  # type: ignore[return-value]
+        return cast(str, self.config.model)
 
-    def _init_provider(self):
+    def _init_provider(self) -> Provider:
         """Initialize the provider client."""
         return self.runtime.create_provider(self.config)
 
-    def with_profile(self, *, api_key: str, model: str | None = None) -> "LLM":
+    def with_profile(self, *, api_key: str, model: str | None = None) -> LLM:
         """Create an equivalent client bound to an explicitly selected credential.
 
         Resilience code uses this immutable clone operation so a profile-rotation
@@ -97,7 +103,7 @@ class LLM:
         self,
         prompt: str,
         system: str | None = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> Response:
         """Generate a completion.
 
@@ -127,7 +133,7 @@ class LLM:
         self,
         prompt: str,
         system: str | None = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> Iterator[StreamChunk]:
         """Stream a completion.
 
@@ -156,7 +162,7 @@ class LLM:
     def chat(
         self,
         messages: list[Message],
-        **kwargs,
+        **kwargs: Any,
     ) -> Response:
         """Generate a chat completion with full message history.
 
@@ -183,7 +189,7 @@ class LLM:
     async def achat(
         self,
         messages: list[Message],
-        **kwargs,
+        **kwargs: Any,
     ) -> Response:
         """Async generate a chat completion with full message history.
 
@@ -210,7 +216,7 @@ class LLM:
     async def achat_stream(
         self,
         messages: list[Message],
-        **kwargs,
+        **kwargs: Any,
     ) -> AsyncIterator[StreamChunk]:
         """Async stream a chat completion with full message history.
 

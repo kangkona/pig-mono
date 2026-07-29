@@ -2,14 +2,23 @@
 
 import json
 import sys
+from collections.abc import Callable
 from datetime import datetime
-from typing import Any
+from typing import Any, TextIO, TypedDict
+
+
+class RPCRequest(TypedDict):
+    """Validated request shape consumed by the RPC server."""
+
+    id: int
+    method: str
+    params: dict[str, Any]
 
 
 class JSONOutputMode:
     """JSON output mode for structured events."""
 
-    def __init__(self, output_file=None):
+    def __init__(self, output_file: TextIO | None = None) -> None:
         """Initialize JSON output mode.
 
         Args:
@@ -34,7 +43,7 @@ class JSONOutputMode:
         self.output.write(json_line + "\n")
         self.output.flush()
 
-    def message(self, role: str, content: str, **metadata) -> None:
+    def message(self, role: str, content: str, **metadata: Any) -> None:
         """Emit a message event.
 
         Args:
@@ -44,7 +53,7 @@ class JSONOutputMode:
         """
         self.emit_event("message", {"role": role, "content": content, "metadata": metadata})
 
-    def tool_call_start(self, tool_name: str, arguments: dict) -> None:
+    def tool_call_start(self, tool_name: str, arguments: dict[str, Any]) -> None:
         """Emit tool call start event.
 
         Args:
@@ -82,7 +91,7 @@ class JSONOutputMode:
         """
         self.emit_event("done", {"content": final_content} if final_content else {})
 
-    def error(self, error: str, **metadata) -> None:
+    def error(self, error: str, **metadata: Any) -> None:
         """Emit an error event.
 
         Args:
@@ -95,34 +104,59 @@ class JSONOutputMode:
 class RPCMode:
     """RPC mode for stdin/stdout process integration."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize RPC mode."""
         self.request_id = 0
         self.last_shutdown_reason: str | None = None
 
-    def read_request(self) -> dict | None:
+    def read_request(self) -> RPCRequest | None:
         """Read a request from stdin.
 
         Returns:
             Request object or None on EOF
         """
-        try:
-            line = sys.stdin.readline()
-            if not line:
+        while True:
+            try:
+                line = sys.stdin.readline()
+                if not line:
+                    return None
+                parsed: object = json.loads(line)
+            except KeyboardInterrupt:
+                self.last_shutdown_reason = "interrupt"
+                return None
+            except json.JSONDecodeError as e:
+                self.last_shutdown_reason = "error"
+                self.send_error(f"Invalid JSON: {e}")
+                continue
+            except Exception as e:
+                self.last_shutdown_reason = "error"
+                self.send_error(f"Error reading request: {e}")
                 return None
 
-            return json.loads(line)
-        except KeyboardInterrupt:
-            self.last_shutdown_reason = "interrupt"
-            return None
-        except json.JSONDecodeError as e:
-            self.last_shutdown_reason = "error"
-            self.send_error(f"Invalid JSON: {e}")
-            return None
-        except Exception as e:
-            self.last_shutdown_reason = "error"
-            self.send_error(f"Error reading request: {e}")
-            return None
+            if not isinstance(parsed, dict):
+                self.last_shutdown_reason = "error"
+                self.send_error("Invalid JSON-RPC request: expected an object")
+                continue
+
+            request_id = parsed.get("id")
+            if isinstance(request_id, bool) or not isinstance(request_id, int):
+                self.last_shutdown_reason = "error"
+                self.send_error("Invalid JSON-RPC request: id must be an integer")
+                continue
+
+            method = parsed.get("method")
+            if not isinstance(method, str):
+                self.last_shutdown_reason = "error"
+                self.send_error("Invalid JSON-RPC request: method must be a string", request_id)
+                continue
+
+            params = parsed.get("params", {})
+            if not isinstance(params, dict):
+                self.last_shutdown_reason = "error"
+                self.send_error("Invalid JSON-RPC request: params must be an object", request_id)
+                continue
+
+            return {"id": request_id, "method": method, "params": params}
 
     def send_response(self, request_id: int, result: Any) -> None:
         """Send a response to stdout.
@@ -150,7 +184,7 @@ class RPCMode:
         sys.stdout.write(json_line + "\n")
         sys.stdout.flush()
 
-    def send_event(self, event_type: str, data: dict) -> None:
+    def send_event(self, event_type: str, data: dict[str, Any]) -> None:
         """Send an event notification.
 
         Args:
@@ -163,7 +197,7 @@ class RPCMode:
         sys.stdout.write(json_line + "\n")
         sys.stdout.flush()
 
-    def run_server(self, handler) -> None:
+    def run_server(self, handler: Callable[[str, dict[str, Any]], Any]) -> None:
         """Run RPC server loop.
 
         Args:
@@ -176,9 +210,9 @@ class RPCMode:
             if request is None:
                 break
 
-            request_id = request.get("id")
-            method = request.get("method")
-            params = request.get("params", {})
+            request_id = request["id"]
+            method = request["method"]
+            params = request["params"]
 
             try:
                 result = handler(method, params)
@@ -191,21 +225,20 @@ class RPCMode:
 class OutputModeManager:
     """Manages different output modes."""
 
-    def __init__(self, mode: str = "interactive"):
+    def __init__(self, mode: str = "interactive") -> None:
         """Initialize output mode manager.
 
         Args:
             mode: Output mode (interactive, json, rpc)
         """
         self.mode = mode
+        self.json_mode: JSONOutputMode | None = None
+        self.rpc_mode: RPCMode | None = None
 
         if mode == "json":
             self.json_mode = JSONOutputMode()
         elif mode == "rpc":
             self.rpc_mode = RPCMode()
-        else:
-            self.json_mode = None
-            self.rpc_mode = None
 
     def is_json(self) -> bool:
         """Check if in JSON mode."""

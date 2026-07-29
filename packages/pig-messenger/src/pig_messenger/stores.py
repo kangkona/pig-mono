@@ -3,12 +3,14 @@
 import os
 import time
 from abc import ABC, abstractmethod
+from importlib import import_module
+from types import ModuleType
 from typing import Any
 
 try:
-    from cryptography.fernet import Fernet  # type: ignore[import-not-found]
+    _fernet: ModuleType | None = import_module("cryptography.fernet")
 except ImportError:
-    Fernet = None  # type: ignore[assignment]
+    _fernet = None
 
 
 class WorkspaceAlreadyClaimedError(Exception):
@@ -213,7 +215,7 @@ def encrypt_value(value: str, key: str | None = None) -> str:
     Returns:
         Encrypted value (base64 encoded)
     """
-    if Fernet is None:
+    if _fernet is None:
         raise ImportError("cryptography is required for encryption")
 
     if key is None:
@@ -221,8 +223,8 @@ def encrypt_value(value: str, key: str | None = None) -> str:
         if not key:
             raise ValueError("MESSENGER_ENCRYPTION_KEY not set")
 
-    fernet = Fernet(key.encode() if isinstance(key, str) else key)
-    return fernet.encrypt(value.encode()).decode()
+    fernet = _fernet.Fernet(key.encode())
+    return str(fernet.encrypt(value.encode()).decode())
 
 
 def decrypt_value(encrypted: str, key: str | None = None) -> str:
@@ -235,7 +237,7 @@ def decrypt_value(encrypted: str, key: str | None = None) -> str:
     Returns:
         Decrypted value
     """
-    if Fernet is None:
+    if _fernet is None:
         raise ImportError("cryptography is required for decryption")
 
     if key is None:
@@ -243,5 +245,5 @@ def decrypt_value(encrypted: str, key: str | None = None) -> str:
         if not key:
             raise ValueError("MESSENGER_ENCRYPTION_KEY not set")
 
-    fernet = Fernet(key.encode() if isinstance(key, str) else key)
-    return fernet.decrypt(encrypted.encode()).decode()
+    fernet = _fernet.Fernet(key.encode())
+    return str(fernet.decrypt(encrypted.encode()).decode())

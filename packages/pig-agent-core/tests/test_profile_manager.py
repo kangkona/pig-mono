@@ -2,11 +2,12 @@
 
 import os
 import time
+from typing import Any
 
 from pig_agent_core.resilience.profile import APIProfile, ProfileManager
 
 
-def test_api_profile_creation():
+def test_api_profile_creation() -> None:
     """Test APIProfile creation."""
     profile = APIProfile(api_key="test-key", model="gpt-4")
 
@@ -16,7 +17,7 @@ def test_api_profile_creation():
     assert profile.metadata == {}
 
 
-def test_api_profile_is_available():
+def test_api_profile_is_available() -> None:
     """Test profile availability check."""
     profile = APIProfile(api_key="test-key", model="gpt-4")
 
@@ -32,7 +33,7 @@ def test_api_profile_is_available():
     assert profile.is_available()
 
 
-def test_api_profile_set_cooldown():
+def test_api_profile_set_cooldown() -> None:
     """Test setting cooldown."""
     profile = APIProfile(api_key="test-key", model="gpt-4")
 
@@ -41,7 +42,7 @@ def test_api_profile_set_cooldown():
     assert profile.cooldown_until <= time.time() + 2.0
 
 
-def test_profile_manager_creation():
+def test_profile_manager_creation() -> None:
     """Test ProfileManager creation."""
     profiles = [
         APIProfile(api_key="key1", model="gpt-4"),
@@ -54,7 +55,7 @@ def test_profile_manager_creation():
     assert manager.default_cooldown == 60.0
 
 
-def test_profile_manager_get_next_profile():
+def test_profile_manager_get_next_profile() -> None:
     """Test getting next available profile."""
     profiles = [
         APIProfile(api_key="key1", model="gpt-4"),
@@ -65,20 +66,24 @@ def test_profile_manager_get_next_profile():
 
     # Should rotate through profiles
     p1 = manager.get_next_profile()
+    assert p1 is not None
     assert p1.api_key == "key1"
 
     p2 = manager.get_next_profile()
+    assert p2 is not None
     assert p2.api_key == "key2"
 
     p3 = manager.get_next_profile()
+    assert p3 is not None
     assert p3.api_key == "key3"
 
     # Should wrap around
     p4 = manager.get_next_profile()
+    assert p4 is not None
     assert p4.api_key == "key1"
 
 
-def test_profile_manager_skip_cooldown():
+def test_profile_manager_skip_cooldown() -> None:
     """Test skipping profiles in cooldown."""
     profiles = [
         APIProfile(api_key="key1", model="gpt-4"),
@@ -89,11 +94,13 @@ def test_profile_manager_skip_cooldown():
 
     # Get first profile and mark it as failed
     p1 = manager.get_next_profile()
+    assert p1 is not None
     assert p1.api_key == "key1"
     manager.mark_profile_failed(p1, cooldown=10.0)
 
     # Should skip to next available
     p2 = manager.get_next_profile()
+    assert p2 is not None
     assert p2.api_key == "key2"
 
     # Mark second as failed too
@@ -101,10 +108,11 @@ def test_profile_manager_skip_cooldown():
 
     # Should get third
     p3 = manager.get_next_profile()
+    assert p3 is not None
     assert p3.api_key == "key3"
 
 
-def test_profile_manager_all_in_cooldown():
+def test_profile_manager_all_in_cooldown() -> None:
     """Test when all profiles are in cooldown."""
     profiles = [
         APIProfile(api_key="key1", model="gpt-4"),
@@ -121,7 +129,7 @@ def test_profile_manager_all_in_cooldown():
     assert result is None
 
 
-def test_profile_manager_empty():
+def test_profile_manager_empty() -> None:
     """Test manager with no profiles."""
     manager = ProfileManager(profiles=[])
 
@@ -129,7 +137,7 @@ def test_profile_manager_empty():
     assert result is None
 
 
-def test_profile_manager_from_env_single_key(monkeypatch):
+def test_profile_manager_from_env_single_key(monkeypatch: Any) -> None:
     """Test loading from environment with single key."""
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
 
@@ -143,7 +151,7 @@ def test_profile_manager_from_env_single_key(monkeypatch):
     assert manager.profiles[0].model == "gpt-4"
 
 
-def test_profile_manager_from_env_multiple_keys(monkeypatch):
+def test_profile_manager_from_env_multiple_keys(monkeypatch: Any) -> None:
     """Test loading from environment with multiple keys."""
     monkeypatch.setenv("OPENAI_API_KEY", "key0")
     monkeypatch.setenv("OPENAI_API_KEY_1", "key1")
@@ -163,7 +171,7 @@ def test_profile_manager_from_env_multiple_keys(monkeypatch):
     assert manager.profiles[3].api_key == "key3"
 
 
-def test_profile_manager_from_env_no_keys(monkeypatch):
+def test_profile_manager_from_env_no_keys(monkeypatch: Any) -> None:
     """Test loading from environment with no keys."""
     # Clear any existing keys
     for key in list(os.environ.keys()):
@@ -178,7 +186,7 @@ def test_profile_manager_from_env_no_keys(monkeypatch):
     assert len(manager.profiles) == 0
 
 
-def test_profile_manager_get_fallback_model():
+def test_profile_manager_get_fallback_model() -> None:
     """Test getting fallback model."""
     manager = ProfileManager(
         profiles=[],
@@ -202,7 +210,7 @@ def test_profile_manager_get_fallback_model():
     assert fallback == "gpt-4"
 
 
-def test_profile_manager_no_fallback():
+def test_profile_manager_no_fallback() -> None:
     """Test manager with no fallback models."""
     manager = ProfileManager(profiles=[], fallback_models=[])
 
@@ -210,7 +218,7 @@ def test_profile_manager_no_fallback():
     assert fallback is None
 
 
-def test_profile_manager_add_profile():
+def test_profile_manager_add_profile() -> None:
     """Test adding profile."""
     manager = ProfileManager(profiles=[])
 
@@ -221,7 +229,7 @@ def test_profile_manager_add_profile():
     assert manager.profiles[0].api_key == "new-key"
 
 
-def test_profile_manager_remove_profile():
+def test_profile_manager_remove_profile() -> None:
     """Test removing profile."""
     profiles = [
         APIProfile(api_key="key1", model="gpt-4"),
@@ -243,7 +251,7 @@ def test_profile_manager_remove_profile():
     assert len(manager.profiles) == 2
 
 
-def test_profile_manager_get_all_profiles():
+def test_profile_manager_get_all_profiles() -> None:
     """Test getting all profiles."""
     profiles = [
         APIProfile(api_key="key1", model="gpt-4"),
@@ -261,7 +269,7 @@ def test_profile_manager_get_all_profiles():
     assert len(manager.profiles) == 2
 
 
-def test_profile_manager_get_available_profiles():
+def test_profile_manager_get_available_profiles() -> None:
     """Test getting available profiles."""
     profiles = [
         APIProfile(api_key="key1", model="gpt-4"),
@@ -284,7 +292,7 @@ def test_profile_manager_get_available_profiles():
     assert available[1].api_key == "key3"
 
 
-def test_profile_manager_mark_profile_failed_default_cooldown():
+def test_profile_manager_mark_profile_failed_default_cooldown() -> None:
     """Test marking profile as failed with default cooldown."""
     profile = APIProfile(api_key="key1", model="gpt-4")
     manager = ProfileManager(profiles=[profile], default_cooldown=30.0)
@@ -296,7 +304,7 @@ def test_profile_manager_mark_profile_failed_default_cooldown():
     assert profile.cooldown_until <= time.time() + 30.0
 
 
-def test_profile_manager_mark_profile_failed_custom_cooldown():
+def test_profile_manager_mark_profile_failed_custom_cooldown() -> None:
     """Test marking profile as failed with custom cooldown."""
     profile = APIProfile(api_key="key1", model="gpt-4")
     manager = ProfileManager(profiles=[profile])
@@ -308,7 +316,7 @@ def test_profile_manager_mark_profile_failed_custom_cooldown():
     assert profile.cooldown_until <= time.time() + 5.0
 
 
-def test_profile_manager_rotation_after_remove():
+def test_profile_manager_rotation_after_remove() -> None:
     """Test rotation continues correctly after removing profile."""
     profiles = [
         APIProfile(api_key="key1", model="gpt-4"),
@@ -326,8 +334,10 @@ def test_profile_manager_rotation_after_remove():
 
     # Next should be key3
     p = manager.get_next_profile()
+    assert p is not None
     assert p.api_key == "key3"
 
     # Then wrap to key1
     p = manager.get_next_profile()
+    assert p is not None
     assert p.api_key == "key1"

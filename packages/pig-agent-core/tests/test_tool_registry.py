@@ -1,35 +1,36 @@
 """Tests for enhanced tool registry."""
 
 import asyncio
+from typing import Any
 
 import pytest
 from pig_agent_core.tools import CancelledError, ToolRegistry, ToolResult
 
 
 # Mock tool handlers
-async def mock_async_tool(args, user_id, meta, cancel):
+async def mock_async_tool(args: Any, user_id: Any, meta: Any, cancel: Any) -> Any:
     """Mock async tool handler."""
     await asyncio.sleep(0.01)
     return ToolResult(ok=True, data=f"Result: {args.get('input', 'none')}")
 
 
-def mock_sync_tool(args, user_id, meta, cancel):
+def mock_sync_tool(args: Any, user_id: Any, meta: Any, cancel: Any) -> Any:
     """Mock sync tool handler."""
     return ToolResult(ok=True, data=f"Sync result: {args.get('value', 0)}")
 
 
-async def mock_slow_tool(args, user_id, meta, cancel):
+async def mock_slow_tool(args: Any, user_id: Any, meta: Any, cancel: Any) -> Any:
     """Mock slow tool that times out."""
     await asyncio.sleep(10)
     return ToolResult(ok=True, data="Should not reach here")
 
 
-async def mock_failing_tool(args, user_id, meta, cancel):
+async def mock_failing_tool(args: Any, user_id: Any, meta: Any, cancel: Any) -> Any:
     """Mock tool that fails."""
     raise ValueError("Tool failed")
 
 
-async def mock_cancellable_tool(args, user_id, meta, cancel):
+async def mock_cancellable_tool(args: Any, user_id: Any, meta: Any, cancel: Any) -> Any:
     """Mock tool that checks cancellation."""
     for _i in range(10):
         if cancel and cancel.is_set():
@@ -38,13 +39,13 @@ async def mock_cancellable_tool(args, user_id, meta, cancel):
     return ToolResult(ok=True, data="Completed")
 
 
-def test_registry_creation():
+def test_registry_creation() -> None:
     """Test creating a registry."""
     registry = ToolRegistry()
     assert len(registry) == 0
 
 
-def test_registry_register_tool():
+def test_registry_register_tool() -> None:
     """Test registering a tool."""
     registry = ToolRegistry()
 
@@ -63,7 +64,7 @@ def test_registry_register_tool():
     assert len(registry) == 1
 
 
-def test_registry_register_core_tool():
+def test_registry_register_core_tool() -> None:
     """Test registering a core tool."""
     registry = ToolRegistry()
 
@@ -84,7 +85,7 @@ def test_registry_register_core_tool():
     assert schemas[0]["function"]["name"] == "core_tool"
 
 
-def test_registry_lazy_loading():
+def test_registry_lazy_loading() -> None:
     """Test lazy loading of non-core tools."""
     registry = ToolRegistry()
 
@@ -126,7 +127,7 @@ def test_registry_lazy_loading():
     assert names == {"core_tool", "deferred_tool"}
 
 
-def test_registry_activate_tools_idempotent():
+def test_registry_activate_tools_idempotent() -> None:
     """Test that activating tools multiple times is idempotent."""
     registry = ToolRegistry()
 
@@ -150,7 +151,7 @@ def test_registry_activate_tools_idempotent():
 
 
 @pytest.mark.asyncio
-async def test_registry_execute_async_tool():
+async def test_registry_execute_async_tool() -> None:
     """Test executing an async tool."""
     registry = ToolRegistry()
 
@@ -179,7 +180,7 @@ async def test_registry_execute_async_tool():
 
 
 @pytest.mark.asyncio
-async def test_registry_execute_with_timeout():
+async def test_registry_execute_with_timeout() -> None:
     """Test tool execution timeout."""
     registry = ToolRegistry()
 
@@ -203,17 +204,18 @@ async def test_registry_execute_with_timeout():
     result = await registry.execute(MockToolCall(), "user123", {})
 
     assert result.ok is False
+    assert result.error is not None
     assert "timed out" in result.error.lower()
 
 
 @pytest.mark.asyncio
-async def test_registry_execute_with_retry():
+async def test_registry_execute_with_retry() -> None:
     """Test tool execution with retry."""
     registry = ToolRegistry()
 
     call_count = 0
 
-    async def flaky_tool(args, user_id, meta, cancel):
+    async def flaky_tool(args: Any, user_id: Any, meta: Any, cancel: Any) -> Any:
         nonlocal call_count
         call_count += 1
         if call_count < 3:
@@ -245,7 +247,7 @@ async def test_registry_execute_with_retry():
 
 
 @pytest.mark.asyncio
-async def test_registry_execute_with_cancellation():
+async def test_registry_execute_with_cancellation() -> None:
     """Test tool execution cancellation."""
     registry = ToolRegistry()
 
@@ -272,10 +274,11 @@ async def test_registry_execute_with_cancellation():
     result = await registry.execute(MockToolCall(), "user123", {}, cancel=cancel)
 
     assert result.ok is False
+    assert result.error is not None
     assert "cancel" in result.error.lower()
 
 
-def test_registry_unregister():
+def test_registry_unregister() -> None:
     """Test unregistering a tool."""
     registry = ToolRegistry()
 
@@ -297,7 +300,7 @@ def test_registry_unregister():
     assert len(registry) == 0
 
 
-def test_registry_list_tools():
+def test_registry_list_tools() -> None:
     """Test listing all tools."""
     registry = ToolRegistry()
 
@@ -316,7 +319,7 @@ def test_registry_list_tools():
     assert tools == ["tool0", "tool1", "tool2"]
 
 
-def test_registry_list_active_tools():
+def test_registry_list_active_tools() -> None:
     """Test listing active tools."""
     registry = ToolRegistry()
 

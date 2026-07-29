@@ -2,6 +2,7 @@
 
 import json
 from pathlib import Path
+from typing import Any
 from unittest.mock import Mock
 
 import pytest
@@ -102,7 +103,7 @@ def test_explicit_override_wins_over_persisted_decision(tmp_path: Path) -> None:
 
 
 def test_untrusted_project_resources_are_skipped_but_global_resources_load(
-    tmp_path: Path, monkeypatch
+    tmp_path: Path, monkeypatch: Any
 ) -> None:
     home = tmp_path / "home"
     workspace = tmp_path / "workspace"
@@ -140,13 +141,14 @@ def test_untrusted_project_resources_are_skipped_but_global_resources_load(
     assert not project_marker.exists()
     assert "global" in agent.prompt_manager.templates
     assert "project" not in agent.prompt_manager.templates
+    assert agent.skill_manager is not None
     assert "global" in agent.skill_manager.skills
     assert "project" not in agent.skill_manager.skills
-    assert "GLOBAL_INSTRUCTION" in agent.agent.system_prompt
-    assert "PROJECT_INSTRUCTION" not in agent.agent.system_prompt
+    assert "GLOBAL_INSTRUCTION" in (agent.agent.system_prompt or "")
+    assert "PROJECT_INSTRUCTION" not in (agent.agent.system_prompt or "")
 
 
-def test_trusted_project_resources_load(tmp_path: Path, monkeypatch) -> None:
+def test_trusted_project_resources_load(tmp_path: Path, monkeypatch: Any) -> None:
     home = tmp_path / "home"
     workspace = tmp_path / "workspace"
     workspace.mkdir()
@@ -165,11 +167,11 @@ def test_trusted_project_resources_load(tmp_path: Path, monkeypatch) -> None:
     )
 
     assert marker.read_text() == "project"
-    assert "PROJECT_INSTRUCTION" in agent.agent.system_prompt
+    assert "PROJECT_INSTRUCTION" in (agent.agent.system_prompt or "")
 
 
 def test_trusted_nested_workspace_preserves_ancestor_instructions(
-    tmp_path: Path, monkeypatch
+    tmp_path: Path, monkeypatch: Any
 ) -> None:
     home = tmp_path / "home"
     repository = tmp_path / "repository"
@@ -196,12 +198,12 @@ def test_trusted_nested_workspace_preserves_ancestor_instructions(
         project_trust=False,
     )
 
-    assert "ANCESTOR_INSTRUCTION" in trusted.agent.system_prompt
-    assert "ANCESTOR_INSTRUCTION" not in untrusted.agent.system_prompt
+    assert "ANCESTOR_INSTRUCTION" in (trusted.agent.system_prompt or "")
+    assert "ANCESTOR_INSTRUCTION" not in (untrusted.agent.system_prompt or "")
 
     seen_resources: list[Path] = []
 
-    def decide(request):
+    def decide(request: Any) -> Any:
         seen_resources.extend(request.resources)
         return ProjectTrustResponse(False, remember=False)
 
@@ -210,7 +212,7 @@ def test_trusted_nested_workspace_preserves_ancestor_instructions(
 
 
 def test_project_config_requires_trust_while_global_config_remains_available(
-    tmp_path: Path, monkeypatch
+    tmp_path: Path, monkeypatch: Any
 ) -> None:
     home = tmp_path / "home"
     workspace = tmp_path / "workspace"
@@ -225,7 +227,7 @@ def test_project_config_requires_trust_while_global_config_remains_available(
 
 
 def test_untrusted_settings_never_parse_or_modify_existing_project_config(
-    tmp_path: Path, monkeypatch
+    tmp_path: Path, monkeypatch: Any
 ) -> None:
     home = tmp_path / "home"
     workspace = tmp_path / "workspace"
@@ -249,7 +251,7 @@ def test_untrusted_settings_never_parse_or_modify_existing_project_config(
 
 
 def test_untrusted_settings_never_reread_a_project_file_created_by_this_process(
-    tmp_path: Path, monkeypatch
+    tmp_path: Path, monkeypatch: Any
 ) -> None:
     home = tmp_path / "home"
     workspace = tmp_path / "workspace"

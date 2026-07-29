@@ -1,6 +1,7 @@
 """Tests for enhanced tool registry features."""
 
 import asyncio
+from typing import Any, cast
 from unittest.mock import Mock
 
 import pytest
@@ -11,11 +12,11 @@ from pig_agent_core.tools.registry import RegistrationError, ToolRegistry
 class TestRegistrationValidation:
     """Test tool registration validation."""
 
-    def test_register_with_validation_success(self):
+    def test_register_with_validation_success(self) -> None:
         """Test successful registration with validation."""
         registry = ToolRegistry()
 
-        async def handler(args, user_id, meta, cancel=None):
+        async def handler(args: Any, user_id: Any, meta: Any, cancel: Any = None) -> Any:
             return ToolResult(ok=True, data="test")
 
         schema = {
@@ -27,7 +28,7 @@ class TestRegistrationValidation:
         registry.register("test_tool", handler, schema, validate=True)
         assert "test_tool" in registry
 
-    def test_register_non_callable_handler(self):
+    def test_register_non_callable_handler(self) -> None:
         """Test registration fails with non-callable handler."""
         registry = ToolRegistry()
         schema = {
@@ -36,23 +37,23 @@ class TestRegistrationValidation:
         }
 
         with pytest.raises(RegistrationError, match="must be callable"):
-            registry.register("test_tool", "not_callable", schema, validate=True)
+            registry.register("test_tool", cast(Any, "not_callable"), schema, validate=True)
 
-    def test_register_invalid_schema_structure(self):
+    def test_register_invalid_schema_structure(self) -> None:
         """Test registration fails with invalid schema."""
         registry = ToolRegistry()
 
-        async def handler(args, user_id, meta, cancel=None):
+        async def handler(args: Any, user_id: Any, meta: Any, cancel: Any = None) -> Any:
             return ToolResult(ok=True)
 
         with pytest.raises(RegistrationError, match="must be a dict"):
-            registry.register("test_tool", handler, "not_a_dict", validate=True)
+            registry.register("test_tool", handler, cast(Any, "not_a_dict"), validate=True)
 
-    def test_register_missing_function_key(self):
+    def test_register_missing_function_key(self) -> None:
         """Test registration fails when schema missing 'function' key."""
         registry = ToolRegistry()
 
-        async def handler(args, user_id, meta, cancel=None):
+        async def handler(args: Any, user_id: Any, meta: Any, cancel: Any = None) -> Any:
             return ToolResult(ok=True)
 
         schema = {"type": "function"}
@@ -60,11 +61,11 @@ class TestRegistrationValidation:
         with pytest.raises(RegistrationError, match="missing 'function' key"):
             registry.register("test_tool", handler, schema, validate=True)
 
-    def test_register_missing_name_in_function(self):
+    def test_register_missing_name_in_function(self) -> None:
         """Test registration fails when function schema missing 'name'."""
         registry = ToolRegistry()
 
-        async def handler(args, user_id, meta, cancel=None):
+        async def handler(args: Any, user_id: Any, meta: Any, cancel: Any = None) -> Any:
             return ToolResult(ok=True)
 
         schema = {"type": "function", "function": {"description": "Test"}}
@@ -72,11 +73,11 @@ class TestRegistrationValidation:
         with pytest.raises(RegistrationError, match="missing 'function.name'"):
             registry.register("test_tool", handler, schema, validate=True)
 
-    def test_register_name_mismatch(self):
+    def test_register_name_mismatch(self) -> None:
         """Test registration fails when schema name doesn't match tool name."""
         registry = ToolRegistry()
 
-        async def handler(args, user_id, meta, cancel=None):
+        async def handler(args: Any, user_id: Any, meta: Any, cancel: Any = None) -> Any:
             return ToolResult(ok=True)
 
         schema = {
@@ -87,11 +88,11 @@ class TestRegistrationValidation:
         with pytest.raises(RegistrationError, match="does not match tool name"):
             registry.register("test_tool", handler, schema, validate=True)
 
-    def test_register_negative_timeout(self):
+    def test_register_negative_timeout(self) -> None:
         """Test registration fails with negative timeout."""
         registry = ToolRegistry()
 
-        async def handler(args, user_id, meta, cancel=None):
+        async def handler(args: Any, user_id: Any, meta: Any, cancel: Any = None) -> Any:
             return ToolResult(ok=True)
 
         schema = {
@@ -102,11 +103,11 @@ class TestRegistrationValidation:
         with pytest.raises(RegistrationError, match="must be positive"):
             registry.register("test_tool", handler, schema, timeout=-1, validate=True)
 
-    def test_register_negative_retries(self):
+    def test_register_negative_retries(self) -> None:
         """Test registration fails with negative retries."""
         registry = ToolRegistry()
 
-        async def handler(args, user_id, meta, cancel=None):
+        async def handler(args: Any, user_id: Any, meta: Any, cancel: Any = None) -> Any:
             return ToolResult(ok=True)
 
         schema = {
@@ -117,12 +118,14 @@ class TestRegistrationValidation:
         with pytest.raises(RegistrationError, match="must be non-negative"):
             registry.register("test_tool", handler, schema, max_retries=-1, validate=True)
 
-    def test_register_without_validation(self):
+    def test_register_without_validation(self) -> None:
         """Test registration without validation allows invalid data."""
         registry = ToolRegistry()
 
         # This would fail validation but should succeed without it
-        registry.register("test_tool", "not_callable", {"invalid": "schema"}, validate=False)
+        registry.register(
+            "test_tool", cast(Any, "not_callable"), {"invalid": "schema"}, validate=False
+        )
         assert "test_tool" in registry
 
 
@@ -130,7 +133,7 @@ class TestFallbackMapping:
     """Test tool fallback functionality."""
 
     @pytest.mark.asyncio
-    async def test_set_and_get_fallback_tools(self):
+    async def test_set_and_get_fallback_tools(self) -> None:
         """Test setting and getting fallback tools."""
         registry = ToolRegistry()
         registry.set_fallback_tools("primary_tool", ["fallback1", "fallback2"])
@@ -139,14 +142,14 @@ class TestFallbackMapping:
         assert fallbacks == ["fallback1", "fallback2"]
 
     @pytest.mark.asyncio
-    async def test_get_fallback_tools_empty(self):
+    async def test_get_fallback_tools_empty(self) -> None:
         """Test getting fallback tools when none configured."""
         registry = ToolRegistry()
         fallbacks = registry.get_fallback_tools("nonexistent_tool")
         assert fallbacks == []
 
     @pytest.mark.asyncio
-    async def test_set_empty_fallback_removes_entry(self):
+    async def test_set_empty_fallback_removes_entry(self) -> None:
         """Test setting empty fallback list removes the entry."""
         registry = ToolRegistry()
         registry.set_fallback_tools("tool", ["fallback1"])
@@ -156,11 +159,11 @@ class TestFallbackMapping:
         assert fallbacks == []
 
     @pytest.mark.asyncio
-    async def test_register_with_fallback_tools(self):
+    async def test_register_with_fallback_tools(self) -> None:
         """Test registering tool with fallback tools."""
         registry = ToolRegistry()
 
-        async def handler(args, user_id, meta, cancel=None):
+        async def handler(args: Any, user_id: Any, meta: Any, cancel: Any = None) -> Any:
             return ToolResult(ok=True)
 
         schema = {
@@ -176,16 +179,16 @@ class TestFallbackMapping:
         assert fallbacks == ["fallback1", "fallback2"]
 
     @pytest.mark.asyncio
-    async def test_execute_with_fallback_on_failure(self):
+    async def test_execute_with_fallback_on_failure(self) -> None:
         """Test execution falls back to alternative tool on failure."""
         registry = ToolRegistry()
 
         # Primary tool that fails
-        async def primary_handler(args, user_id, meta, cancel=None):
+        async def primary_handler(args: Any, user_id: Any, meta: Any, cancel: Any = None) -> Any:
             return ToolResult(ok=False, error="Primary failed")
 
         # Fallback tool that succeeds
-        async def fallback_handler(args, user_id, meta, cancel=None):
+        async def fallback_handler(args: Any, user_id: Any, meta: Any, cancel: Any = None) -> Any:
             return ToolResult(ok=True, data="Fallback succeeded")
 
         primary_schema = {
@@ -219,14 +222,14 @@ class TestFallbackMapping:
         assert result.meta.get("fallback_to") == "fallback_tool"
 
     @pytest.mark.asyncio
-    async def test_execute_no_fallback_when_primary_succeeds(self):
+    async def test_execute_no_fallback_when_primary_succeeds(self) -> None:
         """Test fallback not used when primary tool succeeds."""
         registry = ToolRegistry()
 
-        async def primary_handler(args, user_id, meta, cancel=None):
+        async def primary_handler(args: Any, user_id: Any, meta: Any, cancel: Any = None) -> Any:
             return ToolResult(ok=True, data="Primary succeeded")
 
-        async def fallback_handler(args, user_id, meta, cancel=None):
+        async def fallback_handler(args: Any, user_id: Any, meta: Any, cancel: Any = None) -> Any:
             return ToolResult(ok=True, data="Fallback succeeded")
 
         primary_schema = {
@@ -261,14 +264,14 @@ class TestFallbackMapping:
 class TestConfirmationGate:
     """Test write-tool confirmation gate."""
 
-    def test_confirm_tool(self):
+    def test_confirm_tool(self) -> None:
         """Test confirming a tool."""
         registry = ToolRegistry()
         registry.confirm_tool("write_tool")
 
         assert registry.is_tool_confirmed("write_tool")
 
-    def test_requires_confirmation_for_write_tool(self):
+    def test_requires_confirmation_for_write_tool(self) -> None:
         """Test write tools require confirmation."""
         registry = ToolRegistry()
 
@@ -284,7 +287,7 @@ class TestConfirmationGate:
             schemas.TOOL_PERMISSIONS.clear()
             schemas.TOOL_PERMISSIONS.update(original_perms)
 
-    def test_no_confirmation_for_read_tool(self):
+    def test_no_confirmation_for_read_tool(self) -> None:
         """Test read tools don't require confirmation."""
         registry = ToolRegistry()
 
@@ -301,11 +304,11 @@ class TestConfirmationGate:
             schemas.TOOL_PERMISSIONS.update(original_perms)
 
     @pytest.mark.asyncio
-    async def test_execute_blocks_unconfirmed_write_tool(self):
+    async def test_execute_blocks_unconfirmed_write_tool(self) -> None:
         """Test execution blocks unconfirmed write tools."""
         registry = ToolRegistry()
 
-        async def handler(args, user_id, meta, cancel=None):
+        async def handler(args: Any, user_id: Any, meta: Any, cancel: Any = None) -> Any:
             return ToolResult(ok=True, data="Should not execute")
 
         schema = {
@@ -328,6 +331,7 @@ class TestConfirmationGate:
             result = await registry.execute(tool_call, "user123", {})
 
             assert result.ok is False
+            assert result.error is not None
             assert "requires confirmation" in result.error
             assert result.meta.get("requires_confirmation") is True
         finally:
@@ -335,11 +339,11 @@ class TestConfirmationGate:
             schemas.TOOL_PERMISSIONS.update(original_perms)
 
     @pytest.mark.asyncio
-    async def test_execute_allows_confirmed_write_tool(self):
+    async def test_execute_allows_confirmed_write_tool(self) -> None:
         """Test execution allows confirmed write tools."""
         registry = ToolRegistry()
 
-        async def handler(args, user_id, meta, cancel=None):
+        async def handler(args: Any, user_id: Any, meta: Any, cancel: Any = None) -> Any:
             return ToolResult(ok=True, data="Executed")
 
         schema = {
@@ -372,7 +376,7 @@ class TestConfirmationGate:
 class TestParallelExecution:
     """Test parallel/sequential execution strategies."""
 
-    def test_is_parallel_safe(self):
+    def test_is_parallel_safe(self) -> None:
         """Test checking if tool is parallel-safe."""
         registry = ToolRegistry()
 
@@ -383,19 +387,19 @@ class TestParallelExecution:
         assert registry.is_parallel_safe("write_file") is False
 
     @pytest.mark.asyncio
-    async def test_execute_batch_parallel_tools(self):
+    async def test_execute_batch_parallel_tools(self) -> None:
         """Test batch execution runs parallel-safe tools concurrently."""
         registry = ToolRegistry()
 
         execution_order = []
 
-        async def handler1(args, user_id, meta, cancel=None):
+        async def handler1(args: Any, user_id: Any, meta: Any, cancel: Any = None) -> Any:
             execution_order.append("tool1_start")
             await asyncio.sleep(0.1)
             execution_order.append("tool1_end")
             return ToolResult(ok=True, data="tool1")
 
-        async def handler2(args, user_id, meta, cancel=None):
+        async def handler2(args: Any, user_id: Any, meta: Any, cancel: Any = None) -> Any:
             execution_order.append("tool2_start")
             await asyncio.sleep(0.1)
             execution_order.append("tool2_end")
@@ -435,19 +439,19 @@ class TestParallelExecution:
         assert tool2_start_idx < tool1_end_idx
 
     @pytest.mark.asyncio
-    async def test_execute_batch_sequential_tools(self):
+    async def test_execute_batch_sequential_tools(self) -> None:
         """Test batch execution runs write tools sequentially."""
         registry = ToolRegistry()
 
         execution_order = []
 
-        async def handler1(args, user_id, meta, cancel=None):
+        async def handler1(args: Any, user_id: Any, meta: Any, cancel: Any = None) -> Any:
             execution_order.append("write1_start")
             await asyncio.sleep(0.05)
             execution_order.append("write1_end")
             return ToolResult(ok=True, data="write1")
 
-        async def handler2(args, user_id, meta, cancel=None):
+        async def handler2(args: Any, user_id: Any, meta: Any, cancel: Any = None) -> Any:
             execution_order.append("write2_start")
             await asyncio.sleep(0.05)
             execution_order.append("write2_end")
@@ -488,15 +492,15 @@ class TestParallelExecution:
         ]
 
     @pytest.mark.asyncio
-    async def test_execute_batch_mixed_tools(self):
+    async def test_execute_batch_mixed_tools(self) -> None:
         """Test batch execution with mix of parallel and sequential tools."""
         registry = ToolRegistry()
 
-        async def read_handler(args, user_id, meta, cancel=None):
+        async def read_handler(args: Any, user_id: Any, meta: Any, cancel: Any = None) -> Any:
             await asyncio.sleep(0.05)
             return ToolResult(ok=True, data="read")
 
-        async def write_handler(args, user_id, meta, cancel=None):
+        async def write_handler(args: Any, user_id: Any, meta: Any, cancel: Any = None) -> Any:
             await asyncio.sleep(0.05)
             return ToolResult(ok=True, data="write")
 
@@ -526,7 +530,7 @@ class TestParallelExecution:
         assert all(r.ok for r in results)
 
     @pytest.mark.asyncio
-    async def test_execute_batch_empty_list(self):
+    async def test_execute_batch_empty_list(self) -> None:
         """Test batch execution with empty list."""
         registry = ToolRegistry()
         results = await registry.execute_batch([], "user123", {})
@@ -536,7 +540,7 @@ class TestParallelExecution:
 class TestUnregisterEnhanced:
     """Test unregister cleans up all enhanced features."""
 
-    def test_unregister_removes_fallbacks(self):
+    def test_unregister_removes_fallbacks(self) -> None:
         """Test unregister removes fallback mappings."""
         registry = ToolRegistry()
         registry.set_fallback_tools("tool", ["fallback1"])
@@ -545,7 +549,7 @@ class TestUnregisterEnhanced:
         fallbacks = registry.get_fallback_tools("tool")
         assert fallbacks == []
 
-    def test_unregister_removes_confirmation(self):
+    def test_unregister_removes_confirmation(self) -> None:
         """Test unregister removes confirmation status."""
         registry = ToolRegistry()
         registry.confirm_tool("tool")

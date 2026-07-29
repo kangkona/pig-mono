@@ -20,6 +20,7 @@ from .resilience.retry import (
     resilient_streaming_call,
     resilient_sync_call,
 )
+from .session import Session
 from .tools import Tool, ToolResult
 from .tools.registry import ToolRegistry
 from .usage import UsageKind, UsageLedger
@@ -51,6 +52,9 @@ class Agent:
         after_tool_call: Callable[[str, dict[str, Any], ToolResult], ToolResult | None]
         | None = None,
         tool_capabilities: ToolModelCapabilities | None = None,
+        session: Session | None = None,
+        ui: Any | None = None,
+        tool_adapter: Callable[[Tool], Tool | None] | None = None,
     ):
         """Initialize agent.
 
@@ -71,6 +75,9 @@ class Agent:
             billing_hook: Optional hook for tracking costs
             max_rounds: Maximum conversation rounds (replaces max_iterations)
             max_rounds_with_plan: Maximum rounds after plan tool is used
+            session: Optional durable session attached by the host application
+            ui: Optional host UI used for turn and diagnostic rendering
+            tool_adapter: Optional host policy that can transform or reject tools
         """
         self.name = name
         self.llm = llm or LLM()
@@ -94,20 +101,15 @@ class Agent:
         self.before_tool_call = before_tool_call
         self.after_tool_call = after_tool_call
         self.tool_capabilities = tool_capabilities
-        self.session = None
+        self.session = session
+        self.ui = ui
+        self.tool_adapter = tool_adapter
 
         # Use enhanced ToolRegistry from tools/registry.py
         self.registry = ToolRegistry()
         if tools:
             for tool in tools:
-                # Get schema from Tool object
-                schema = tool.to_openai_schema()
-                self.registry.register(
-                    name=tool.name,
-                    handler=tool.func,
-                    schema=schema,
-                    is_core=not tool.deferred,
-                )
+                self.add_tool(tool)
 
         self.history: list[Message] = []
         if system_prompt:
@@ -127,7 +129,7 @@ class Agent:
             return value
         return ToolResult(ok=True, data=value)
 
-    def _execute_sync_tool_call(self, tool_call: dict[str, Any]) -> tuple[dict[str, str], bool]:
+    def _execute_sync_tool_call(self, tool_call: dict[str, Any]) -> tuple[dict[str, Any], bool]:
         """Execute one sync tool call.
 
         Returns the serialized tool message and whether the current tool batch
@@ -477,6 +479,11 @@ class Agent:
         Args:
             tool: Tool to add
         """
+        if self.tool_adapter is not None:
+            adapted = self.tool_adapter(tool)
+            if adapted is None:
+                return
+            tool = adapted
         schema = tool.to_openai_schema()
         self.registry.register(
             name=tool.name,
@@ -571,14 +578,18 @@ class Agent:
                     for tr in tool_results
                 ):
                     final_content = "\n".join(str(tr["content"]) for tr in tool_results)
-                    final_response = Response(content=final_content, model=self.llm.config.model)
+                    final_response = Response(
+                        content=final_content, model=self.llm.config.model or "unknown"
+                    )
                     self.history.append(Message(role="assistant", content=final_response.content))
                     self._emit_agent_end(success=True)
                     if check_queue and self.message_queue.has_followup():
                         followup = self.message_queue.get_followup_messages()
-                        response = self._drain_followup_messages(followup, check_queue=check_queue)
-                        if response is not None:
-                            return response
+                        followup_response = self._drain_followup_messages(
+                            followup, check_queue=check_queue
+                        )
+                        if followup_response is not None:
+                            return followup_response
                     return final_response
 
                 # Check for steering messages after tool execution
@@ -598,23 +609,27 @@ class Agent:
                 # Check for follow-up messages
                 if check_queue and self.message_queue.has_followup():
                     followup = self.message_queue.get_followup_messages()
-                    response = self._drain_followup_messages(followup, check_queue=check_queue)
-                    if response is not None:
-                        return response
+                    followup_response = self._drain_followup_messages(
+                        followup, check_queue=check_queue
+                    )
+                    if followup_response is not None:
+                        return followup_response
 
                 self._emit_agent_end(success=True)
                 if check_queue and self.message_queue.has_followup():
                     followup = self.message_queue.get_followup_messages()
-                    response = self._drain_followup_messages(followup, check_queue=check_queue)
-                    if response is not None:
-                        return response
+                    followup_response = self._drain_followup_messages(
+                        followup, check_queue=check_queue
+                    )
+                    if followup_response is not None:
+                        return followup_response
 
                 return response
 
         # Max iterations reached
         final_response = Response(
             content="Maximum iterations reached without completion.",
-            model=self.llm.config.model,
+            model=self.llm.config.model or "unknown",
         )
         self.history.append(Message(role="assistant", content=final_response.content))
         self._emit_agent_end(success=False, error=final_response.content)
@@ -666,7 +681,7 @@ class Agent:
             # Abort between rounds.
             if cancel and cancel.is_set():
                 self._emit_agent_end(success=False, error="aborted")
-                return Response(content="", model=self.llm.config.model)
+                return Response(content="", model=self.llm.config.model or "unknown")
 
             # Get tool schemas
             tools_schema = self._get_tool_schemas()
@@ -714,7 +729,7 @@ class Agent:
                 if response_content:
                     self.history.append(Message(role="assistant", content=response_content))
                 self._emit_agent_end(success=False, error="aborted")
-                return Response(content=response_content, model=self.llm.config.model)
+                return Response(content=response_content, model=self.llm.config.model or "unknown")
 
             # Check if tool calls are needed
             if response_tool_calls:
@@ -858,18 +873,22 @@ class Agent:
                     )
                 ):
                     final_content = "\n".join(str(tr["content"]) for tr in tool_results)
-                    final_response = Response(content=final_content, model=self.llm.config.model)
+                    final_response = Response(
+                        content=final_content, model=self.llm.config.model or "unknown"
+                    )
                     self.history.append(Message(role="assistant", content=final_response.content))
                     self._emit_agent_end(success=True)
                     if check_queue and self.message_queue.has_followup():
                         followup = self.message_queue.get_followup_messages()
                         if followup:
-                            response: Response | None = None
+                            followup_response: Response | None = None
                             for queued in followup:
                                 self._log(f"→ Follow-up: {queued.content}")
-                                response = await self.arun(queued.content, check_queue=True)
-                            if response is not None:
-                                return response
+                                followup_response = await self.arun(
+                                    queued.content, check_queue=True
+                                )
+                            if followup_response is not None:
+                                return followup_response
                     return final_response
 
                 # Check for steering messages after tool execution
@@ -890,33 +909,33 @@ class Agent:
                 if check_queue and self.message_queue.has_followup():
                     followup = self.message_queue.get_followup_messages()
                     if followup:
-                        response: Response | None = None
+                        followup_response = None
                         for queued in followup:
                             self._log(f"→ Follow-up: {queued.content}")
-                            response = await self.arun(queued.content, check_queue=True)
-                        if response is not None:
-                            return response
+                            followup_response = await self.arun(queued.content, check_queue=True)
+                        if followup_response is not None:
+                            return followup_response
 
                 self._emit_agent_end(success=True)
                 if check_queue and self.message_queue.has_followup():
                     followup = self.message_queue.get_followup_messages()
                     if followup:
-                        response: Response | None = None
+                        followup_response = None
                         for queued in followup:
                             self._log(f"→ Follow-up: {queued.content}")
-                            response = await self.arun(queued.content, check_queue=True)
-                        if response is not None:
-                            return response
+                            followup_response = await self.arun(queued.content, check_queue=True)
+                        if followup_response is not None:
+                            return followup_response
 
                 return Response(
                     content=response_content,
-                    model=self.llm.config.model,
+                    model=self.llm.config.model or "unknown",
                 )
 
         # Max iterations reached
         final_response = Response(
             content="Maximum iterations reached without completion.",
-            model=self.llm.config.model,
+            model=self.llm.config.model or "unknown",
         )
         self.history.append(Message(role="assistant", content=final_response.content))
         self._emit_agent_end(success=False, error=final_response.content)
@@ -1116,8 +1135,8 @@ class Agent:
                 if self.message_queue.has_followup():
                     followup = self.message_queue.get_followup_messages()
                     for queued in followup:
-                        async for chunk in self.respond_stream(queued.content, cancel):
-                            yield chunk
+                        async for followup_chunk in self.respond_stream(queued.content, cancel):
+                            yield followup_chunk
                 return
 
             # Tool calls: record the assistant turn (with tool_calls) and execute.
@@ -1140,15 +1159,15 @@ class Agent:
                     message.content
                     for message in self.history[tool_history_start:]
                     if message.role == "tool"
-                    and message.metadata.get("tool_call_id") in current_tool_call_ids
+                    and (message.metadata or {}).get("tool_call_id") in current_tool_call_ids
                 )
                 self.history.append(Message(role="assistant", content=final_content))
                 self._emit_agent_end(success=True)
                 if self.message_queue.has_followup():
                     followup = self.message_queue.get_followup_messages()
                     for queued in followup:
-                        async for chunk in self.respond_stream(queued.content, cancel):
-                            yield chunk
+                        async for followup_chunk in self.respond_stream(queued.content, cancel):
+                            yield followup_chunk
                 return
 
             # Inject steering messages queued during this turn (e.g. typed while
@@ -1276,7 +1295,7 @@ class Agent:
                             )
                     except Exception as exc:
                         result = ToolResult(ok=False, error=f"Error: {exc}")
-                        self.history[-1].content = result.error
+                        self.history[-1].content = result.error or ""
 
                 if self.on_tool_end:
                     self.on_tool_end(tool_name, result)

@@ -17,9 +17,9 @@ from pig_agent_core.tools.registry import ToolRegistry
 class E2EMemoryProvider:
     """Test memory provider for E2E verification."""
 
-    def __init__(self):
-        self.sessions = {}
-        self.metadata = {}
+    def __init__(self) -> None:
+        self.sessions: dict[str, list[Message]] = {}
+        self.metadata: dict[str, dict[str, Any]] = {}
 
     async def get_messages(self, session_id: str) -> list[Message]:
         return self.sessions.get(session_id, [])
@@ -42,9 +42,9 @@ class E2EMemoryProvider:
 class E2EBillingHook:
     """Test billing hook for E2E verification."""
 
-    def __init__(self):
-        self.llm_calls = []
-        self.tool_calls = []
+    def __init__(self) -> None:
+        self.llm_calls: list[dict[str, Any]] = []
+        self.tool_calls: list[dict[str, Any]] = []
 
     def on_llm_call(
         self,
@@ -79,14 +79,14 @@ class E2EBillingHook:
 
 
 @pytest.mark.asyncio
-async def test_e2e_basic_agent_with_all_subsystems():
+async def test_e2e_basic_agent_with_all_subsystems() -> None:
     """Test agent with all subsystems integrated."""
     # Create all subsystems
     memory = E2EMemoryProvider()
     billing = E2EBillingHook()
     events = []
 
-    def event_callback(event: AgentEvent):
+    def event_callback(event: AgentEvent) -> Any:
         events.append(event)
 
     profile_manager = ProfileManager()
@@ -124,16 +124,20 @@ async def test_e2e_basic_agent_with_all_subsystems():
 
 
 @pytest.mark.asyncio
-async def test_e2e_tool_execution_with_fallback():
+async def test_e2e_tool_execution_with_fallback() -> None:
     """Test tool execution with fallback mapping."""
     registry = ToolRegistry()
 
     # Register primary tool that fails
-    async def primary_handler(args, user_id=None, meta=None, cancel=None):
+    async def primary_handler(
+        args: Any, user_id: Any = None, meta: Any = None, cancel: Any = None
+    ) -> Any:
         return ToolResult(ok=False, error="Primary tool failed")
 
     # Register fallback tool that succeeds
-    async def fallback_handler(args, user_id=None, meta=None, cancel=None):
+    async def fallback_handler(
+        args: Any, user_id: Any = None, meta: Any = None, cancel: Any = None
+    ) -> Any:
         return ToolResult(ok=True, data="Fallback succeeded")
 
     primary_schema = {
@@ -174,7 +178,7 @@ async def test_e2e_tool_execution_with_fallback():
 
 
 @pytest.mark.asyncio
-async def test_e2e_resilience_with_profile_rotation():
+async def test_e2e_resilience_with_profile_rotation() -> None:
     """Test resilience with profile rotation on failure."""
     profile_manager = ProfileManager()
     profile1 = APIProfile(api_key="key1", model="gpt-4")
@@ -185,6 +189,7 @@ async def test_e2e_resilience_with_profile_rotation():
 
     # Get first profile
     p1 = profile_manager.get_next_profile()
+    assert p1 is not None
     assert p1.api_key == "key1"
 
     # Mark first profile as failed
@@ -192,6 +197,7 @@ async def test_e2e_resilience_with_profile_rotation():
 
     # Should get second profile
     p2 = profile_manager.get_next_profile()
+    assert p2 is not None
     assert p2.api_key == "key2"
 
     # First profile should be unavailable
@@ -201,7 +207,7 @@ async def test_e2e_resilience_with_profile_rotation():
 
 
 @pytest.mark.asyncio
-async def test_e2e_memory_persistence():
+async def test_e2e_memory_persistence() -> None:
     """Test memory provider persistence across sessions."""
     memory = E2EMemoryProvider()
     session_id = "test_session"
@@ -233,7 +239,7 @@ async def test_e2e_memory_persistence():
 
 
 @pytest.mark.asyncio
-async def test_e2e_billing_tracking():
+async def test_e2e_billing_tracking() -> None:
     """Test billing hook tracks usage correctly."""
     billing = E2EBillingHook()
 
@@ -261,11 +267,11 @@ async def test_e2e_billing_tracking():
 
 
 @pytest.mark.asyncio
-async def test_e2e_event_emission():
+async def test_e2e_event_emission() -> None:
     """Test event emission throughout agent lifecycle."""
     events = []
 
-    def event_callback(event: AgentEvent):
+    def event_callback(event: AgentEvent) -> Any:
         events.append(event)
 
     mock_llm = Mock()
@@ -288,7 +294,7 @@ async def test_e2e_event_emission():
 
 
 @pytest.mark.asyncio
-async def test_e2e_register_package_convenience():
+async def test_e2e_register_package_convenience() -> None:
     """Test register_package convenience method."""
     from pig_agent_core.tools import HANDLERS, TOOL_SCHEMAS
 
@@ -313,14 +319,14 @@ async def test_e2e_register_package_convenience():
 
 
 @pytest.mark.asyncio
-async def test_e2e_full_integration():
+async def test_e2e_full_integration() -> None:
     """Full integration test with all features working together."""
     # Setup all subsystems
     memory = E2EMemoryProvider()
     billing = E2EBillingHook()
     events = []
 
-    def event_callback(event: AgentEvent):
+    def event_callback(event: AgentEvent) -> Any:
         events.append(event)
 
     profile_manager = ProfileManager()
@@ -330,7 +336,9 @@ async def test_e2e_full_integration():
     registry = ToolRegistry()
 
     # Register a test tool
-    async def test_tool_handler(args, user_id=None, meta=None, cancel=None):
+    async def test_tool_handler(
+        args: Any, user_id: Any = None, meta: Any = None, cancel: Any = None
+    ) -> ToolResult:
         return ToolResult(ok=True, data="Tool executed successfully")
 
     test_schema = {
@@ -384,12 +392,14 @@ async def test_e2e_full_integration():
     # Test profile rotation
     profile1 = profile_manager.get_next_profile()
     profile2 = profile_manager.get_next_profile()
+    assert profile1 is not None
+    assert profile2 is not None
     assert profile1.api_key != profile2.api_key
 
     print("✓ Full integration test passed - all subsystems working together")
 
 
-def test_e2e_summary():
+def test_e2e_summary() -> None:
     """Print summary of E2E verification."""
     print("\n" + "=" * 60)
     print("END-TO-END VERIFICATION SUMMARY")

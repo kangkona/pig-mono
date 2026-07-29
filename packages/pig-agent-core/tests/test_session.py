@@ -1,9 +1,11 @@
 """Tests for session management."""
 
+from typing import Any
+
 from pig_agent_core.session import Session, SessionTree
 
 
-def test_session_tree_creation():
+def test_session_tree_creation() -> None:
     """Test creating a session tree."""
     tree = SessionTree()
     assert len(tree.entries) == 0
@@ -11,7 +13,7 @@ def test_session_tree_creation():
     assert tree.root_id is None
 
 
-def test_session_tree_add_entry():
+def test_session_tree_add_entry() -> None:
     """Test adding entries to tree."""
     tree = SessionTree()
 
@@ -25,7 +27,7 @@ def test_session_tree_add_entry():
     assert tree.current_id == entry2.id
 
 
-def test_session_tree_get_path():
+def test_session_tree_get_path() -> None:
     """Test getting path to entry."""
     tree = SessionTree()
 
@@ -40,7 +42,7 @@ def test_session_tree_get_path():
     assert path[2].id == e3.id
 
 
-def test_session_tree_branching():
+def test_session_tree_branching() -> None:
     """Test branching in tree."""
     tree = SessionTree()
 
@@ -60,7 +62,7 @@ def test_session_tree_branching():
     assert len(children) == 2
 
 
-def test_session_tree_jsonl():
+def test_session_tree_jsonl() -> None:
     """Test JSONL export/import."""
     tree = SessionTree()
 
@@ -77,14 +79,14 @@ def test_session_tree_jsonl():
     assert len(loaded.entries) == len(tree.entries)
 
 
-def test_session_creation():
+def test_session_creation() -> None:
     """Test creating a session."""
     session = Session(name="test", workspace="/tmp")
     assert session.name == "test"
     assert len(session.tree.entries) == 0
 
 
-def test_session_add_message():
+def test_session_add_message() -> None:
     """Test adding messages to session."""
     session = Session(name="test", auto_save=False)
 
@@ -93,7 +95,7 @@ def test_session_add_message():
     assert len(session.tree.entries) == 1
 
 
-def test_session_get_current_conversation():
+def test_session_get_current_conversation() -> None:
     """Test getting current conversation."""
     session = Session(name="test", auto_save=False)
 
@@ -105,7 +107,7 @@ def test_session_get_current_conversation():
     assert len(conversation) == 3
 
 
-def test_session_branch():
+def test_session_branch() -> None:
     """Test branching in session."""
     session = Session(name="test", auto_save=False)
 
@@ -119,7 +121,7 @@ def test_session_branch():
     assert e3.parent_id == e1.id
 
 
-def test_session_fork():
+def test_session_fork() -> None:
     """Test forking a session."""
     session = Session(name="original", auto_save=False)
 
@@ -134,7 +136,7 @@ def test_session_fork():
     assert len(fork.tree.entries) == 2  # Only up to e2
 
 
-def test_session_compact():
+def test_session_compact() -> None:
     """Test session compaction."""
     session = Session(name="test", auto_save=False)
 
@@ -152,7 +154,7 @@ def test_session_compact():
     assert any("Compacted" in e.content for e in compacted)
 
 
-def test_session_save_load(tmp_path):
+def test_session_save_load(tmp_path: Any) -> None:
     """Test saving and loading session."""
     session = Session(name="test", workspace=str(tmp_path), auto_save=False)
 
@@ -169,7 +171,7 @@ def test_session_save_load(tmp_path):
     assert len(loaded.tree.entries) == 2
 
 
-def test_session_get_info():
+def test_session_get_info() -> None:
     """Test getting session info."""
     session = Session(name="test", auto_save=False)
 
@@ -181,7 +183,7 @@ def test_session_get_info():
     assert "created_at" in info
 
 
-def test_session_save_uses_session_id_in_filename_when_name_reused(tmp_path):
+def test_session_save_uses_session_id_in_filename_when_name_reused(tmp_path: Any) -> None:
     session1 = Session(name="shared-name", workspace=str(tmp_path), auto_save=False)
     session2 = Session(name="shared-name", workspace=str(tmp_path), auto_save=False)
 
@@ -193,7 +195,7 @@ def test_session_save_uses_session_id_in_filename_when_name_reused(tmp_path):
     assert path2.exists()
 
 
-def test_session_save_uses_env_session_dir(tmp_path, monkeypatch):
+def test_session_save_uses_env_session_dir(tmp_path: Any, monkeypatch: Any) -> None:
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     session_dir = tmp_path / "custom-sessions"
@@ -206,7 +208,9 @@ def test_session_save_uses_env_session_dir(tmp_path, monkeypatch):
     assert path.exists()
 
 
-def test_session_load_preserves_workspace_from_header_with_env_session_dir(tmp_path, monkeypatch):
+def test_session_load_preserves_workspace_from_header_with_env_session_dir(
+    tmp_path: Any, monkeypatch: Any
+) -> None:
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     session_dir = tmp_path / "custom-sessions"
@@ -221,7 +225,7 @@ def test_session_load_preserves_workspace_from_header_with_env_session_dir(tmp_p
     assert loaded.workspace == workspace
 
 
-def test_session_save_uses_explicit_session_dir_over_env(tmp_path, monkeypatch):
+def test_session_save_uses_explicit_session_dir_over_env(tmp_path: Any, monkeypatch: Any) -> None:
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     env_session_dir = tmp_path / "env-sessions"
@@ -239,7 +243,7 @@ def test_session_save_uses_explicit_session_dir_over_env(tmp_path, monkeypatch):
     assert path.parent == explicit_session_dir
 
 
-def test_session_save_uses_full_explicit_session_id_in_filename(tmp_path):
+def test_session_save_uses_full_explicit_session_id_in_filename(tmp_path: Any) -> None:
     session = Session(name="shared-name", workspace=str(tmp_path), auto_save=False)
     session.id = "manual-session-id"
 
@@ -248,7 +252,7 @@ def test_session_save_uses_full_explicit_session_id_in_filename(tmp_path):
     assert path.name == "shared-name-manual-session-id.jsonl"
 
 
-def test_session_save_preserves_loaded_legacy_path(tmp_path):
+def test_session_save_preserves_loaded_legacy_path(tmp_path: Any) -> None:
     legacy_path = tmp_path / ".sessions" / "legacy-name.jsonl"
     legacy_path.parent.mkdir()
 
@@ -267,7 +271,7 @@ def test_session_save_preserves_loaded_legacy_path(tmp_path):
     assert legacy_path.exists()
 
 
-def test_reload_after_compaction_restores_exact_tip(tmp_path):
+def test_reload_after_compaction_restores_exact_tip(tmp_path: Any) -> None:
     """A compacted session must reload to its real tip, not a stale branch leaf.
 
     Reload previously inferred current_id from the max-timestamp leaf, which

@@ -1,6 +1,7 @@
 """WhatsApp bot example with webhook server."""
 
 import os
+from typing import Any
 
 import uvicorn
 from fastapi import FastAPI, Request
@@ -18,7 +19,7 @@ def get_time() -> str:
     return datetime.now().strftime("%H:%M:%S")
 
 
-def create_whatsapp_bot():
+def create_whatsapp_bot() -> Any:
     """Create WhatsApp bot with webhook."""
 
     # Get credentials
@@ -54,19 +55,19 @@ def create_whatsapp_bot():
     app = FastAPI()
 
     @app.get("/webhook")
-    async def verify(request: Request):
+    async def verify(request: Request) -> Any:
         """Webhook verification."""
         mode = request.query_params.get("hub.mode")
         token = request.query_params.get("hub.verify_token")
         challenge = request.query_params.get("hub.challenge")
 
-        if mode == "subscribe" and token == verify_token:
+        if mode == "subscribe" and token == verify_token and challenge is not None:
             return int(challenge)
 
         return {"error": "Invalid verification token"}, 403
 
     @app.post("/webhook")
-    async def webhook(request: Request):
+    async def webhook(request: Request) -> Any:
         """Receive WhatsApp messages."""
         payload = await request.json()
 
@@ -78,7 +79,7 @@ def create_whatsapp_bot():
     return bot, app
 
 
-def main():
+def main() -> None:
     """Run WhatsApp bot with webhook server."""
 
     print("=" * 60)

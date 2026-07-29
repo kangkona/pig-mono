@@ -25,7 +25,7 @@ APP_SECRET = os.environ["FEISHU_APP_SECRET"]
 CHAT_ID = os.environ["FEISHU_TEST_CHAT_ID"]
 
 
-async def main():
+async def main() -> None:
     adapter = FeishuAdapter(app_id=APP_ID, app_secret=APP_SECRET)
 
     # 1. Send placeholder card

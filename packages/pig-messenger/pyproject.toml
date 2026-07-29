@@ -39,6 +39,7 @@ slack = [
 ]
 discord = [
     "discord.py>=2.3.0",
+    "cryptography>=41.0.0",
 ]
 whatsapp = [
     "whatsapp-cloud-api>=0.0.4",

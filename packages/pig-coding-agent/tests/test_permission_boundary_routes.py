@@ -5,6 +5,7 @@ from __future__ import annotations
 import io
 import json
 from types import SimpleNamespace
+from typing import Any, cast
 from unittest.mock import Mock, patch
 
 import click
@@ -14,6 +15,7 @@ from pig_agent_core.tools import Tool
 from pig_coding_agent import CodingAgent, create_agent_session, permissions
 from pig_coding_agent.cli import analyze, gen, main, run_json_mode, run_rpc_mode
 from pig_coding_agent.permissions import PermissionPolicy
+from pig_llm import LLM
 
 CLI_EXIT_EXCEPTIONS = (typer.Exit, click.exceptions.Exit, SystemExit)
 DENIAL_TEXT = f"{permissions.PERMISSION_DENIED_CODE}: {permissions.UNATTENDED_PERMISSION_DENIAL}"
@@ -22,13 +24,13 @@ DENIAL_TEXT = f"{permissions.PERMISSION_DENIED_CODE}: {permissions.UNATTENDED_PE
 class ToolCallingLLM:
     """Request one tool call, then return model text that must not mask denial."""
 
-    def __init__(self, tool_name: str, arguments: dict[str, str]) -> None:
+    def __init__(self: Any, tool_name: str, arguments: dict[str, str]) -> None:
         self.config = SimpleNamespace(model="test-model", provider="openai")
         self.tool_name = tool_name
         self.arguments = arguments
         self.calls = 0
 
-    def chat(self, messages, tools=None):
+    def chat(self: Any, messages: Any, tools: Any = None) -> Any:
         self.calls += 1
         if self.calls == 1:
             return SimpleNamespace(
@@ -46,9 +48,9 @@ class ToolCallingLLM:
         return SimpleNamespace(content="model tried to hide the denial", tool_calls=None)
 
 
-def _agent(tmp_path, llm: ToolCallingLLM) -> CodingAgent:
+def _agent(tmp_path: Any, llm: ToolCallingLLM) -> CodingAgent:
     return CodingAgent(
-        llm=llm,
+        llm=cast(LLM, llm),
         workspace=str(tmp_path),
         session_dir=tmp_path / "sessions",
         verbose=False,
@@ -69,7 +71,9 @@ def _expected_denial(action: str, target: str) -> dict[str, str]:
     }
 
 
-def test_json_route_emits_structured_write_denial_without_writing(tmp_path, monkeypatch):
+def test_json_route_emits_structured_write_denial_without_writing(
+    tmp_path: Any, monkeypatch: Any
+) -> None:
     blocked = tmp_path / "json-blocked.txt"
     agent = _agent(
         tmp_path,
@@ -98,7 +102,9 @@ def test_json_route_emits_structured_write_denial_without_writing(tmp_path, monk
     assert not blocked.exists()
 
 
-def test_rpc_complete_returns_structured_command_denial_without_running(tmp_path, monkeypatch):
+def test_rpc_complete_returns_structured_command_denial_without_running(
+    tmp_path: Any, monkeypatch: Any
+) -> None:
     blocked = tmp_path / "rpc-blocked.txt"
     command = f"touch {blocked}"
     agent = _agent(tmp_path, ToolCallingLLM("run_command", {"command": command}))
@@ -118,7 +124,9 @@ def test_rpc_complete_returns_structured_command_denial_without_running(tmp_path
     assert not blocked.exists()
 
 
-def test_piped_stdin_prints_stable_command_denial_without_running(tmp_path, monkeypatch):
+def test_piped_stdin_prints_stable_command_denial_without_running(
+    tmp_path: Any, monkeypatch: Any
+) -> None:
     blocked = tmp_path / "pipe-blocked.txt"
     command = f"touch {blocked}"
     llm = ToolCallingLLM("run_command", {"command": command})
@@ -154,7 +162,9 @@ def test_piped_stdin_prints_stable_command_denial_without_running(tmp_path, monk
     assert not blocked.exists()
 
 
-def test_gen_denies_model_write_and_does_not_create_explicit_output(tmp_path, monkeypatch):
+def test_gen_denies_model_write_and_does_not_create_explicit_output(
+    tmp_path: Any, monkeypatch: Any
+) -> None:
     blocked = tmp_path / "gen-blocked.txt"
     explicit_output = tmp_path / "generated.py"
     llm = ToolCallingLLM(
@@ -178,7 +188,7 @@ def test_gen_denies_model_write_and_does_not_create_explicit_output(tmp_path, mo
     assert not explicit_output.exists()
 
 
-def test_analyze_denies_model_command_without_running(tmp_path, monkeypatch):
+def test_analyze_denies_model_command_without_running(tmp_path: Any, monkeypatch: Any) -> None:
     blocked = tmp_path / "analyze-blocked.txt"
     command = f"touch {blocked}"
     source = tmp_path / "source.py"
@@ -200,7 +210,7 @@ def test_analyze_denies_model_command_without_running(tmp_path, monkeypatch):
     assert not blocked.exists()
 
 
-def test_sdk_prompt_result_denies_extension_edit_with_machine_data(tmp_path):
+def test_sdk_prompt_result_denies_extension_edit_with_machine_data(tmp_path: Any) -> None:
     blocked = tmp_path / "sdk-blocked.txt"
     calls: list[str] = []
     llm = ToolCallingLLM(
@@ -210,7 +220,7 @@ def test_sdk_prompt_result_denies_extension_edit_with_machine_data(tmp_path):
     runtime = create_agent_session(
         workspace=tmp_path,
         session_dir=tmp_path / "sessions",
-        llm=llm,
+        llm=cast(LLM, llm),
         verbose=False,
         enable_extensions=False,
         enable_skills=False,
@@ -231,14 +241,17 @@ def test_sdk_prompt_result_denies_extension_edit_with_machine_data(tmp_path):
     assert not blocked.exists()
 
 
-def test_sdk_prompt_returns_stable_write_denial_text(tmp_path):
+def test_sdk_prompt_returns_stable_write_denial_text(tmp_path: Any) -> None:
     blocked = tmp_path / "sdk-prompt-blocked.txt"
     runtime = create_agent_session(
         workspace=tmp_path,
         session_dir=tmp_path / "sessions",
-        llm=ToolCallingLLM(
-            "write_file",
-            {"path": blocked.name, "content": "must not be written"},
+        llm=cast(
+            LLM,
+            ToolCallingLLM(
+                "write_file",
+                {"path": blocked.name, "content": "must not be written"},
+            ),
         ),
         verbose=False,
         enable_extensions=False,

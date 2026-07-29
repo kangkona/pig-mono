@@ -1,6 +1,7 @@
 """Tests for messenger store interfaces and utilities."""
 
 import time
+from typing import Any
 
 import pytest
 from cryptography.fernet import Fernet
@@ -14,7 +15,7 @@ from pig_messenger.stores import (
 )
 
 
-def test_ttl_cache_get_set():
+def test_ttl_cache_get_set() -> None:
     """Test TTLCache get and set."""
     cache = _TTLCache()
 
@@ -25,7 +26,7 @@ def test_ttl_cache_get_set():
     assert cache.get("key2") is None
 
 
-def test_ttl_cache_expiry():
+def test_ttl_cache_expiry() -> None:
     """Test TTLCache expiry."""
     cache = _TTLCache()
 
@@ -37,7 +38,7 @@ def test_ttl_cache_expiry():
     assert cache.get("key1") is None
 
 
-def test_ttl_cache_pop():
+def test_ttl_cache_pop() -> None:
     """Test TTLCache pop."""
     cache = _TTLCache()
 
@@ -52,7 +53,7 @@ def test_ttl_cache_pop():
     assert cache.pop("key2") is None
 
 
-def test_ttl_cache_keys_with_prefix():
+def test_ttl_cache_keys_with_prefix() -> None:
     """Test TTLCache keys_with_prefix."""
     cache = _TTLCache()
 
@@ -66,7 +67,7 @@ def test_ttl_cache_keys_with_prefix():
     assert "user:2" in keys
 
 
-def test_ttl_cache_delete_matching():
+def test_ttl_cache_delete_matching() -> None:
     """Test TTLCache delete_matching."""
     cache = _TTLCache()
 
@@ -85,7 +86,7 @@ def test_ttl_cache_delete_matching():
     assert cache.get("session:1") == "data3"
 
 
-def test_encrypt_decrypt_value():
+def test_encrypt_decrypt_value() -> None:
     """Test encrypt and decrypt utilities."""
     # Generate a key
     key = Fernet.generate_key().decode()
@@ -101,7 +102,7 @@ def test_encrypt_decrypt_value():
     assert decrypted == value
 
 
-def test_encrypt_decrypt_with_env(monkeypatch):
+def test_encrypt_decrypt_with_env(monkeypatch: Any) -> None:
     """Test encrypt/decrypt using env var."""
     key = Fernet.generate_key().decode()
     monkeypatch.setenv("MESSENGER_ENCRYPTION_KEY", key)
@@ -113,31 +114,31 @@ def test_encrypt_decrypt_with_env(monkeypatch):
     assert decrypted == value
 
 
-def test_encrypt_no_key():
+def test_encrypt_no_key() -> None:
     """Test encrypt without key raises error."""
     with pytest.raises(ValueError, match="MESSENGER_ENCRYPTION_KEY not set"):
         encrypt_value("value")
 
 
-def test_decrypt_no_key():
+def test_decrypt_no_key() -> None:
     """Test decrypt without key raises error."""
     with pytest.raises(ValueError, match="MESSENGER_ENCRYPTION_KEY not set"):
         decrypt_value("encrypted")
 
 
-def test_workspace_already_claimed_error():
+def test_workspace_already_claimed_error() -> None:
     """Test WorkspaceAlreadyClaimedError."""
     error = WorkspaceAlreadyClaimedError("Workspace claimed")
     assert str(error) == "Workspace claimed"
 
 
-def test_credential_store_interface():
+def test_credential_store_interface() -> None:
     """Test CredentialStore is abstract."""
     with pytest.raises(TypeError):
         CredentialStore()  # type: ignore
 
 
-def test_connection_store_interface():
+def test_connection_store_interface() -> None:
     """Test ConnectionStore is abstract."""
     with pytest.raises(TypeError):
         ConnectionStore()  # type: ignore

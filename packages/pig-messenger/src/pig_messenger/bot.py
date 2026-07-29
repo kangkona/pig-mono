@@ -36,7 +36,7 @@ class MessengerBot:
         self.workspace.mkdir(exist_ok=True)
 
         self.platforms: dict[str, MessagePlatform] = {}
-        self.session_manager = None
+        self.session_manager: MultiPlatformSessionManager | None = None
 
         if enable_sessions:
             self.session_manager = MultiPlatformSessionManager(self.workspace)
@@ -90,7 +90,8 @@ class MessengerBot:
             session = None
             if self.session_manager:
                 session = self.session_manager.get_session(message.platform, message.channel_id)
-                session.add_message("user", message.text)
+                if session:
+                    session.add_message("user", message.text)
 
             response = self.agent.run(message.text)
 
@@ -134,7 +135,8 @@ class MessengerBot:
         session = None
         if self.session_manager:
             session = self.session_manager.get_session(message.platform, message.channel_id)
-            session.add_message("user", message.text)
+            if session:
+                session.add_message("user", message.text)
 
         try:
             # 1. Send placeholder card

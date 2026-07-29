@@ -59,7 +59,7 @@ class KeyValueList(RenderableView, Component):
 
 
 @dataclass
-class SelectListView(RenderableView, Component, Focusable):
+class SelectListView(RenderableView, Focusable):
     """Minimal selectable list view for higher-level application selectors."""
 
     items: list[tuple[str, str | None]]
@@ -106,7 +106,7 @@ class SelectListView(RenderableView, Component, Focusable):
 
 
 @dataclass(init=False)
-class TreeListView(RenderableView, Component, Focusable):
+class TreeListView(RenderableView, Focusable):
     """Tree-aware selectable list view for history/browser interactions."""
 
     items: list[TreeOption]
@@ -231,7 +231,7 @@ class TreeChromeView(RenderableView, Component):
 
 
 @dataclass
-class TextEditorView(RenderableView, Component, Focusable):
+class TextEditorView(RenderableView, Focusable):
     """Minimal runtime-owned editor view for short text input flows."""
 
     state: TextEditorState
@@ -358,7 +358,7 @@ class ChoiceEditorContainer(Container):
 class SelectionActionContainer(Container):
     """Container combining a selector and action list into one browser-style flow."""
 
-    selector: SelectListView
+    selector: SelectListView | TreeListView
     actions: SelectListView
     action_title: str = "Actions"
     selected_index: int = 0

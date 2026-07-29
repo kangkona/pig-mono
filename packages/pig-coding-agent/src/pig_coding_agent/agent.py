@@ -2,6 +2,7 @@
 
 import inspect
 import os
+from collections.abc import Callable
 from dataclasses import dataclass
 from functools import wraps
 from pathlib import Path
@@ -21,11 +22,11 @@ from pig_agent_core.tools import Tool, ToolResult
 from pig_llm import LLM, Message
 
 from .app_actions import AppActions
-from .billing import CostTracker
+from .billing import CostTracker, CostTrackerBillingHook
 from .config import ConfigManager
 from .file_reference import FileReferenceParser
 from .interaction_catalog import InteractionCatalog
-from .interaction_runtime import InteractionRuntime
+from .interaction_runtime import InteractionRuntime, InteractionUI
 from .interactive_mode import InteractiveMode
 from .permissions import (
     SIDE_EFFECTFUL_TOOL_NAMES,
@@ -138,7 +139,7 @@ class CodingAgent:
         project_trust_decider: ProjectTrustDecider | None = None,
         project_trust_store: ProjectTrustStore | None = None,
         unattended_project_trust: bool = True,
-    ):
+    ) -> None:
         """Initialize coding agent.
 
         Args:
@@ -176,6 +177,8 @@ class CodingAgent:
         self.excluded_tools = set(excluded_tools or set())
         self.permission_policy = permission_policy or self._build_interactive_permission_policy()
         self._extensions_shutdown_done = False
+        self._protocol_shutdown: Callable[[str], None] | None = None
+        self._protocol_shutdown_emitted = False
         self.config_manager = ConfigManager(
             self.workspace,
             project_trusted=self.project_trusted,
@@ -202,8 +205,10 @@ class CodingAgent:
 
         # Initialize cost tracking
         self.cost_tracker = None
+        self.billing_hook = None
         if enable_cost_tracking:
             self.cost_tracker = CostTracker(self.workspace)
+            self.billing_hook = CostTrackerBillingHook(self.cost_tracker)
             if verbose:
                 print("✓ Cost tracking enabled")
 
@@ -245,10 +250,12 @@ class CodingAgent:
             verbose=verbose,
             profile_manager=self.profile_manager,
             compress_fn=self._compress_overflow_messages,
-            billing_hook=self.cost_tracker,
+            billing_hook=self.billing_hook,
             # No iteration cap (pi-mono parity): turns run until natural
             # completion, a terminate tool result, or user abort (Esc/Ctrl-C).
             max_rounds=0,
+            session=self.session,
+            tool_adapter=self._prepare_tool,
         )
 
         # Register the coding tools on the agent's registry, then drop any tools
@@ -258,10 +265,8 @@ class CodingAgent:
         for name in self.excluded_tools:
             self.agent.registry.unregister(name)
 
-        self.agent.session = self.session
         if hasattr(self.session, "usage_ledger"):
             self.agent.usage = self.session.usage_ledger
-        self.agent.add_tool = self.add_tool
 
         # When resuming/forking an existing session at startup, replay its
         # conversation into the agent's LLM context so the model continues with
@@ -356,7 +361,7 @@ class CodingAgent:
 
         return self._new_session(session_name or "coding-session", session_id=session_id)
 
-    def _load_extensions(self):
+    def _load_extensions(self) -> None:
         """Load extensions from standard directories."""
         if not self.extension_manager:
             return
@@ -392,8 +397,8 @@ class CodingAgent:
             print(f"✓ Loaded {len(manager)} prompt templates")
         return manager
 
-    def _skill_paths(self) -> list[Path]:
-        paths = [
+    def _skill_paths(self) -> list[Path | str]:
+        paths: list[Path | str] = [
             Path.home() / ".agents" / "skills",
             Path.home() / ".pi" / "agent" / "skills",
         ]
@@ -436,9 +441,13 @@ class CodingAgent:
 
     def add_tool(self, tool: Tool) -> None:
         """Register a tool unless it is excluded for this agent instance."""
+        self.agent.add_tool(tool)
+
+    def _prepare_tool(self, tool: Tool) -> Tool | None:
+        """Apply exclusions and permission guards to host-provided tools."""
         if tool.name in self.excluded_tools:
-            return
-        Agent.add_tool(self.agent, self._guard_extension_tool(tool))
+            return None
+        return self._guard_extension_tool(tool)
 
     def _guard_extension_tool(self, tool: Tool) -> Tool:
         """Apply the agent policy to side-effectful extension tool names."""
@@ -493,11 +502,12 @@ class CodingAgent:
         return Tool(guarded, **tool_kwargs)
 
     @property
-    def ui(self):
+    def ui(self) -> InteractionUI:
+        assert self.interaction_runtime.ui is not None
         return self.interaction_runtime.ui
 
     @ui.setter
-    def ui(self, value) -> None:
+    def ui(self, value: InteractionUI) -> None:
         self.interaction_runtime.set_ui(value)
         if hasattr(self, "agent"):
             self.agent.ui = value
@@ -547,8 +557,8 @@ You can:
 
         def confirm(request: PermissionRequest) -> bool:
             question = f"Allow {request.action} on {request.target}?"
-            runtime = getattr(self, "interaction_runtime", None)
-            if runtime is None:
+            runtime = self.__dict__.get("interaction_runtime")
+            if not isinstance(runtime, InteractionRuntime):
                 return False
             terminal_runtime = runtime._build_terminal_runtime()
             return terminal_runtime.confirm(question, default=False)

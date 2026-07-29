@@ -1,24 +1,26 @@
 """Tests for context management."""
 
+from typing import Any
+
 import pytest
 from pig_agent_core.context import ContextManager
 
 
 @pytest.fixture
-def temp_workspace(tmp_path):
+def temp_workspace(tmp_path: Any) -> Any:
     """Create temporary workspace."""
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     return workspace
 
 
-def test_context_manager_creation(temp_workspace):
+def test_context_manager_creation(temp_workspace: Any) -> None:
     """Test creating context manager."""
     ctx = ContextManager(temp_workspace)
     assert ctx.workspace == temp_workspace
 
 
-def test_find_agents_md(temp_workspace):
+def test_find_agents_md(temp_workspace: Any) -> None:
     """Test finding AGENTS.md files."""
     ctx = ContextManager(temp_workspace)
 
@@ -34,7 +36,7 @@ def test_find_agents_md(temp_workspace):
     assert len(files) >= 1
 
 
-def test_load_agents_md(temp_workspace):
+def test_load_agents_md(temp_workspace: Any) -> None:
     """Test loading AGENTS.md."""
     ctx = ContextManager(temp_workspace)
 
@@ -45,7 +47,7 @@ def test_load_agents_md(temp_workspace):
     assert "Project" in content
 
 
-def test_load_system_md(temp_workspace):
+def test_load_system_md(temp_workspace: Any) -> None:
     """Test loading SYSTEM.md."""
     ctx = ContextManager(temp_workspace)
 
@@ -55,7 +57,7 @@ def test_load_system_md(temp_workspace):
     assert content == "Custom system prompt"
 
 
-def test_load_append_system_md(temp_workspace):
+def test_load_append_system_md(temp_workspace: Any) -> None:
     """Test loading APPEND_SYSTEM.md."""
     ctx = ContextManager(temp_workspace)
 
@@ -65,7 +67,7 @@ def test_load_append_system_md(temp_workspace):
     assert content == "Additional instructions"
 
 
-def test_build_system_prompt_default(temp_workspace):
+def test_build_system_prompt_default(temp_workspace: Any) -> None:
     """Test building system prompt with no overrides."""
     ctx = ContextManager(temp_workspace)
 
@@ -75,7 +77,7 @@ def test_build_system_prompt_default(temp_workspace):
     assert result == default
 
 
-def test_build_system_prompt_with_override(temp_workspace):
+def test_build_system_prompt_with_override(temp_workspace: Any) -> None:
     """Test system prompt with SYSTEM.md override."""
     ctx = ContextManager(temp_workspace)
 
@@ -88,7 +90,7 @@ def test_build_system_prompt_with_override(temp_workspace):
     assert "Default prompt" not in result
 
 
-def test_build_system_prompt_with_agents_md(temp_workspace):
+def test_build_system_prompt_with_agents_md(temp_workspace: Any) -> None:
     """Test system prompt with AGENTS.md."""
     ctx = ContextManager(temp_workspace)
 
@@ -101,7 +103,7 @@ def test_build_system_prompt_with_agents_md(temp_workspace):
     assert "Project context" in result
 
 
-def test_build_system_prompt_with_append(temp_workspace):
+def test_build_system_prompt_with_append(temp_workspace: Any) -> None:
     """Test system prompt with APPEND_SYSTEM.md."""
     ctx = ContextManager(temp_workspace)
 
@@ -114,7 +116,7 @@ def test_build_system_prompt_with_append(temp_workspace):
     assert "Extra instructions" in result
 
 
-def test_find_context_files_hierarchy(temp_workspace):
+def test_find_context_files_hierarchy(temp_workspace: Any) -> None:
     """Test finding files in hierarchy."""
     ContextManager(temp_workspace)
 

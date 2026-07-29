@@ -1,5 +1,13 @@
 """Terminal UI library with rich formatting."""
 
+from .advanced import (
+    AutoCompleter,
+    FileCompleter,
+    InteractiveTable,
+    MultiSelect,
+    PyCodeCompleter,
+    prompt_with_autocomplete,
+)
 from .chat import ChatUI
 from .components import (
     ChoiceEditorContainer,
@@ -65,23 +73,6 @@ from .views import (
     render_select_panel,
     render_status_message,
 )
-
-try:
-    from .advanced import (
-        AutoCompleter,
-        FileCompleter,
-        InteractiveTable,
-        MultiSelect,
-        PyCodeCompleter,
-        prompt_with_autocomplete,
-    )
-except ImportError:
-    AutoCompleter = None
-    FileCompleter = None
-    InteractiveTable = None
-    MultiSelect = None
-    PyCodeCompleter = None
-    prompt_with_autocomplete = None
 
 __version__ = "0.1.1"
 

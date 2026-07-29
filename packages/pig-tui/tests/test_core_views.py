@@ -1,5 +1,6 @@
 """Tests for framework-level pig-tui core abstractions and reusable views."""
 
+from typing import Any, cast
 from unittest.mock import Mock
 
 from pig_tui.components import (
@@ -38,14 +39,14 @@ from pig_tui.views import (
 )
 
 
-def test_text_block_is_renderable_view():
+def test_text_block_is_renderable_view() -> None:
     block = TextBlock("hello")
 
     assert isinstance(block, RenderableView)
     assert block.render_lines(40) == ["hello"]
 
 
-def test_key_value_list_renders_pairs_compactly():
+def test_key_value_list_renders_pairs_compactly() -> None:
     view = KeyValueList([("Model", "gpt-4"), ("Tools", "4")])
 
     lines = view.render_lines(80)
@@ -54,7 +55,7 @@ def test_key_value_list_renders_pairs_compactly():
     assert any("Tools" in line and "4" in line for line in lines)
 
 
-def test_select_list_view_tracks_selection_and_renders_cursor():
+def test_select_list_view_tracks_selection_and_renders_cursor() -> None:
     view = SelectListView(
         [
             ("session-a", "recent session"),
@@ -70,7 +71,7 @@ def test_select_list_view_tracks_selection_and_renders_cursor():
     assert view.selected_value() == "session-b"
 
 
-def test_select_list_view_is_focusable_component():
+def test_select_list_view_is_focusable_component() -> None:
     view = SelectListView([("session-a", None)])
     assert isinstance(view, Focusable)
     assert is_focusable(view) is True
@@ -79,7 +80,7 @@ def test_select_list_view_is_focusable_component():
     assert view.render(80)[0].startswith("=> ")
 
 
-def test_text_editor_view_is_focusable_component():
+def test_text_editor_view_is_focusable_component() -> None:
     view = TextEditorView(TextEditorState(title="Rename", value="session-a", note="Edit me"))
 
     assert isinstance(view, Focusable)
@@ -92,7 +93,7 @@ def test_text_editor_view_is_focusable_component():
     assert any("Edit me" in line for line in lines)
 
 
-def test_confirm_view_is_focusable_component():
+def test_confirm_view_is_focusable_component() -> None:
     view = ConfirmView("Allow delete?", default=False)
 
     assert isinstance(view, Focusable) is False
@@ -103,7 +104,7 @@ def test_confirm_view_is_focusable_component():
     assert "Allow delete?" in lines[0]
 
 
-def test_choice_editor_container_renders_selector_and_editor_sections():
+def test_choice_editor_container_renders_selector_and_editor_sections() -> None:
     selector = SelectListView([("opt-a", "first"), ("opt-b", "second")])
     editor = TextEditorView(TextEditorState(title="Edit", value="value", note="note"))
     container = ChoiceEditorContainer(
@@ -118,7 +119,7 @@ def test_choice_editor_container_renders_selector_and_editor_sections():
     assert "value" in sections[1]
 
 
-def test_choice_editor_container_satisfies_container_protocol():
+def test_choice_editor_container_satisfies_container_protocol() -> None:
     selector = SelectListView([("opt-a", "first"), ("opt-b", "second")])
     editor = TextEditorView(TextEditorState(title="Edit", value="value", note="note"))
     container = ChoiceEditorContainer(
@@ -131,7 +132,7 @@ def test_choice_editor_container_satisfies_container_protocol():
     assert editor.focused is True
 
 
-def test_selection_action_container_renders_selector_and_action_sections():
+def test_selection_action_container_renders_selector_and_action_sections() -> None:
     selector = SelectListView([("entry-a", "current"), ("entry-b", "older")])
     actions = SelectListView([("Switch branch", None), ("Label entry", None)])
     container = SelectionActionContainer(
@@ -147,7 +148,7 @@ def test_selection_action_container_renders_selector_and_action_sections():
     assert "Switch branch" in sections[1]
 
 
-def test_selection_action_container_satisfies_container_protocol():
+def test_selection_action_container_satisfies_container_protocol() -> None:
     selector = SelectListView([("entry-a", "current")])
     actions = SelectListView([("Switch branch", None), ("Label entry", None)])
     container = SelectionActionContainer(
@@ -161,7 +162,7 @@ def test_selection_action_container_satisfies_container_protocol():
     assert actions.focused is True
 
 
-def test_tree_list_view_renders_depth_and_state_markers():
+def test_tree_list_view_renders_depth_and_state_markers() -> None:
     view = TreeListView(
         [
             TreeOption("root", "root", "tip", depth=0, is_branch_point=True),
@@ -178,7 +179,7 @@ def test_tree_list_view_renders_depth_and_state_markers():
     assert lines[1].startswith("=> ")
 
 
-def test_tree_browser_container_renders_scope_anchor_and_actions():
+def test_tree_browser_container_renders_scope_anchor_and_actions() -> None:
     selector = TreeListView(
         [
             TreeOption("root", "root", "tip", depth=0, is_branch_point=True),
@@ -230,34 +231,34 @@ def test_tree_browser_container_renders_scope_anchor_and_actions():
     assert "Path: 2" in sections[2]
 
 
-def test_tree_browser_state_default_scope_is_all():
+def test_tree_browser_state_default_scope_is_all() -> None:
     state = TreeBrowserState()
 
     assert state.scope == "all"
 
 
-def test_tree_browser_state_defaults_selected_to_current():
+def test_tree_browser_state_defaults_selected_to_current() -> None:
     state = TreeBrowserState(current_entry_id="current-1")
 
     assert state.current_entry_id == "current-1"
     assert state.selected_entry_id == "current-1"
 
 
-def test_tree_browser_state_defaults_anchor_to_selected_for_scoped_browser():
+def test_tree_browser_state_defaults_anchor_to_selected_for_scoped_browser() -> None:
     state = TreeBrowserState(scope="children", selected_entry_id="entry-1")
 
     assert state.anchor_entry_id == "entry-1"
     assert state.selected_entry_id == "entry-1"
 
 
-def test_tree_browser_state_requires_anchor_for_scoped_browser():
+def test_tree_browser_state_requires_anchor_for_scoped_browser() -> None:
     import pytest
 
     with pytest.raises(ValueError, match="anchor_entry_id"):
         TreeBrowserState(scope="children", selected_entry_id=None, current_entry_id=None)
 
 
-def test_tree_browser_state_preserves_explicit_selected_entry():
+def test_tree_browser_state_preserves_explicit_selected_entry() -> None:
     state = TreeBrowserState(
         scope="siblings",
         current_entry_id="current-1",
@@ -270,7 +271,7 @@ def test_tree_browser_state_preserves_explicit_selected_entry():
     assert state.anchor_entry_id == "anchor-3"
 
 
-def test_tree_browser_state_preserves_explicit_anchor_when_selected_changes():
+def test_tree_browser_state_preserves_explicit_anchor_when_selected_changes() -> None:
     state = TreeBrowserState(
         scope="siblings",
         current_entry_id="current-1",
@@ -282,7 +283,7 @@ def test_tree_browser_state_preserves_explicit_anchor_when_selected_changes():
     assert state.anchor_entry_id == "anchor-3"
 
 
-def test_tree_browser_state_derives_legacy_chrome_from_structured_state():
+def test_tree_browser_state_derives_legacy_chrome_from_structured_state() -> None:
     state = TreeBrowserState(
         scope="siblings",
         selected_entry_id="entry-2",
@@ -316,7 +317,7 @@ def test_tree_browser_state_derives_legacy_chrome_from_structured_state():
     )
 
 
-def test_tree_option_derives_detail_rows_from_detail_state():
+def test_tree_option_derives_detail_rows_from_detail_state() -> None:
     option = TreeOption(
         value="child-1",
         label="child",
@@ -342,7 +343,7 @@ def test_tree_option_derives_detail_rows_from_detail_state():
     )
 
 
-def test_tree_option_detail_rows_are_derived_when_not_provided():
+def test_tree_option_detail_rows_are_derived_when_not_provided() -> None:
     option = TreeOption(
         value="child-1",
         label="child",
@@ -361,7 +362,7 @@ def test_tree_option_detail_rows_are_derived_when_not_provided():
     assert dict(option.detail_rows)["Path"] == "4"
 
 
-def test_tree_detail_state_rows_include_extra_rows():
+def test_tree_detail_state_rows_include_extra_rows() -> None:
     state = TreeDetailState(
         role="assistant",
         short_id="child123",
@@ -376,7 +377,7 @@ def test_tree_detail_state_rows_include_extra_rows():
     assert state.rows[-1] == ("TokenCost", "$0.0021")
 
 
-def test_tree_detail_view_renders_rows_and_empty_state():
+def test_tree_detail_view_renders_rows_and_empty_state() -> None:
     filled = TreeDetailView(
         state=TreeDetailState(
             role="assistant",
@@ -402,7 +403,7 @@ def test_tree_detail_view_renders_rows_and_empty_state():
     assert empty.render(80) == ["  (empty)"]
 
 
-def test_tree_chrome_view_prefers_selected_entry_path_and_structured_summary():
+def test_tree_chrome_view_prefers_selected_entry_path_and_structured_summary() -> None:
     state = TreeBrowserState(
         scope="children",
         selected_entry_id="child",
@@ -446,16 +447,16 @@ def test_tree_chrome_view_prefers_selected_entry_path_and_structured_summary():
     assert any("Current tip: child123" in line for line in lines)
 
 
-def test_tree_list_view_selected_index_is_read_only_outside_select_index():
+def test_tree_list_view_selected_index_is_read_only_outside_select_index() -> None:
     import pytest
 
     view = TreeListView([TreeOption("child", "child")])
 
     with pytest.raises(AttributeError):
-        view.selected_index = 1
+        cast(Any, view).selected_index = 1
 
 
-def test_tree_browser_container_focus_index_two_returns_detail_view():
+def test_tree_browser_container_focus_index_two_returns_detail_view() -> None:
     selector = TreeListView(
         [
             TreeOption(
@@ -493,7 +494,7 @@ def test_tree_browser_container_focus_index_two_returns_detail_view():
     assert "Details [active]" in sections[2]
 
 
-def test_tree_browser_container_select_index_syncs_detail_and_chrome():
+def test_tree_browser_container_select_index_syncs_detail_and_chrome() -> None:
     selector = TreeListView(
         [
             TreeOption(
@@ -552,7 +553,7 @@ def test_tree_browser_container_select_index_syncs_detail_and_chrome():
     assert "Path: root > child-b" in sections[0]
 
 
-def test_tree_browser_container_does_not_expose_public_sync_detail_helper():
+def test_tree_browser_container_does_not_expose_public_sync_detail_helper() -> None:
     container = TreeBrowserContainer(
         selector=TreeListView([TreeOption("child", "child")]),
         actions=SelectListView([("Switch branch", None)]),
@@ -563,7 +564,7 @@ def test_tree_browser_container_does_not_expose_public_sync_detail_helper():
     assert hasattr(container, "sync_detail") is False
 
 
-def test_render_info_panel_returns_string_for_chatui_panel():
+def test_render_info_panel_returns_string_for_chatui_panel() -> None:
     panel = render_info_panel(
         "Session",
         [("ID", "abc123"), ("Entries", "4")],
@@ -574,13 +575,13 @@ def test_render_info_panel_returns_string_for_chatui_panel():
     assert "abc123" in panel.content
 
 
-def test_render_status_message_formats_prefix():
+def test_render_status_message_formats_prefix() -> None:
     msg = render_status_message("ok", "Started new session")
 
     assert msg == "[ok] Started new session"
 
 
-def test_render_select_panel_composes_list_footer_and_note():
+def test_render_select_panel_composes_list_footer_and_note() -> None:
     panel = render_select_panel(
         "Sessions",
         [("session-a", "recent"), ("session-b", "older")],
@@ -593,7 +594,7 @@ def test_render_select_panel_composes_list_footer_and_note():
     assert "/resume" in panel.content
 
 
-def test_render_bullet_panel_formats_items():
+def test_render_bullet_panel_formats_items() -> None:
     panel = render_bullet_panel("Skills", ["code-review", "debugging"], note="Use /skill:name")
 
     assert "• code-review" in panel.content
@@ -601,7 +602,7 @@ def test_render_bullet_panel_formats_items():
     assert "/skill:name" in panel.content
 
 
-def test_chat_presenter_renders_panel_and_status_via_ui_provider():
+def test_chat_presenter_renders_panel_and_status_via_ui_provider() -> None:
     ui = Mock()
     presenter = ChatPresenter(lambda: ui)
 

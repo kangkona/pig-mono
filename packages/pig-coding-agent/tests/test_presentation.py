@@ -10,7 +10,7 @@ from pig_coding_agent.presentation import (
 )
 
 
-def test_build_help_panel_contains_command_reference():
+def test_build_help_panel_contains_command_reference() -> None:
     panel = build_help_panel()
 
     assert "Help" == panel.title
@@ -19,7 +19,7 @@ def test_build_help_panel_contains_command_reference():
     assert "AGENTS.md" in panel.content
 
 
-def test_build_template_variables_panel_contains_usage_and_example():
+def test_build_template_variables_panel_contains_usage_and_example() -> None:
     panel = build_template_variables_panel("fix-bug", ["issue", "path"])
 
     assert "Template: fix-bug" == panel.title
@@ -27,14 +27,14 @@ def test_build_template_variables_panel_contains_usage_and_example():
     assert '/fix-bug issue="example"' in panel.content
 
 
-def test_build_model_panel_contains_current_selection():
+def test_build_model_panel_contains_current_selection() -> None:
     panel = build_model_panel("openai/gpt-4", "openai", "gpt-4")
 
     assert "Model" == panel.title
     assert "openai/gpt-4" in panel.content
 
 
-def test_build_login_panel_documents_env_var_flow():
+def test_build_login_panel_documents_env_var_flow() -> None:
     panel = build_login_panel()
 
     assert "Login" == panel.title
@@ -42,7 +42,7 @@ def test_build_login_panel_documents_env_var_flow():
     assert "browser-based login flow" in panel.content
 
 
-def test_build_share_panel_contains_gist_fields():
+def test_build_share_panel_contains_gist_fields() -> None:
     panel = build_share_panel({"url": "https://gist.github.com/x", "id": "123", "public": False})
 
     assert "Shared" == panel.title
@@ -50,7 +50,7 @@ def test_build_share_panel_contains_gist_fields():
     assert "123" in panel.content
 
 
-def test_build_queue_panel_separates_steering_and_followup():
+def test_build_queue_panel_separates_steering_and_followup() -> None:
     panel = build_queue_panel(
         ["fix this"],
         ["then add tests"],

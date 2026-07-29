@@ -16,12 +16,22 @@ is not an interactive TTY (piped input, json/rpc modes, unsupported platforms).
 from __future__ import annotations
 
 import asyncio
+import importlib
 import sys
+import threading
 from collections.abc import Callable
+from types import TracebackType
+from typing import Any, Protocol, cast
 
 _ESC = b"\x1b"
 _ENTER = (b"\r", b"\n")
 _BACKSPACE = (b"\x7f", b"\x08")
+
+
+class _WindowsConsole(Protocol):
+    def kbhit(self) -> bool: ...
+
+    def getwch(self) -> str: ...
 
 
 def _longest_common_prefix(items: list[str]) -> str:
@@ -68,13 +78,13 @@ class LiveInputListener:
         self._completions = completions or []
         self._echo = echo
         self._loop: asyncio.AbstractEventLoop | None = None
-        self._thread = None
-        self._stop = None
+        self._thread: threading.Thread | None = None
+        self._stop: threading.Event | None = None
         self._line: list[str] = []
         self._cursor = 0  # insertion index into _line
         # Platform backend, resolved on enter.
         self._fd: int | None = None
-        self._old_termios = None
+        self._old_termios: list[Any] | None = None
         self._active = False
 
     async def __aenter__(self) -> LiveInputListener:
@@ -82,8 +92,6 @@ class LiveInputListener:
             return self  # no-op fallback (Ctrl-C still aborts via Stage-4 handler)
 
         self._loop = asyncio.get_running_loop()
-        import threading
-
         self._stop = threading.Event()
 
         if sys.platform == "win32":
@@ -97,7 +105,12 @@ class LiveInputListener:
             self._thread.start()
         return self
 
-    async def __aexit__(self, *exc) -> None:
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None:
         if not self._active:
             return
         if self._stop is not None:
@@ -126,7 +139,7 @@ class LiveInputListener:
 
     def _start_windows(self) -> bool:
         try:
-            import msvcrt  # noqa: F401
+            importlib.import_module("msvcrt")
 
             return True
         except Exception:
@@ -191,8 +204,9 @@ class LiveInputListener:
                 self._handle_char(char)
 
     def _reader_windows(self) -> None:
-        import msvcrt
         import time
+
+        msvcrt = cast(_WindowsConsole, importlib.import_module("msvcrt"))
 
         # Windows scan-code (after \x00/\xe0) -> navigation action.
         nav = {"K": "left", "M": "right", "G": "home", "O": "end", "S": "delete"}

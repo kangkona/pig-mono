@@ -1,6 +1,7 @@
 """Regression tests for retry budgets and persistent profile failover."""
 
 from types import SimpleNamespace
+from typing import Any, cast
 from unittest.mock import Mock
 
 import pytest
@@ -9,11 +10,17 @@ from pig_agent_core.observability.events import AgentEvent
 from pig_agent_core.resilience.profile import APIProfile, ProfileManager
 from pig_agent_core.resilience.retry import (
     ResilienceExhaustedError,
-    resilient_call,
     resilient_streaming_call,
     resilient_sync_call,
 )
-from pig_llm import Response
+from pig_agent_core.resilience.retry import (
+    resilient_call as _resilient_call,
+)
+from pig_llm import LLM, Message, Response
+
+
+async def resilient_call(llm: object, messages: object, *args: Any, **kwargs: Any) -> Any:
+    return await _resilient_call(cast(LLM, llm), cast(list[Message], messages), *args, **kwargs)
 
 
 class ProfiledLLM:
@@ -23,11 +30,11 @@ class ProfiledLLM:
         self.config = SimpleNamespace(model="model", provider="openai", api_key=key, max_retries=1)
 
     @classmethod
-    def with_profile(cls, llm, *, api_key: str, model: str):
+    def with_profile(cls, llm: Any, *, api_key: str, model: str) -> Any:
         del model
         return cls(api_key, llm.calls)
 
-    async def achat(self, *, messages, **kwargs):
+    async def achat(self, *, messages: Any, **kwargs: Any) -> Any:
         del messages, kwargs
         self.calls[self.key] = self.calls.get(self.key, 0) + 1
         if self.key == "bad":
@@ -41,14 +48,16 @@ async def test_failed_active_identity_recovers_after_cooldown() -> None:
     failures = {"bad": True, "good": False}
 
     class RecoveringLLM(ProfiledLLM):
+        failures: dict[str, bool]
+
         @classmethod
-        def with_profile(cls, llm, *, api_key: str, model: str):
+        def with_profile(cls, llm: Any, *, api_key: str, model: str) -> Any:
             del model
             instance = cls(api_key, llm.calls)
             instance.failures = llm.failures
             return instance
 
-        async def achat(self, *, messages, **kwargs):
+        async def achat(self, *, messages: Any, **kwargs: Any) -> Any:
             del messages, kwargs
             self.calls[self.key] = self.calls.get(self.key, 0) + 1
             if self.failures[self.key]:
@@ -90,11 +99,11 @@ async def test_active_profile_is_not_reused_for_a_different_provider_llm() -> No
             )
 
         @classmethod
-        def with_profile(cls, llm, *, api_key: str, model: str):
+        def with_profile(cls, llm: Any, *, api_key: str, model: str) -> Any:
             constructed.append((llm.config.provider, api_key, model))
             return cls(llm.config.provider, api_key, model)
 
-        async def achat(self, *, messages, **kwargs):
+        async def achat(self, *, messages: Any, **kwargs: Any) -> Any:
             del messages, kwargs
             if self.config.api_key == "untracked-anthropic-key":
                 raise Exception("invalid api key")
@@ -156,12 +165,12 @@ async def test_legacy_unscoped_profile_is_bound_to_its_first_real_provider() -> 
             )
 
         @classmethod
-        def with_profile(cls, llm, *, api_key: str, model: str):
+        def with_profile(cls, llm: Any, *, api_key: str, model: str) -> Any:
             del model
             rotated.append((llm.config.provider, api_key))
             return cls(llm.config.provider, api_key)
 
-        async def achat(self, *, messages, **kwargs):
+        async def achat(self, *, messages: Any, **kwargs: Any) -> Any:
             del messages, kwargs
             executed.append(self.config.provider)
             return Response(content=self.config.provider, model="model")
@@ -206,11 +215,11 @@ async def test_mixed_legacy_profiles_never_rotate_across_an_explicit_provider() 
             )
 
         @classmethod
-        def with_profile(cls, llm, *, api_key: str, model: str):
+        def with_profile(cls, llm: Any, *, api_key: str, model: str) -> Any:
             rotated.append((llm.config.provider, api_key, model))
             return cls()
 
-        async def achat(self, *, messages, **kwargs):
+        async def achat(self, *, messages: Any, **kwargs: Any) -> Any:
             del messages, kwargs
             raise Exception("invalid api key")
 
@@ -276,7 +285,7 @@ async def test_stream_zero_retry_budget_still_attempts_once() -> None:
     calls = 0
     events: list[AgentEvent] = []
 
-    async def fail_stream(*args, **kwargs):
+    async def fail_stream(*args: Any, **kwargs: Any) -> Any:
         nonlocal calls
         del args, kwargs
         calls += 1
@@ -316,7 +325,7 @@ def test_sync_zero_retry_budget_still_attempts_once() -> None:
 async def test_agent_arun_passes_configured_additional_retry_budget() -> None:
     calls = 0
 
-    async def fail_stream(*, messages, **kwargs):
+    async def fail_stream(*, messages: Any, **kwargs: Any) -> Any:
         nonlocal calls
         del messages, kwargs
         calls += 1

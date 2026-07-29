@@ -22,8 +22,9 @@ dependencies = [
 ]
 
 [tool.uv.sources]
-pig-agent-core = { path = "../pig-agent-core", editable = true }
-pig-llm = { path = "../pig-llm", editable = true }
+pig-agent-core = { workspace = true }
+pig-llm = { workspace = true }
+pig-tui = { workspace = true }
 
 [project.urls]
 Homepage = "https://github.com/kangkona/pig-mono"

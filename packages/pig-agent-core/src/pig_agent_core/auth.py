@@ -7,6 +7,7 @@ import webbrowser
 from datetime import datetime, timedelta
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
+from typing import Any
 from urllib.parse import parse_qs, urlencode
 
 from pydantic import BaseModel
@@ -37,9 +38,9 @@ class OAuthProvider(BaseModel):
 class OAuthCallbackHandler(BaseHTTPRequestHandler):
     """HTTP handler for OAuth callback."""
 
-    auth_code = None
+    auth_code: str | None = None
 
-    def do_GET(self):
+    def do_GET(self) -> None:
         """Handle GET request."""
         if self.path.startswith("/callback"):
             # Parse query params
@@ -69,7 +70,7 @@ class OAuthCallbackHandler(BaseHTTPRequestHandler):
             self.send_response(404)
             self.end_headers()
 
-    def log_message(self, format, *args):
+    def log_message(self, format: str, *args: Any) -> None:
         """Suppress log messages."""
         pass
 

@@ -15,6 +15,7 @@ Requirements:
 import asyncio
 import os
 import sys
+from typing import Any
 
 from pig_agent_core import Agent
 from pig_agent_core.tools import HANDLERS, TOOL_SCHEMAS
@@ -69,7 +70,7 @@ def setup_agent() -> Agent:
     return agent
 
 
-async def example_respond():
+async def example_respond() -> Any:
     """Example 1: Non-streaming response with respond()"""
     print("\n" + "=" * 60)
     print("Example 1: Non-streaming response")
@@ -81,12 +82,12 @@ async def example_respond():
         # Simple question
         print("\nUser: What is 2 + 2?")
         response = await agent.respond("What is 2 + 2?")
-        print(f"Agent: {response.content}")
+        print(f"Agent: {response}")
 
         # Question that might trigger thinking
         print("\nUser: Help me plan a weekend project to build a bookshelf")
         response = await agent.respond("Help me plan a weekend project to build a bookshelf")
-        print(f"Agent: {response.content}")
+        print(f"Agent: {response}")
 
     except Exception as e:
         print(f"Error: {e}")
@@ -95,7 +96,7 @@ async def example_respond():
         traceback.print_exc()
 
 
-async def example_respond_stream():
+async def example_respond_stream() -> Any:
     """Example 2: Streaming response with respond_stream()"""
     print("\n" + "=" * 60)
     print("Example 2: Streaming response")
@@ -111,13 +112,7 @@ async def example_respond_stream():
         async for chunk in agent.respond_stream(
             "Tell me a short story about a robot learning to paint"
         ):
-            if chunk.type == "text":
-                # Print text chunks as they arrive
-                print(chunk.content, end="", flush=True)
-            elif chunk.type == "tool_call":
-                # Show when tools are called
-                print(f"\n[Tool call: {chunk.name}]", flush=True)
-                print("Agent: ", end="", flush=True)
+            print(chunk, end="", flush=True)
 
         print()  # New line at the end
 
@@ -128,7 +123,7 @@ async def example_respond_stream():
         traceback.print_exc()
 
 
-async def example_with_cancellation():
+async def example_with_cancellation() -> Any:
     """Example 3: Cancellation support"""
     print("\n" + "=" * 60)
     print("Example 3: Cancellation support")
@@ -141,7 +136,7 @@ async def example_with_cancellation():
         cancel_event = asyncio.Event()
 
         # Start a task that will be cancelled
-        async def run_with_timeout():
+        async def run_with_timeout() -> Any:
             try:
                 print("\nUser: Write a very long essay about the history of computing")
                 print("Agent: ", end="", flush=True)
@@ -150,8 +145,7 @@ async def example_with_cancellation():
                     "Write a very long essay about the history of computing",
                     cancel=cancel_event,
                 ):
-                    if chunk.type == "text":
-                        print(chunk.content, end="", flush=True)
+                    print(chunk, end="", flush=True)
 
                 print()
             except asyncio.CancelledError:
@@ -178,7 +172,7 @@ async def example_with_cancellation():
         traceback.print_exc()
 
 
-async def example_error_handling():
+async def example_error_handling() -> Any:
     """Example 4: Error handling"""
     print("\n" + "=" * 60)
     print("Example 4: Error handling")
@@ -196,7 +190,7 @@ async def example_error_handling():
 
         print("\nAttempting to use agent with invalid API key...")
         response = await agent.respond("Hello")
-        print(f"Response: {response.content}")
+        print(f"Response: {response}")
 
     except Exception as e:
         print(f"Caught expected error: {type(e).__name__}: {e}")
@@ -208,7 +202,7 @@ async def example_error_handling():
             os.environ["OPENAI_API_KEY"] = original_key
 
 
-async def main():
+async def main() -> Any:
     """Run all examples"""
     print("=" * 60)
     print("pig-agent-core Basic Agent Demo")

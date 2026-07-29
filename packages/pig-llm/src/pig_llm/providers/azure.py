@@ -1,6 +1,7 @@
 """Azure OpenAI provider implementation."""
 
 from collections.abc import AsyncIterator, Iterator
+from typing import Any
 
 import openai
 
@@ -37,23 +38,24 @@ class AzureOpenAIProvider(Provider):
 
         api_version = os.getenv("AZURE_OPENAI_API_VERSION", "2024-02-15-preview")
 
-        self.client = openai.AzureOpenAI(
-            api_key=config.api_key,
-            azure_endpoint=config.base_url,
-            api_version=api_version,
-            timeout=config.timeout,
-            max_retries=config.max_retries,
+        client_options: dict[str, Any] = {
+            "api_key": config.api_key,
+            "api_version": api_version,
+            "timeout": config.timeout,
+            "max_retries": config.max_retries,
+        }
+        if config.base_url is not None:
+            client_options["azure_endpoint"] = config.base_url
+
+        self.client: Any = openai.AzureOpenAI(
+            **client_options,
         )
 
-        self.async_client = openai.AsyncAzureOpenAI(
-            api_key=config.api_key,
-            azure_endpoint=config.base_url,
-            api_version=api_version,
-            timeout=config.timeout,
-            max_retries=config.max_retries,
+        self.async_client: Any = openai.AsyncAzureOpenAI(
+            **client_options,
         )
 
-    def _convert_messages(self, messages: list[Message]) -> list[dict]:
+    def _convert_messages(self, messages: list[Message]) -> list[dict[str, Any]]:
         """Convert internal messages to Azure OpenAI format."""
         result = []
         for msg in messages:
@@ -78,7 +80,7 @@ class AzureOpenAIProvider(Provider):
         return result
 
     @staticmethod
-    def _extract_tool_calls(message) -> list[dict] | None:
+    def _extract_tool_calls(message: Any) -> list[dict[str, Any]] | None:
         """Extract tool_calls from OpenAI response message."""
         if not hasattr(message, "tool_calls") or not message.tool_calls:
             return None
@@ -100,7 +102,7 @@ class AzureOpenAIProvider(Provider):
         model: str,
         temperature: float = 0.7,
         max_tokens: int | None = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> Response:
         """Generate a completion."""
         kwargs = apply_thinking_level(kwargs, AZURE_OPENAI_COMPAT)
@@ -146,7 +148,7 @@ class AzureOpenAIProvider(Provider):
         model: str,
         temperature: float = 0.7,
         max_tokens: int | None = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> Iterator[StreamChunk]:
         """Stream a completion."""
         kwargs = apply_thinking_level(kwargs, AZURE_OPENAI_COMPAT)
@@ -186,7 +188,7 @@ class AzureOpenAIProvider(Provider):
         model: str,
         temperature: float = 0.7,
         max_tokens: int | None = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> Response:
         """Async generate a completion."""
         kwargs = apply_thinking_level(kwargs, AZURE_OPENAI_COMPAT)
@@ -232,7 +234,7 @@ class AzureOpenAIProvider(Provider):
         model: str,
         temperature: float = 0.7,
         max_tokens: int | None = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> AsyncIterator[StreamChunk]:
         """Async stream a completion."""
         kwargs = apply_thinking_level(kwargs, AZURE_OPENAI_COMPAT)

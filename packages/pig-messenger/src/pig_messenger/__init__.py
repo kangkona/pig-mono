@@ -7,7 +7,9 @@ from pig_messenger.base import (
     MessengerThread,
     MessengerType,
     MessengerUser,
+    WebhookRequest,
 )
+from pig_messenger.bot import MessengerBot
 from pig_messenger.config import (
     DiscordConfig,
     SlackConfig,
@@ -33,6 +35,8 @@ __all__ = [
     "MessengerThread",
     "MessengerType",
     "MessengerUser",
+    "WebhookRequest",
+    "MessengerBot",
     # Config
     "DiscordConfig",
     "SlackConfig",

@@ -3,7 +3,7 @@
 from pig_tui.theme import Theme
 
 
-def test_theme_defaults():
+def test_theme_defaults() -> None:
     """Test default theme values."""
     theme = Theme()
     assert theme.user_color == "cyan"
@@ -12,7 +12,7 @@ def test_theme_defaults():
     assert theme.error_color == "red"
 
 
-def test_theme_custom():
+def test_theme_custom() -> None:
     """Test custom theme values."""
     theme = Theme(
         user_color="blue",
@@ -22,14 +22,14 @@ def test_theme_custom():
     assert theme.assistant_color == "magenta"
 
 
-def test_theme_dark():
+def test_theme_dark() -> None:
     """Test dark theme."""
     theme = Theme.dark()
     assert theme.user_color == "cyan"
     assert theme.assistant_color == "green"
 
 
-def test_theme_light():
+def test_theme_light() -> None:
     """Test light theme."""
     theme = Theme.light()
     assert theme.user_color == "blue"

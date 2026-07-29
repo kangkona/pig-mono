@@ -1,5 +1,6 @@
 """Regression tests for Google provider compatibility behavior."""
 
+from collections.abc import AsyncIterator
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
 
@@ -137,8 +138,8 @@ async def test_google_astream_emits_tool_calls_and_usage() -> None:
     """Native Google streaming surfaces function_call tool calls + usage (Phase B)."""
 
     class _Stream:
-        def __aiter__(self):
-            async def gen():
+        def __aiter__(self) -> AsyncIterator[SimpleNamespace]:
+            async def gen() -> AsyncIterator[SimpleNamespace]:
                 # text delta
                 yield SimpleNamespace(
                     candidates=[
@@ -190,7 +191,10 @@ async def test_google_astream_emits_tool_calls_and_usage() -> None:
     text = "".join(c.content for c in chunks if c.content)
     assert text == "checking "
     tool_chunks = [c for c in chunks if c.tool_calls]
-    assert tool_chunks and tool_chunks[-1].tool_calls[0]["function"]["name"] == "get_weather"
+    assert tool_chunks
+    tool_calls = tool_chunks[-1].tool_calls
+    assert tool_calls is not None
+    assert tool_calls[0]["function"]["name"] == "get_weather"
     usages = [c.usage for c in chunks if c.usage]
     assert usages[-1] == {
         "input_tokens": 120,
@@ -228,12 +232,11 @@ def test_google_tool_result_carries_function_name() -> None:
         ),
     ]
     contents, _ = provider._convert_messages(messages)
-    names = [
-        part.function_response.name
-        for c in contents
-        for part in c.parts
-        if getattr(part, "function_response", None)
-    ]
+    names = []
+    for content in contents:
+        for part in content.parts or []:
+            if part.function_response is not None:
+                names.append(part.function_response.name)
     assert names == ["get_weather"]
 
 
@@ -258,6 +261,9 @@ def test_google_preserves_thought_signature_round_trip() -> None:
     rebuilt, _ = provider._convert_messages(
         [Message(role="assistant", content="", metadata={"tool_calls": [tc]})]
     )
-    fc_part = rebuilt[0].parts[0]
+    parts = rebuilt[0].parts
+    assert parts is not None
+    fc_part = parts[0]
     assert fc_part.thought_signature == sig
+    assert fc_part.function_call is not None
     assert fc_part.function_call.name == "list_files"

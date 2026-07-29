@@ -1,6 +1,8 @@
 """Tests for pig-tui runtime primitives."""
 
 import asyncio
+from collections.abc import AsyncIterator
+from typing import Any, Literal
 from unittest.mock import Mock, patch
 
 import pytest
@@ -38,7 +40,7 @@ from pig_tui.runtime import (
 )
 
 
-def test_focus_manager_tracks_and_restores_focus():
+def test_focus_manager_tracks_and_restores_focus() -> None:
     manager = FocusManager()
     first = SelectListView([("a", None)])
     second = SelectListView([("b", None)])
@@ -53,7 +55,7 @@ def test_focus_manager_tracks_and_restores_focus():
     assert second.focused is False
 
 
-def test_focus_container_cycles_focusable_components():
+def test_focus_container_cycles_focusable_components() -> None:
     first = SelectListView([("a", None)])
     second = SelectListView([("b", None)])
     container = FocusContainer([first, second])
@@ -71,7 +73,7 @@ def test_focus_container_cycles_focusable_components():
     assert second.focused is False
 
 
-def test_focus_container_skips_non_focusable_components():
+def test_focus_container_skips_non_focusable_components() -> None:
     text = PanelContent(title="Info", content="display only")
     first = SelectListView([("a", None)])
     second = SelectListView([("b", None)])
@@ -90,7 +92,7 @@ def test_focus_container_skips_non_focusable_components():
     assert container.focus_next() is second
 
 
-def test_overlay_stack_push_peek_pop():
+def test_overlay_stack_push_peek_pop() -> None:
     stack = OverlayStack()
     panel = PanelContent(title="Dialog", content="Hello")
     component = SelectListView([("a", None)])
@@ -99,34 +101,36 @@ def test_overlay_stack_push_peek_pop():
 
     assert len(stack) == 1
     assert stack.peek() == panel
-    popped_panel, popped_component = stack.pop()
+    popped = stack.pop()
+    assert popped is not None
+    popped_panel, popped_component = popped
     assert popped_panel == panel
     assert popped_component == component
     assert stack.peek() is None
 
 
-def test_streaming_turn_controller_returns_content_and_abort_state():
+def test_streaming_turn_controller_returns_content_and_abort_state() -> None:
     controller = StreamingTurnController(commands=["/help"])
     ui = Mock()
     writer = Mock()
 
     class _StreamCtx:
-        def __enter__(self):
+        def __enter__(self) -> Any:
             return writer
 
-        def __exit__(self, *args):
+        def __exit__(self, *args: Any) -> Literal[False]:
             return False
 
     ui.assistant_stream_markdown.return_value = _StreamCtx()
 
     class _Listener:
-        async def __aenter__(self):
+        async def __aenter__(self) -> "_Listener":
             return self
 
-        async def __aexit__(self, *args):
+        async def __aexit__(self, *args: Any) -> Literal[False]:
             return False
 
-    async def stream():
+    async def stream() -> AsyncIterator[str]:
         yield "hello "
         yield "world"
 
@@ -140,7 +144,7 @@ def test_streaming_turn_controller_returns_content_and_abort_state():
     writer.write.assert_any_call("world")
 
 
-def test_terminal_runtime_tracks_prompt_focus():
+def test_terminal_runtime_tracks_prompt_focus() -> None:
     ui = Mock()
 
     with patch("pig_tui.runtime.PromptRuntime") as prompt_runtime_cls:
@@ -155,7 +159,7 @@ def test_terminal_runtime_tracks_prompt_focus():
     assert runtime.focus.current == "prompt"
 
 
-def test_terminal_runtime_exposes_display_output_surface():
+def test_terminal_runtime_exposes_display_output_surface() -> None:
     ui = Mock()
     runtime = TerminalRuntime(ui=ui, commands=["/help"], workspace=".")
 
@@ -182,7 +186,7 @@ def test_terminal_runtime_exposes_display_output_surface():
     ui.separator.assert_called_once_with()
 
 
-def test_terminal_runtime_run_shell_loop_returns_eof_reason():
+def test_terminal_runtime_run_shell_loop_returns_eof_reason() -> None:
     ui = Mock()
 
     with patch("pig_tui.runtime.PromptRuntime") as prompt_runtime_cls:
@@ -197,13 +201,17 @@ def test_terminal_runtime_run_shell_loop_returns_eof_reason():
     assert result.reason == "eof"
 
 
-def test_terminal_runtime_run_shell_loop_handles_non_turn_input_and_continues():
+def test_terminal_runtime_run_shell_loop_handles_non_turn_input_and_continues() -> None:
     ui = Mock()
     handled: list[str] = []
     turns: list[str] = []
 
     async def _run_turn(user_input: str) -> None:
         turns.append(user_input)
+
+    def _handle_input(text: str) -> bool:
+        handled.append(text)
+        return text.startswith("/")
 
     with patch("pig_tui.runtime.PromptRuntime") as prompt_runtime_cls:
         prompt_runtime = Mock()
@@ -214,7 +222,7 @@ def test_terminal_runtime_run_shell_loop_handles_non_turn_input_and_continues():
         result = runtime.run_shell_loop(
             ShellLoopSession(
                 run_turn=_run_turn,
-                handle_input=lambda text: handled.append(text) or text.startswith("/"),
+                handle_input=_handle_input,
             )
         )
 
@@ -223,7 +231,7 @@ def test_terminal_runtime_run_shell_loop_handles_non_turn_input_and_continues():
     assert turns == ["hello"]
 
 
-def test_terminal_runtime_run_shell_loop_reuses_one_event_loop_across_turns():
+def test_terminal_runtime_run_shell_loop_reuses_one_event_loop_across_turns() -> None:
     ui = Mock()
     loop_ids: list[int] = []
 
@@ -244,7 +252,7 @@ def test_terminal_runtime_run_shell_loop_reuses_one_event_loop_across_turns():
     assert len(set(loop_ids)) == 1
 
 
-def test_terminal_runtime_run_shell_loop_reports_turn_interrupt_and_continues():
+def test_terminal_runtime_run_shell_loop_reports_turn_interrupt_and_continues() -> None:
     ui = Mock()
     turns: list[str] = []
     interrupts: list[str] = []
@@ -273,7 +281,7 @@ def test_terminal_runtime_run_shell_loop_reports_turn_interrupt_and_continues():
     assert interrupts == ["interrupt"]
 
 
-def test_terminal_runtime_run_shell_loop_can_re_raise_mapped_exception():
+def test_terminal_runtime_run_shell_loop_can_re_raise_mapped_exception() -> None:
     ui = Mock()
 
     async def _run_turn(user_input: str) -> None:
@@ -304,7 +312,7 @@ async def _never() -> None:
     raise AssertionError("run_turn should not be called")
 
 
-def test_prompt_runtime_reuses_underlying_prompt_instance():
+def test_prompt_runtime_reuses_underlying_prompt_instance() -> None:
     from pig_tui.runtime import PromptRuntime
 
     prompt = Mock()
@@ -318,7 +326,7 @@ def test_prompt_runtime_reuses_underlying_prompt_instance():
     factory.assert_called_once()
 
 
-def test_terminal_runtime_overlay_focuses_component():
+def test_terminal_runtime_overlay_focuses_component() -> None:
     ui = Mock()
     runtime = TerminalRuntime(ui=ui, commands=["/help"], workspace=".")
     component = SelectListView([("item", None)])
@@ -333,7 +341,7 @@ def test_terminal_runtime_overlay_focuses_component():
     assert component.focused is False
 
 
-def test_terminal_runtime_delegates_stream_turn_and_restores_focus():
+def test_terminal_runtime_delegates_stream_turn_and_restores_focus() -> None:
     ui = Mock()
 
     with (
@@ -342,7 +350,7 @@ def test_terminal_runtime_delegates_stream_turn_and_restores_focus():
     ):
         controller = Mock()
 
-        async def _run(**kwargs):
+        async def _run(**kwargs: Any) -> TurnResult:
             return TurnResult(content="done", aborted=False)
 
         controller.run = Mock(side_effect=_run)
@@ -351,7 +359,7 @@ def test_terminal_runtime_delegates_stream_turn_and_restores_focus():
         runtime = TerminalRuntime(ui=ui, commands=["/help"], workspace=".")
         runtime.focus.focus("prompt")
 
-        async def empty_stream():
+        async def empty_stream() -> AsyncIterator[str]:
             if False:
                 yield ""
 
@@ -361,7 +369,7 @@ def test_terminal_runtime_delegates_stream_turn_and_restores_focus():
     assert runtime.focus.current == "prompt"
 
 
-def test_terminal_runtime_select_returns_explicit_option_value():
+def test_terminal_runtime_select_returns_explicit_option_value() -> None:
     ui = Mock()
 
     with patch("pig_tui.runtime.PromptRuntime") as prompt_runtime_cls:
@@ -383,7 +391,7 @@ def test_terminal_runtime_select_returns_explicit_option_value():
     ui.panel.assert_called_once()
 
 
-def test_terminal_runtime_select_option_returns_structured_option():
+def test_terminal_runtime_select_option_returns_structured_option() -> None:
     ui = Mock()
 
     with patch("pig_tui.runtime.PromptRuntime") as prompt_runtime_cls:
@@ -405,7 +413,7 @@ def test_terminal_runtime_select_option_returns_structured_option():
     assert option.label == "Session B"
 
 
-def test_terminal_runtime_run_selection_session_supports_header_component():
+def test_terminal_runtime_run_selection_session_supports_header_component() -> None:
     ui = Mock()
 
     with patch("pig_tui.runtime.PromptRuntime") as prompt_runtime_cls:
@@ -430,7 +438,7 @@ def test_terminal_runtime_run_selection_session_supports_header_component():
     assert option.value == "yes"
 
 
-def test_terminal_runtime_resolve_option_choice_supports_index_and_labels():
+def test_terminal_runtime_resolve_option_choice_supports_index_and_labels() -> None:
     options = [
         SelectOption(value="session-a", label="Session A", description="recent"),
         SelectOption(value="session-b", label="Session B", description="older"),
@@ -442,7 +450,7 @@ def test_terminal_runtime_resolve_option_choice_supports_index_and_labels():
     assert TerminalRuntime.resolve_option_choice("missing", options) is None
 
 
-def test_terminal_runtime_edit_text_uses_overlay_and_returns_updated_value():
+def test_terminal_runtime_edit_text_uses_overlay_and_returns_updated_value() -> None:
     ui = Mock()
 
     with patch("pig_tui.runtime.PromptRuntime") as prompt_runtime_cls:
@@ -462,7 +470,7 @@ def test_terminal_runtime_edit_text_uses_overlay_and_returns_updated_value():
     ui.panel.assert_called_once()
 
 
-def test_terminal_runtime_run_editor_session_returns_updated_value():
+def test_terminal_runtime_run_editor_session_returns_updated_value() -> None:
     ui = Mock()
 
     with patch("pig_tui.runtime.PromptRuntime") as prompt_runtime_cls:
@@ -479,7 +487,7 @@ def test_terminal_runtime_run_editor_session_returns_updated_value():
     assert runtime.focus.current == "prompt"
 
 
-def test_terminal_runtime_set_active_container_updates_focus():
+def test_terminal_runtime_set_active_container_updates_focus() -> None:
     ui = Mock()
     runtime = TerminalRuntime(ui=ui, commands=["/help"], workspace=".")
     first = SelectListView([("a", None)])
@@ -493,7 +501,7 @@ def test_terminal_runtime_set_active_container_updates_focus():
     assert first.focused is True
 
 
-def test_terminal_runtime_focus_next_component_uses_active_container():
+def test_terminal_runtime_focus_next_component_uses_active_container() -> None:
     ui = Mock()
     runtime = TerminalRuntime(ui=ui, commands=["/help"], workspace=".")
     first = SelectListView([("a", None)])
@@ -509,7 +517,7 @@ def test_terminal_runtime_focus_next_component_uses_active_container():
     assert second.focused is True
 
 
-def test_terminal_runtime_focus_component_index_selects_specific_section():
+def test_terminal_runtime_focus_component_index_selects_specific_section() -> None:
     ui = Mock()
     runtime = TerminalRuntime(ui=ui, commands=["/help"], workspace=".")
     first = SelectListView([("a", None)])
@@ -525,7 +533,7 @@ def test_terminal_runtime_focus_component_index_selects_specific_section():
     assert second.focused is True
 
 
-def test_terminal_runtime_open_container_sets_active_container_and_renders_panel():
+def test_terminal_runtime_open_container_sets_active_container_and_renders_panel() -> None:
     ui = Mock()
     runtime = TerminalRuntime(ui=ui, commands=["/help"], workspace=".")
     first = SelectListView([("a", None)])
@@ -542,7 +550,7 @@ def test_terminal_runtime_open_container_sets_active_container_and_renders_panel
     ui.panel.assert_called_once_with("=> a\n\n-> b", title="Container")
 
 
-def test_terminal_runtime_open_container_prefers_container_rendered_sections():
+def test_terminal_runtime_open_container_prefers_container_rendered_sections() -> None:
     ui = Mock()
     runtime = TerminalRuntime(ui=ui, commands=["/help"], workspace=".")
     view = SelectListView([("session-a", "recent")])
@@ -557,7 +565,7 @@ def test_terminal_runtime_open_container_prefers_container_rendered_sections():
     ui.panel.assert_called_once_with(rendered, title="Container")
 
 
-def test_terminal_runtime_begin_overlay_session_sets_runtime_owned_state():
+def test_terminal_runtime_begin_overlay_session_sets_runtime_owned_state() -> None:
     ui = Mock()
     runtime = TerminalRuntime(ui=ui, commands=["/help"], workspace=".")
     selector = SelectListView([("session-a", "recent")])
@@ -577,7 +585,7 @@ def test_terminal_runtime_begin_overlay_session_sets_runtime_owned_state():
     ui.panel.assert_called_once()
 
 
-def test_terminal_runtime_end_overlay_session_restores_prompt_focus():
+def test_terminal_runtime_end_overlay_session_restores_prompt_focus() -> None:
     ui = Mock()
     runtime = TerminalRuntime(ui=ui, commands=["/help"], workspace=".")
     selector = SelectListView([("session-a", "recent")])
@@ -598,7 +606,7 @@ def test_terminal_runtime_end_overlay_session_restores_prompt_focus():
     assert len(runtime.overlays) == 0
 
 
-def test_terminal_runtime_end_overlay_session_restores_previous_container():
+def test_terminal_runtime_end_overlay_session_restores_previous_container() -> None:
     ui = Mock()
     runtime = TerminalRuntime(ui=ui, commands=["/help"], workspace=".")
     base = FocusContainer([SelectListView([("root", None)])])
@@ -619,7 +627,7 @@ def test_terminal_runtime_end_overlay_session_restores_previous_container():
     assert runtime.focus.current == "container"
 
 
-def test_terminal_runtime_run_prompt_step_restores_prompt_focus_for_input():
+def test_terminal_runtime_run_prompt_step_restores_prompt_focus_for_input() -> None:
     ui = Mock()
 
     with patch("pig_tui.runtime.PromptRuntime") as prompt_runtime_cls:
@@ -634,7 +642,7 @@ def test_terminal_runtime_run_prompt_step_restores_prompt_focus_for_input():
     assert runtime.focus.current == "prompt"
 
 
-def test_terminal_runtime_confirm_is_first_class_runtime_api():
+def test_terminal_runtime_confirm_is_first_class_runtime_api() -> None:
     ui = Mock()
 
     with patch("pig_tui.runtime.PromptRuntime") as prompt_runtime_cls:
@@ -651,7 +659,7 @@ def test_terminal_runtime_confirm_is_first_class_runtime_api():
     ui.panel.assert_called_once()
 
 
-def test_terminal_runtime_confirm_supports_negative_aliases():
+def test_terminal_runtime_confirm_supports_negative_aliases() -> None:
     ui = Mock()
 
     with patch("pig_tui.runtime.PromptRuntime") as prompt_runtime_cls:
@@ -665,7 +673,7 @@ def test_terminal_runtime_confirm_supports_negative_aliases():
     assert allowed is False
 
 
-def test_terminal_runtime_choose_and_edit_returns_selection_and_value():
+def test_terminal_runtime_choose_and_edit_returns_selection_and_value() -> None:
     ui = Mock()
 
     with patch("pig_tui.runtime.PromptRuntime") as prompt_runtime_cls:
@@ -692,7 +700,7 @@ def test_terminal_runtime_choose_and_edit_returns_selection_and_value():
     assert ui.panel.call_count == 2
 
 
-def test_terminal_runtime_run_selection_editor_session_returns_structured_result():
+def test_terminal_runtime_run_selection_editor_session_returns_structured_result() -> None:
     ui = Mock()
 
     with patch("pig_tui.runtime.PromptRuntime") as prompt_runtime_cls:
@@ -718,7 +726,7 @@ def test_terminal_runtime_run_selection_editor_session_returns_structured_result
     assert result.edited_value == "0.5"
 
 
-def test_terminal_runtime_run_selection_action_session_returns_structured_result():
+def test_terminal_runtime_run_selection_action_session_returns_structured_result() -> None:
     ui = Mock()
 
     with patch("pig_tui.runtime.PromptRuntime") as prompt_runtime_cls:
@@ -749,7 +757,7 @@ def test_terminal_runtime_run_selection_action_session_returns_structured_result
     assert result.action.value == "label"
 
 
-def test_terminal_runtime_run_tree_browser_session_returns_structured_result():
+def test_terminal_runtime_run_tree_browser_session_returns_structured_result() -> None:
     ui = Mock()
 
     with patch("pig_tui.runtime.PromptRuntime") as prompt_runtime_cls:
@@ -794,7 +802,7 @@ def test_terminal_runtime_run_tree_browser_session_returns_structured_result():
     assert result.action.value == "switch"
 
 
-def test_terminal_runtime_run_tree_browser_session_supports_note_wrapped_container():
+def test_terminal_runtime_run_tree_browser_session_supports_note_wrapped_container() -> None:
     ui = Mock()
 
     with patch("pig_tui.runtime.PromptRuntime") as prompt_runtime_cls:
@@ -868,7 +876,9 @@ def test_terminal_runtime_run_tree_browser_session_supports_note_wrapped_contain
     assert "Path: root > child-b" in second_call.args[0]
 
 
-def test_terminal_runtime_choose_and_edit_prefills_editor_from_selected_option_description():
+def test_terminal_runtime_choose_and_edit_prefills_editor_from_selected_option_description() -> (
+    None
+):
     ui = Mock()
 
     with patch("pig_tui.runtime.PromptRuntime") as prompt_runtime_cls:
@@ -891,7 +901,7 @@ def test_terminal_runtime_choose_and_edit_prefills_editor_from_selected_option_d
     assert "0.85" in second_call.args[0]
 
 
-def test_terminal_runtime_choose_and_edit_uses_multi_component_container():
+def test_terminal_runtime_choose_and_edit_uses_multi_component_container() -> None:
     ui = Mock()
 
     with patch("pig_tui.runtime.PromptRuntime") as prompt_runtime_cls:

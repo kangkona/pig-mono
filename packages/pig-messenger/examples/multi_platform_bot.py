@@ -27,7 +27,7 @@ def calculate(expression: str) -> str:
         return f"Error: {e}"
 
 
-def main():
+def main() -> None:
     """Run multi-platform bot."""
 
     print("=" * 60)

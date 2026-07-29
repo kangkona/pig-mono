@@ -30,7 +30,7 @@ def main(
     host: str = "127.0.0.1",
     cors: bool = False,
     title: str = "Chat",
-):
+) -> None:
     """Start web chat server.
 
     Args:
@@ -82,7 +82,7 @@ def main(
         console.print("\n[yellow]Server stopped[/yellow]")
 
 
-def cli():
+def cli() -> None:
     """Entry point for pig-webui command."""
     typer.run(main)
 

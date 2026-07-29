@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from pig_tui import ChatPresenter, ChatUI, PanelContent, StatusMessage, TerminalRuntime
+from pig_tui.runtime import TerminalUI
 
 from .interaction_commands import InteractionCommands
 from .interaction_dispatcher import InteractionDispatcher
@@ -13,19 +15,25 @@ from .interaction_flows import InteractionFlows
 from .interaction_routes import InteractionRoutes
 from .interaction_views import InteractionViews
 
+if TYPE_CHECKING:
+    from .agent import CodingAgent
+
+
+InteractionUI = TerminalUI
+
 
 @dataclass
 class InteractionRuntime:
     """Own the prompt loop and streaming-turn orchestration for CodingAgent."""
 
-    agent_owner: Any
+    agent_owner: CodingAgent
     terminal_runtime_factory: Any | None = None
     prompt_runtime_factory: Any | None = None
     turn_controller_factory: Any | None = None
-    ui_factory: Any | None = None
-    ui: Any | None = None
+    ui_factory: Callable[[], InteractionUI] | None = None
+    ui: InteractionUI | None = None
     _terminal_runtime: TerminalRuntime | None = None
-    presenter: ChatPresenter | Any | None = None
+    presenter: ChatPresenter | None = None
     views: InteractionViews | None = None
     flows: InteractionFlows | None = None
     commands: InteractionCommands | None = None
@@ -39,7 +47,7 @@ class InteractionRuntime:
             )
             self.ui = factory()
         if self.presenter is None:
-            self.presenter = ChatPresenter(lambda: self.ui)
+            self.presenter = ChatPresenter(self._require_ui)
         if self.views is None:
             self.views = InteractionViews(self.agent_owner, self)
         if self.flows is None:
@@ -52,10 +60,16 @@ class InteractionRuntime:
             self.dispatcher = InteractionDispatcher(self.agent_owner, self)
 
     def _build_simple_command_routes(self) -> dict[str, Any]:
+        assert self.routes is not None
         return self.routes.build_simple_routes()
 
     def _build_prefix_command_routes(self) -> dict[str, Any]:
+        assert self.routes is not None
         return self.routes.build_prefix_routes()
+
+    def _require_ui(self) -> InteractionUI:
+        assert self.ui is not None
+        return self.ui
 
     @staticmethod
     def _split_required_arg_pair(raw_args: str | None) -> tuple[str, str] | None:
@@ -92,7 +106,7 @@ class InteractionRuntime:
     def _terminal_output_surface(self) -> Any | None:
         return self._terminal_runtime
 
-    def set_ui(self, ui: Any) -> None:
+    def set_ui(self, ui: InteractionUI) -> None:
         self.ui = ui
         if self._terminal_runtime is not None:
             self._terminal_runtime.ui = ui
@@ -102,6 +116,7 @@ class InteractionRuntime:
         if runtime is not None and hasattr(runtime, "show_panel"):
             runtime.show_panel(panel)
             return
+        assert self.presenter is not None
         self.presenter.show_panel(panel)
 
     def show_text_panel(self, title: str, content: str) -> None:
@@ -112,6 +127,7 @@ class InteractionRuntime:
         if runtime is not None and hasattr(runtime, "show_status"):
             runtime.show_status(status)
             return
+        assert self.presenter is not None
         self.presenter.show_status(status)
 
     def show_error(self, message: str) -> None:
@@ -119,6 +135,7 @@ class InteractionRuntime:
         if runtime is not None and hasattr(runtime, "show_error"):
             runtime.show_error(message)
             return
+        assert self.presenter is not None
         self.presenter.show_error(message)
 
     def show_system(self, message: str) -> None:
@@ -126,6 +143,7 @@ class InteractionRuntime:
         if runtime is not None and hasattr(runtime, "show_system"):
             runtime.show_system(message)
             return
+        assert self.ui is not None
         self.ui.system(message)
 
     def show_user(self, message: str) -> None:
@@ -133,6 +151,7 @@ class InteractionRuntime:
         if runtime is not None and hasattr(runtime, "show_user"):
             runtime.show_user(message)
             return
+        assert self.ui is not None
         self.ui.user(message)
 
     def show_assistant(self, message: str) -> None:
@@ -140,6 +159,7 @@ class InteractionRuntime:
         if runtime is not None and hasattr(runtime, "show_assistant"):
             runtime.show_assistant(message)
             return
+        assert self.ui is not None
         self.ui.assistant(message)
 
     def clear(self) -> None:
@@ -147,6 +167,7 @@ class InteractionRuntime:
         if runtime is not None and hasattr(runtime, "clear"):
             runtime.clear()
             return
+        assert self.ui is not None
         self.ui.clear()
 
     def separator(self) -> None:
@@ -154,8 +175,10 @@ class InteractionRuntime:
         if runtime is not None and hasattr(runtime, "separator"):
             runtime.separator()
             return
+        assert self.ui is not None
         self.ui.separator()
 
     def handle_command(self, command: str) -> None:
         """Delegate interactive slash-command dispatch to the dedicated dispatcher."""
+        assert self.dispatcher is not None
         self.dispatcher.dispatch(command)

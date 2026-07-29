@@ -6,7 +6,7 @@ import json
 import threading
 import time
 from collections.abc import Awaitable, Callable
-from typing import Any
+from typing import Any, cast
 
 from pig_agent_core.models import ToolModelCapabilities
 
@@ -648,14 +648,17 @@ class ToolRegistry:
         # Check if handler is async
         if asyncio.iscoroutinefunction(handler):
             if params[:4] == ["args", "user_id", "meta", "cancel"]:
-                return await handler(args, user_id, meta, cancel)
-            return await handler(**args)
+                return cast(ToolResult, await handler(args, user_id, meta, cancel))
+            return cast(ToolResult, await handler(**args))
         else:
             # Run sync handler in executor
             loop = asyncio.get_event_loop()
             if params[:4] == ["args", "user_id", "meta", "cancel"]:
-                return await loop.run_in_executor(None, handler, args, user_id, meta, cancel)
-            return await loop.run_in_executor(None, lambda: handler(**args))
+                return cast(
+                    ToolResult,
+                    await loop.run_in_executor(None, handler, args, user_id, meta, cancel),
+                )
+            return cast(ToolResult, await loop.run_in_executor(None, lambda: handler(**args)))
 
     async def execute_batch(
         self,
@@ -705,6 +708,8 @@ class ToolRegistry:
             for idx, result in zip(parallel_indices, parallel_results, strict=False):
                 if isinstance(result, Exception):
                     results[idx] = ToolResult(ok=False, error=str(result))
+                elif isinstance(result, BaseException):
+                    raise result
                 else:
                     results[idx] = result
 

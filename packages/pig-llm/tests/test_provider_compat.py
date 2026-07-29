@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator, Iterable
 from types import SimpleNamespace
+from typing import Any
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
@@ -22,13 +24,13 @@ from pig_llm.providers.openrouter import OpenRouterProvider
 
 
 class _AsyncTextStream:
-    def __init__(self, items):
+    def __init__(self, items: Iterable[str]) -> None:
         self._items = iter(items)
 
-    def __aiter__(self):
+    def __aiter__(self) -> AsyncIterator[str]:
         return self
 
-    async def __anext__(self):
+    async def __anext__(self) -> str:
         try:
             return next(self._items)
         except StopIteration as exc:
@@ -440,7 +442,7 @@ def test_anthropic_opus_47_stream_omits_temperature_param() -> None:
 @patch("pig_llm.providers.anthropic.anthropic.Anthropic")
 @pytest.mark.asyncio
 async def test_anthropic_opus_47_astream_omits_temperature_param(
-    mock_anthropic, mock_async_anthropic
+    mock_anthropic: Mock, mock_async_anthropic: Mock
 ) -> None:
     stream_ctx = AsyncMock()
     final_message = SimpleNamespace(content=[], usage=None)
@@ -471,14 +473,14 @@ async def test_anthropic_opus_47_astream_omits_temperature_param(
     assert "temperature" not in mock_async_anthropic.return_value.messages.stream.call_args.kwargs
 
 
-def test_anthropic_uses_base_url_from_config(monkeypatch) -> None:
-    captured = {}
+def test_anthropic_uses_base_url_from_config(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, dict[str, object]] = {}
 
-    def fake_anthropic(**kwargs):
+    def fake_anthropic(**kwargs: Any) -> SimpleNamespace:
         captured.setdefault("sync", kwargs)
         return SimpleNamespace(messages=SimpleNamespace())
 
-    def fake_async_anthropic(**kwargs):
+    def fake_async_anthropic(**kwargs: Any) -> SimpleNamespace:
         captured.setdefault("async", kwargs)
         return SimpleNamespace(messages=SimpleNamespace())
 
@@ -499,10 +501,10 @@ def test_anthropic_uses_base_url_from_config(monkeypatch) -> None:
     assert captured["async"]["base_url"] == "https://proxy.example"
 
 
-def test_anthropic_uses_base_url_from_env(monkeypatch) -> None:
-    captured = {}
+def test_anthropic_uses_base_url_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, Any] = {}
 
-    def fake_client(**kwargs):
+    def fake_client(**kwargs: Any) -> SimpleNamespace:
         captured.update(kwargs)
         return SimpleNamespace(messages=SimpleNamespace())
 
@@ -519,7 +521,9 @@ def test_anthropic_uses_base_url_from_env(monkeypatch) -> None:
 
 
 @pytest.mark.asyncio
-async def test_anthropic_astream_emits_tool_calls_and_usage(monkeypatch) -> None:
+async def test_anthropic_astream_emits_tool_calls_and_usage(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Native Anthropic streaming surfaces tool_use + usage (Phase B)."""
     monkeypatch.delenv("ANTHROPIC_BASE_URL", raising=False)
     final_message = SimpleNamespace(
@@ -558,7 +562,9 @@ async def test_anthropic_astream_emits_tool_calls_and_usage(monkeypatch) -> None
 
     assert "".join(c.content for c in chunks if c.content) == "checking"
     tool_chunks = [c for c in chunks if c.tool_calls]
-    assert tool_chunks[-1].tool_calls[0]["function"]["name"] == "get_weather"
+    tool_calls = tool_chunks[-1].tool_calls
+    assert tool_calls is not None
+    assert tool_calls[0]["function"]["name"] == "get_weather"
     usages = [c.usage for c in chunks if c.usage]
     assert usages[-1]["input_tokens"] == 120
     assert usages[-1]["cached_tokens"] == 40

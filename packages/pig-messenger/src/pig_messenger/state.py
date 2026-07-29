@@ -16,7 +16,7 @@ import json
 import logging
 import time
 import uuid
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -321,7 +321,9 @@ class MessengerState:
         messages = await self.redis.lrange(key, 0, count - 1)
         return [json.loads(msg) for msg in messages] if messages else []
 
-    async def replay_dead_letters(self, handler: Callable[[dict[str, Any]], None]) -> int:
+    async def replay_dead_letters(
+        self, handler: Callable[[dict[str, Any]], Awaitable[None]]
+    ) -> int:
         """Replay dead letters through handler.
 
         Args:

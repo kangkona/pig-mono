@@ -1,12 +1,19 @@
 """Tests for streaming tool-call assembly (compat layer)."""
 
+from collections.abc import AsyncIterator, Iterable
 from types import SimpleNamespace
+from typing import Any
 
 import pytest
 from pig_llm.compat import _OpenAIToolCallAccumulator, astream_openai_tool_aware
 
 
-def _delta_chunk(*, content=None, tool_calls=None, finish_reason=None):
+def _delta_chunk(
+    *,
+    content: str | None = None,
+    tool_calls: list[SimpleNamespace] | None = None,
+    finish_reason: str | None = None,
+) -> SimpleNamespace:
     return SimpleNamespace(
         id="chunk-x",
         choices=[
@@ -18,7 +25,13 @@ def _delta_chunk(*, content=None, tool_calls=None, finish_reason=None):
     )
 
 
-def _tc_delta(index, *, call_id=None, name=None, arguments=None):
+def _tc_delta(
+    index: int,
+    *,
+    call_id: str | None = None,
+    name: str | None = None,
+    arguments: str | None = None,
+) -> SimpleNamespace:
     return SimpleNamespace(
         index=index,
         id=call_id,
@@ -27,21 +40,21 @@ def _tc_delta(index, *, call_id=None, name=None, arguments=None):
 
 
 class _AsyncStream:
-    def __init__(self, chunks):
+    def __init__(self, chunks: Iterable[Any]) -> None:
         self._chunks = list(chunks)
 
-    def __aiter__(self):
+    def __aiter__(self) -> AsyncIterator[Any]:
         self._it = iter(self._chunks)
         return self
 
-    async def __anext__(self):
+    async def __anext__(self) -> Any:
         try:
             return next(self._it)
         except StopIteration:
             raise StopAsyncIteration from None
 
 
-def test_accumulator_assembles_multi_chunk_tool_call():
+def test_accumulator_assembles_multi_chunk_tool_call() -> None:
     acc = _OpenAIToolCallAccumulator()
     # id+name arrive first, arguments stream in fragments
     acc.add(_delta_chunk(tool_calls=[_tc_delta(0, call_id="call_1", name="shell")]).choices[0])
@@ -58,7 +71,7 @@ def test_accumulator_assembles_multi_chunk_tool_call():
     ]
 
 
-def test_accumulator_handles_parallel_tool_calls_by_index():
+def test_accumulator_handles_parallel_tool_calls_by_index() -> None:
     acc = _OpenAIToolCallAccumulator()
     acc.add(
         _delta_chunk(tool_calls=[_tc_delta(0, call_id="a", name="x", arguments="{}")]).choices[0]
@@ -68,16 +81,17 @@ def test_accumulator_handles_parallel_tool_calls_by_index():
     )
 
     result = acc.finish()
+    assert result is not None
     assert [tc["id"] for tc in result] == ["a", "b"]
     assert [tc["function"]["name"] for tc in result] == ["x", "y"]
 
 
-def test_accumulator_empty_returns_none():
+def test_accumulator_empty_returns_none() -> None:
     assert _OpenAIToolCallAccumulator().finish() is None
 
 
 @pytest.mark.asyncio
-async def test_astream_tool_aware_yields_text_then_tool_calls():
+async def test_astream_tool_aware_yields_text_then_tool_calls() -> None:
     stream = _AsyncStream(
         [
             _delta_chunk(content="thinking "),
@@ -101,7 +115,7 @@ async def test_astream_tool_aware_yields_text_then_tool_calls():
 
 
 @pytest.mark.asyncio
-async def test_astream_tool_aware_text_only_has_no_tool_calls():
+async def test_astream_tool_aware_text_only_has_no_tool_calls() -> None:
     stream = _AsyncStream([_delta_chunk(content="hello"), _delta_chunk(content=" world")])
 
     chunks = [c async for c in astream_openai_tool_aware(stream)]
@@ -111,7 +125,7 @@ async def test_astream_tool_aware_text_only_has_no_tool_calls():
 
 
 @pytest.mark.asyncio
-async def test_astream_captures_trailing_usage_chunk():
+async def test_astream_captures_trailing_usage_chunk() -> None:
     """A usage-only chunk after the terminal finish_reason is captured."""
     usage = SimpleNamespace(prompt_tokens=120, completion_tokens=45, total_tokens=165)
     stream = _AsyncStream(
@@ -130,7 +144,7 @@ async def test_astream_captures_trailing_usage_chunk():
 
 
 @pytest.mark.asyncio
-async def test_astream_captures_cached_prompt_tokens():
+async def test_astream_captures_cached_prompt_tokens() -> None:
     """cached_tokens from prompt_tokens_details is carried in the usage chunk."""
     usage = SimpleNamespace(
         prompt_tokens=1000,

@@ -1,13 +1,14 @@
 """Tests for Slack messenger adapter."""
 
+from typing import Any
 from unittest.mock import AsyncMock, patch
 
 import pytest
-from pig_messenger.base import MessengerType
+from pig_messenger.base import MessengerType, WebhookRequest
 
 
 @pytest.fixture
-def adapter():
+def adapter() -> Any:
     """Create Slack adapter."""
     with patch("pig_messenger.adapters.slack.AsyncWebClient"):
         from pig_messenger.adapters.slack import SlackMessengerAdapter
@@ -17,7 +18,7 @@ def adapter():
         return adapter
 
 
-def test_markdown_to_mrkdwn():
+def test_markdown_to_mrkdwn() -> None:
     """Test markdown conversion."""
     from pig_messenger.adapters.slack import markdown_to_mrkdwn
 
@@ -27,7 +28,7 @@ def test_markdown_to_mrkdwn():
     assert "<https://example.com|link>" in result
 
 
-def test_slack_adapter_capabilities(adapter):
+def test_slack_adapter_capabilities(adapter: Any) -> None:
     """Test Slack adapter capabilities."""
     caps = adapter.capabilities
     assert caps.can_edit is True
@@ -37,7 +38,7 @@ def test_slack_adapter_capabilities(adapter):
 
 
 @pytest.mark.asyncio
-async def test_parse_event_dm(adapter):
+async def test_parse_event_dm(adapter: Any) -> None:
     """Test parsing DM message."""
     raw_event = {
         "event": {
@@ -57,7 +58,7 @@ async def test_parse_event_dm(adapter):
 
 
 @pytest.mark.asyncio
-async def test_parse_event_group_no_mention(adapter):
+async def test_parse_event_group_no_mention(adapter: Any) -> None:
     """Test parsing group message without mention."""
     raw_event = {
         "event": {
@@ -76,7 +77,7 @@ async def test_parse_event_group_no_mention(adapter):
 
 
 @pytest.mark.asyncio
-async def test_send_message(adapter):
+async def test_send_message(adapter: Any) -> None:
     """Test sending message."""
     adapter.client.chat_postMessage.return_value = {"ts": "123.456"}
 
@@ -85,14 +86,16 @@ async def test_send_message(adapter):
 
 
 @pytest.mark.asyncio
-async def test_send_reaction(adapter):
+async def test_send_reaction(adapter: Any) -> None:
     """Test sending reaction."""
     await adapter.send_reaction("C123", "123.456", ":thumbsup:")
     adapter.client.reactions_add.assert_called_once()
 
 
 @pytest.mark.asyncio
-async def test_verify_signature(adapter):
+async def test_verify_signature(adapter: Any) -> None:
     """Test signature verification."""
-    result = await adapter.verify_signature(b"body", "1234567890", "v0=signature")
+    result = await adapter.verify_signature(
+        WebhookRequest(body=b"body", timestamp="1234567890", signature="v0=signature")
+    )
     assert isinstance(result, bool)

@@ -1,6 +1,13 @@
 """Tests for messenger adapter registry."""
 
-from pig_messenger.base import BaseMessengerAdapter, IncomingMessage, MessengerType
+from typing import Any
+
+from pig_messenger.base import (
+    BaseMessengerAdapter,
+    IncomingMessage,
+    MessengerType,
+    WebhookRequest,
+)
 from pig_messenger.registry import MessengerRegistry
 
 
@@ -8,17 +15,19 @@ class MockSlackAdapter(BaseMessengerAdapter):
     """Mock Slack adapter for testing."""
 
     async def send_message(
-        self, channel_id: str, text: str, *, thread_id: str | None = None, **kwargs
+        self, channel_id: str, text: str, *, thread_id: str | None = None, **kwargs: Any
     ) -> str:
         return "msg_1"
 
-    async def update_message(self, channel_id: str, message_id: str, text: str, **kwargs) -> None:
+    async def update_message(
+        self, channel_id: str, message_id: str, text: str, **kwargs: Any
+    ) -> None:
         pass
 
-    def parse_event(self, raw_event: dict) -> IncomingMessage | None:
+    async def parse_event(self, raw_event: dict) -> IncomingMessage | None:
         return None
 
-    def verify_signature(self, request_body: bytes, signature: str, **kwargs) -> bool:
+    async def verify_signature(self, request: WebhookRequest) -> bool:
         return True
 
 
@@ -26,21 +35,23 @@ class MockTelegramAdapter(BaseMessengerAdapter):
     """Mock Telegram adapter for testing."""
 
     async def send_message(
-        self, channel_id: str, text: str, *, thread_id: str | None = None, **kwargs
+        self, channel_id: str, text: str, *, thread_id: str | None = None, **kwargs: Any
     ) -> str:
         return "msg_2"
 
-    async def update_message(self, channel_id: str, message_id: str, text: str, **kwargs) -> None:
+    async def update_message(
+        self, channel_id: str, message_id: str, text: str, **kwargs: Any
+    ) -> None:
         pass
 
-    def parse_event(self, raw_event: dict) -> IncomingMessage | None:
+    async def parse_event(self, raw_event: dict) -> IncomingMessage | None:
         return None
 
-    def verify_signature(self, request_body: bytes, signature: str, **kwargs) -> bool:
+    async def verify_signature(self, request: WebhookRequest) -> bool:
         return True
 
 
-def test_register_adapter():
+def test_register_adapter() -> None:
     """Test registering an adapter."""
     MessengerRegistry.clear_all()
 
@@ -52,7 +63,7 @@ def test_register_adapter():
     assert MessengerRegistry.get_class(MessengerType.SLACK) == TestAdapter
 
 
-def test_get_class():
+def test_get_class() -> None:
     """Test getting adapter class."""
     MessengerRegistry.clear_all()
     MessengerRegistry.register(MessengerType.SLACK)(MockSlackAdapter)
@@ -64,7 +75,7 @@ def test_get_class():
     assert MessengerRegistry.get_class(MessengerType.DISCORD) is None
 
 
-def test_get_instance():
+def test_get_instance() -> None:
     """Test getting adapter instance."""
     MessengerRegistry.clear_all()
     MessengerRegistry.register(MessengerType.TELEGRAM)(MockTelegramAdapter)
@@ -76,7 +87,7 @@ def test_get_instance():
     assert MessengerRegistry.get_instance(MessengerType.WHATSAPP) is None
 
 
-def test_all_types():
+def test_all_types() -> None:
     """Test getting all registered types."""
     MessengerRegistry.clear_all()
     MessengerRegistry.register(MessengerType.SLACK)(MockSlackAdapter)
@@ -88,7 +99,7 @@ def test_all_types():
     assert MessengerType.TELEGRAM in types
 
 
-def test_is_registered():
+def test_is_registered() -> None:
     """Test checking if type is registered."""
     MessengerRegistry.clear_all()
     MessengerRegistry.register(MessengerType.SLACK)(MockSlackAdapter)
@@ -97,7 +108,7 @@ def test_is_registered():
     assert MessengerRegistry.is_registered(MessengerType.DISCORD) is False
 
 
-def test_clear_all():
+def test_clear_all() -> None:
     """Test clearing all registrations."""
     MessengerRegistry.clear_all()
     MessengerRegistry.register(MessengerType.SLACK)(MockSlackAdapter)
@@ -109,7 +120,7 @@ def test_clear_all():
     assert len(MessengerRegistry.all_types()) == 0
 
 
-def test_multiple_registrations():
+def test_multiple_registrations() -> None:
     """Test registering multiple adapters."""
     MessengerRegistry.clear_all()
 

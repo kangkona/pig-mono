@@ -5,7 +5,7 @@ from pathlib import Path
 PACKAGE_ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_readme_describes_platform_layer_direction():
+def test_readme_describes_platform_layer_direction() -> None:
     readme = (PACKAGE_ROOT / "README.md").read_text()
 
     required_snippets = [
@@ -41,7 +41,7 @@ def test_readme_describes_platform_layer_direction():
         assert snippet in readme
 
 
-def test_runtime_session_primitives_are_publicly_exported():
+def test_runtime_session_primitives_are_publicly_exported() -> None:
     import pig_tui
 
     for name in (

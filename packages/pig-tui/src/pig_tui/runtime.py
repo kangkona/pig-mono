@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncIterator, Awaitable, Callable
-from contextlib import AbstractAsyncContextManager
+from contextlib import AbstractAsyncContextManager, AbstractContextManager
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol
@@ -160,8 +160,60 @@ class FocusContainer(Container):
         return self._move_focus(step)
 
 
+class StreamWriter(Protocol):
+    def write(self, text: str) -> None: ...
+
+    def set_input(
+        self, text: str, cursor: int | None = None, suggestions: list[str] | None = None
+    ) -> None: ...
+
+    def tick(self) -> None: ...
+
+
 class ChatStreamUI(Protocol):
-    def assistant_stream_markdown(self) -> AbstractAsyncContextManager | object: ...
+    def assistant_stream_markdown(self) -> AbstractContextManager[StreamWriter]: ...
+
+
+class TerminalUI(ChatStreamUI, Protocol):
+    def panel(self, content: str, title: str = "") -> None: ...
+
+    def system(self, message: str) -> None: ...
+
+    def error(self, message: str) -> None: ...
+
+    def user(self, message: str) -> None: ...
+
+    def assistant(self, message: str) -> None: ...
+
+    def clear(self) -> None: ...
+
+    def separator(self) -> None: ...
+
+
+class PromptLike(Protocol):
+    def ask(self, prompt_text: str = "You> ") -> str: ...
+
+
+class PromptFactory(Protocol):
+    def __call__(
+        self,
+        *,
+        commands: list[str],
+        workspace: str,
+        history_file: str | None,
+    ) -> PromptLike: ...
+
+
+class LiveInputListenerFactory(Protocol):
+    def __call__(
+        self,
+        cancel_event: asyncio.Event,
+        on_steering: Callable[[str], None] | None = None,
+        *,
+        on_change: Callable[[str, int, list[str]], None] | None = None,
+        completions: list[str] | None = None,
+        echo: bool = True,
+    ) -> AbstractAsyncContextManager[object]: ...
 
 
 @dataclass
@@ -287,18 +339,18 @@ class PromptRuntime:
         commands: list[str] | Callable[[], list[str]],
         workspace: str = ".",
         history_file: str | Path | None = None,
-        prompt_factory=InteractivePrompt,
+        prompt_factory: PromptFactory = InteractivePrompt,
     ) -> None:
         self.commands = commands
         self.workspace = workspace
         self.history_file = str(history_file) if history_file is not None else None
         self.prompt_factory = prompt_factory
-        self._prompt = None
+        self._prompt: PromptLike | None = None
 
     def _resolve_commands(self) -> list[str]:
         return self.commands() if callable(self.commands) else list(self.commands)
 
-    def _prompt_instance(self):
+    def _prompt_instance(self) -> PromptLike:
         if self._prompt is None:
             self._prompt = self.prompt_factory(
                 commands=self._resolve_commands(),
@@ -318,7 +370,7 @@ class StreamingTurnController:
         self,
         commands: list[str] | Callable[[], list[str]],
         *,
-        live_input_listener_factory=LiveInputListener,
+        live_input_listener_factory: LiveInputListenerFactory = LiveInputListener,
     ) -> None:
         self.commands = commands
         self.live_input_listener_factory = live_input_listener_factory
@@ -330,7 +382,7 @@ class StreamingTurnController:
         self,
         *,
         stream: AsyncIterator[str],
-        ui,
+        ui: ChatStreamUI,
         on_steering: Callable[[str], None],
         cancel_event: asyncio.Event | None = None,
     ) -> TurnResult:
@@ -368,7 +420,7 @@ class TerminalRuntime:
     def __init__(
         self,
         *,
-        ui,
+        ui: TerminalUI,
         commands: list[str] | Callable[[], list[str]],
         workspace: str = ".",
         history_file: str | Path | None = None,

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import io
 import json
+from typing import Any
 from unittest.mock import Mock, patch
 
 import click
@@ -32,7 +33,9 @@ def test_json_line_writer_emits_strict_jsonl() -> None:
 @patch.dict("os.environ", {"OPENAI_API_KEY": "test-key"})
 @patch("pig_coding_agent.cli.LLM")
 @patch("pig_coding_agent.cli.CodingAgent")
-def test_main_maps_name_session_id_and_excluded_tools(mock_agent_class, mock_llm_class, tmp_path):
+def test_main_maps_name_session_id_and_excluded_tools(
+    mock_agent_class: Any, mock_llm_class: Any, tmp_path: Any
+) -> None:
     ctx = Mock(invoked_subcommand=None)
     mock_llm = Mock()
     mock_llm.config = Mock(model="test-model")
@@ -61,7 +64,7 @@ def test_main_maps_name_session_id_and_excluded_tools(mock_agent_class, mock_llm
 
 
 @patch.dict("os.environ", {"OPENAI_API_KEY": "test-key"})
-def test_main_rejects_empty_startup_name(tmp_path):
+def test_main_rejects_empty_startup_name(tmp_path: Any) -> None:
     ctx = Mock(invoked_subcommand=None)
 
     with (
@@ -84,7 +87,7 @@ def test_main_rejects_empty_startup_name(tmp_path):
 
 
 @patch.dict("os.environ", {"OPENAI_API_KEY": "test-key"})
-def test_main_rejects_session_id_with_conflicting_session_selector(tmp_path):
+def test_main_rejects_session_id_with_conflicting_session_selector(tmp_path: Any) -> None:
     ctx = Mock(invoked_subcommand=None)
 
     with (
@@ -110,7 +113,7 @@ def test_main_rejects_session_id_with_conflicting_session_selector(tmp_path):
 
 
 @patch.dict("os.environ", {"OPENAI_API_KEY": "test-key"})
-def test_main_rejects_invalid_session_id(tmp_path):
+def test_main_rejects_invalid_session_id(tmp_path: Any) -> None:
     ctx = Mock(invoked_subcommand=None)
 
     with (
@@ -136,7 +139,7 @@ def test_main_rejects_invalid_session_id(tmp_path):
 
 
 @patch.dict("os.environ", {"OPENAI_API_KEY": "test-key"})
-def test_main_rejects_fork_with_conflicting_session_selector(tmp_path):
+def test_main_rejects_fork_with_conflicting_session_selector(tmp_path: Any) -> None:
     ctx = Mock(invoked_subcommand=None)
 
     with (
@@ -162,7 +165,9 @@ def test_main_rejects_fork_with_conflicting_session_selector(tmp_path):
 @patch.dict("os.environ", {"OPENAI_API_KEY": "test-key"})
 @patch("pig_coding_agent.cli.LLM")
 @patch("pig_coding_agent.cli.CodingAgent")
-def test_main_passes_explicit_compat_mode_to_llm(mock_agent_class, mock_llm_class, tmp_path):
+def test_main_passes_explicit_compat_mode_to_llm(
+    mock_agent_class: Any, mock_llm_class: Any, tmp_path: Any
+) -> None:
     ctx = Mock(invoked_subcommand=None)
     mock_llm = Mock()
     mock_llm.config = Mock(model="test-model")
@@ -189,7 +194,9 @@ def test_main_passes_explicit_compat_mode_to_llm(mock_agent_class, mock_llm_clas
 @patch.dict("os.environ", {"OPENAI_API_KEY": "test-key"})
 @patch("pig_coding_agent.cli.LLM")
 @patch("pig_coding_agent.cli.CodingAgent")
-def test_main_maps_fork_target_to_session_path(mock_agent_class, mock_llm_class, tmp_path):
+def test_main_maps_fork_target_to_session_path(
+    mock_agent_class: Any, mock_llm_class: Any, tmp_path: Any
+) -> None:
     ctx = Mock(invoked_subcommand=None)
     mock_llm = Mock()
     mock_llm.config = Mock(model="test-model")
@@ -228,7 +235,9 @@ def test_main_maps_fork_target_to_session_path(mock_agent_class, mock_llm_class,
 @patch.dict("os.environ", {"OPENAI_API_KEY": "test-key"})
 @patch("pig_coding_agent.cli.LLM")
 @patch("pig_coding_agent.cli.CodingAgent")
-def test_main_uses_env_session_dir_for_session_lookup(mock_agent_class, mock_llm_class, tmp_path):
+def test_main_uses_env_session_dir_for_session_lookup(
+    mock_agent_class: Any, mock_llm_class: Any, tmp_path: Any
+) -> None:
     ctx = Mock(invoked_subcommand=None)
     mock_llm = Mock()
     mock_llm.config = Mock(model="test-model")
@@ -270,8 +279,8 @@ def test_main_uses_env_session_dir_for_session_lookup(mock_agent_class, mock_llm
 @patch("pig_coding_agent.cli.LLM")
 @patch("pig_coding_agent.cli.CodingAgent")
 def test_main_explicit_session_dir_overrides_env_for_lookup(
-    mock_agent_class, mock_llm_class, tmp_path
-):
+    mock_agent_class: Any, mock_llm_class: Any, tmp_path: Any
+) -> None:
     ctx = Mock(invoked_subcommand=None)
     mock_llm = Mock()
     mock_llm.config = Mock(model="test-model")
@@ -315,8 +324,8 @@ def test_main_explicit_session_dir_overrides_env_for_lookup(
 @patch("pig_coding_agent.cli.LLM")
 @patch("pig_coding_agent.cli.CodingAgent")
 def test_main_uses_project_config_session_dir_for_lookup(
-    mock_agent_class, mock_llm_class, tmp_path
-):
+    mock_agent_class: Any, mock_llm_class: Any, tmp_path: Any
+) -> None:
     ctx = Mock(invoked_subcommand=None)
     mock_llm = Mock()
     mock_llm.config = Mock(model="test-model")
@@ -361,8 +370,8 @@ def test_main_uses_project_config_session_dir_for_lookup(
 @patch("pig_coding_agent.cli.LLM")
 @patch("pig_coding_agent.cli.CodingAgent")
 def test_main_uses_global_config_session_dir_for_lookup(
-    mock_agent_class, mock_llm_class, tmp_path, monkeypatch
-):
+    mock_agent_class: Any, mock_llm_class: Any, tmp_path: Any, monkeypatch: Any
+) -> None:
     ctx = Mock(invoked_subcommand=None)
     mock_llm = Mock()
     mock_llm.config = Mock(model="test-model")
@@ -409,8 +418,8 @@ def test_main_uses_global_config_session_dir_for_lookup(
 @patch("pig_coding_agent.cli.LLM")
 @patch("pig_coding_agent.cli.CodingAgent")
 def test_main_maps_session_target_to_existing_session_path(
-    mock_agent_class, mock_llm_class, tmp_path
-):
+    mock_agent_class: Any, mock_llm_class: Any, tmp_path: Any
+) -> None:
     ctx = Mock(invoked_subcommand=None)
     mock_llm = Mock()
     mock_llm.config = Mock(model="test-model")
@@ -449,8 +458,8 @@ def test_main_maps_session_target_to_existing_session_path(
 @patch("pig_coding_agent.cli.LLM")
 @patch("pig_coding_agent.cli.CodingAgent")
 def test_main_keeps_session_name_when_session_target_not_found(
-    mock_agent_class, mock_llm_class, tmp_path
-):
+    mock_agent_class: Any, mock_llm_class: Any, tmp_path: Any
+) -> None:
     ctx = Mock(invoked_subcommand=None)
     mock_llm = Mock()
     mock_llm.config = Mock(model="test-model")
@@ -485,7 +494,9 @@ def test_main_keeps_session_name_when_session_target_not_found(
 @patch.dict("os.environ", {"OPENAI_API_KEY": "test-key"})
 @patch("pig_coding_agent.cli.LLM")
 @patch("pig_coding_agent.cli.CodingAgent")
-def test_main_accepts_explicit_fork_session_path(mock_agent_class, mock_llm_class, tmp_path):
+def test_main_accepts_explicit_fork_session_path(
+    mock_agent_class: Any, mock_llm_class: Any, tmp_path: Any
+) -> None:
     ctx = Mock(invoked_subcommand=None)
     mock_llm = Mock()
     mock_llm.config = Mock(model="test-model")
@@ -518,8 +529,8 @@ def test_main_accepts_explicit_fork_session_path(mock_agent_class, mock_llm_clas
 @patch("pig_coding_agent.cli.LLM")
 @patch("pig_coding_agent.cli.CodingAgent")
 def test_json_mode_does_not_print_rich_startup_to_stdout(
-    mock_agent_class, mock_llm_class, tmp_path
-):
+    mock_agent_class: Any, mock_llm_class: Any, tmp_path: Any
+) -> None:
     ctx = Mock(invoked_subcommand=None)
     mock_llm = Mock()
     mock_llm.config = Mock(model="test-model")
@@ -548,8 +559,8 @@ def test_json_mode_does_not_print_rich_startup_to_stdout(
 @patch("pig_coding_agent.cli.LLM")
 @patch("pig_coding_agent.cli.CodingAgent")
 def test_default_mode_merges_piped_stdin_into_initial_prompt(
-    mock_agent_class, mock_llm_class, tmp_path
-):
+    mock_agent_class: Any, mock_llm_class: Any, tmp_path: Any
+) -> None:
     ctx = Mock(invoked_subcommand=None)
     mock_llm = Mock()
     mock_llm.config = Mock(model="test-model")
@@ -583,8 +594,8 @@ def test_default_mode_merges_piped_stdin_into_initial_prompt(
 @patch("pig_coding_agent.cli.LLM")
 @patch("pig_coding_agent.cli.CodingAgent")
 def test_non_tty_stdin_fails_closed_before_input_becomes_ready(
-    mock_agent_class, mock_llm_class, tmp_path
-):
+    mock_agent_class: Any, mock_llm_class: Any, tmp_path: Any
+) -> None:
     ctx = Mock(invoked_subcommand=None)
     mock_llm = Mock()
     mock_llm.config = Mock(model="test-model")
@@ -615,8 +626,8 @@ def test_non_tty_stdin_fails_closed_before_input_becomes_ready(
 @patch("pig_coding_agent.cli.LLM")
 @patch("pig_coding_agent.cli.CodingAgent")
 def test_empty_non_tty_stdin_does_not_launch_interactive_mode(
-    mock_agent_class, mock_llm_class, tmp_path
-):
+    mock_agent_class: Any, mock_llm_class: Any, tmp_path: Any
+) -> None:
     ctx = Mock(invoked_subcommand=None)
     mock_agent = Mock()
     mock_agent.session = None
@@ -639,8 +650,8 @@ def test_empty_non_tty_stdin_does_not_launch_interactive_mode(
 @patch("pig_coding_agent.cli.LLM")
 @patch("pig_coding_agent.cli.CodingAgent")
 def test_rpc_mode_reserves_stdout_by_disabling_verbose_startup(
-    mock_agent_class, mock_llm_class, tmp_path
-):
+    mock_agent_class: Any, mock_llm_class: Any, tmp_path: Any
+) -> None:
     ctx = Mock(invoked_subcommand=None)
     mock_llm = Mock()
     mock_llm.config = Mock(model="test-model")
@@ -665,7 +676,7 @@ def test_rpc_mode_reserves_stdout_by_disabling_verbose_startup(
     assert policy.deny_reason == permissions.UNATTENDED_PERMISSION_DENIAL
 
 
-def test_rpc_bash_can_exclude_output_from_context(monkeypatch) -> None:
+def test_rpc_bash_can_exclude_output_from_context(monkeypatch: Any) -> None:
     requests = iter(
         [
             json.dumps(
@@ -695,7 +706,7 @@ def test_rpc_bash_can_exclude_output_from_context(monkeypatch) -> None:
     assert response["result"]["output"] == "[Output excluded from model context]"
 
 
-def test_rpc_bash_without_explicit_policy_fails_closed(monkeypatch) -> None:
+def test_rpc_bash_without_explicit_policy_fails_closed(monkeypatch: Any) -> None:
     requests = iter(
         [
             json.dumps(
@@ -731,7 +742,7 @@ def test_rpc_bash_without_explicit_policy_fails_closed(monkeypatch) -> None:
     exec_sync.assert_not_called()
 
 
-def test_rpc_mode_emits_shutdown_reason_on_eof(monkeypatch) -> None:
+def test_rpc_mode_emits_shutdown_reason_on_eof(monkeypatch: Any) -> None:
     requests = iter([""])
     out = io.StringIO()
     agent = Mock()
@@ -748,7 +759,7 @@ def test_rpc_mode_emits_shutdown_reason_on_eof(monkeypatch) -> None:
     assert event["data"] == {"reason": "eof"}
 
 
-def test_rpc_mode_emits_extension_shutdown_event_on_eof(monkeypatch) -> None:
+def test_rpc_mode_emits_extension_shutdown_event_on_eof(monkeypatch: Any) -> None:
     requests = iter([""])
     out = io.StringIO()
     agent = Mock()
@@ -762,12 +773,12 @@ def test_rpc_mode_emits_extension_shutdown_event_on_eof(monkeypatch) -> None:
     agent.extension_manager.cleanup.assert_called_once_with(reason="eof")
 
 
-def test_rpc_mode_emits_shutdown_reason_on_interrupt(monkeypatch) -> None:
+def test_rpc_mode_emits_shutdown_reason_on_interrupt(monkeypatch: Any) -> None:
     requests = iter(KeyboardInterrupt() for _ in range(1))
     out = io.StringIO()
     agent = Mock()
 
-    def interrupted_readline():
+    def interrupted_readline() -> Any:
         raise next(requests)
 
     monkeypatch.setattr("sys.stdin.readline", interrupted_readline)
@@ -782,13 +793,13 @@ def test_rpc_mode_emits_shutdown_reason_on_interrupt(monkeypatch) -> None:
     assert event["data"] == {"reason": "interrupt"}
 
 
-def test_rpc_mode_emits_extension_shutdown_event_on_interrupt(monkeypatch) -> None:
+def test_rpc_mode_emits_extension_shutdown_event_on_interrupt(monkeypatch: Any) -> None:
     requests = iter(KeyboardInterrupt() for _ in range(1))
     out = io.StringIO()
     agent = Mock()
     agent.extension_manager = Mock()
 
-    def interrupted_readline():
+    def interrupted_readline() -> Any:
         raise next(requests)
 
     monkeypatch.setattr("sys.stdin.readline", interrupted_readline)
@@ -799,7 +810,7 @@ def test_rpc_mode_emits_extension_shutdown_event_on_interrupt(monkeypatch) -> No
     agent.extension_manager.cleanup.assert_called_once_with(reason="interrupt")
 
 
-def test_rpc_mode_cleans_up_extensions_on_shutdown(monkeypatch) -> None:
+def test_rpc_mode_cleans_up_extensions_on_shutdown(monkeypatch: Any) -> None:
     requests = iter([""])
     out = io.StringIO()
     agent = Mock()
@@ -813,13 +824,13 @@ def test_rpc_mode_cleans_up_extensions_on_shutdown(monkeypatch) -> None:
     agent.extension_manager.cleanup.assert_called_once_with(reason="eof")
 
 
-def test_rpc_mode_cleans_up_extensions_on_interrupt(monkeypatch) -> None:
+def test_rpc_mode_cleans_up_extensions_on_interrupt(monkeypatch: Any) -> None:
     requests = iter(KeyboardInterrupt() for _ in range(1))
     out = io.StringIO()
     agent = Mock()
     agent.extension_manager = Mock()
 
-    def interrupted_readline():
+    def interrupted_readline() -> Any:
         raise next(requests)
 
     monkeypatch.setattr("sys.stdin.readline", interrupted_readline)
@@ -830,7 +841,7 @@ def test_rpc_mode_cleans_up_extensions_on_interrupt(monkeypatch) -> None:
     agent.extension_manager.cleanup.assert_called_once_with(reason="interrupt")
 
 
-def test_rpc_mode_emits_error_shutdown_reason_on_handler_failure(monkeypatch) -> None:
+def test_rpc_mode_emits_error_shutdown_reason_on_handler_failure(monkeypatch: Any) -> None:
     requests = iter(
         [json.dumps({"id": 1, "method": "complete", "params": {"message": "hi"}}) + "\n", ""]
     )
@@ -856,7 +867,7 @@ def test_rpc_mode_emits_error_shutdown_reason_on_handler_failure(monkeypatch) ->
     agent.extension_manager.cleanup.assert_called_once_with(reason="error")
 
 
-def test_rpc_mode_emits_error_shutdown_reason_on_invalid_json(monkeypatch) -> None:
+def test_rpc_mode_emits_error_shutdown_reason_on_invalid_json(monkeypatch: Any) -> None:
     requests = iter(["not-json\n", ""])
     out = io.StringIO()
     agent = Mock()
@@ -878,12 +889,12 @@ def test_rpc_mode_emits_error_shutdown_reason_on_invalid_json(monkeypatch) -> No
     agent.extension_manager.cleanup.assert_called_once_with(reason="error")
 
 
-def test_rpc_mode_emits_error_shutdown_reason_on_read_exception(monkeypatch) -> None:
+def test_rpc_mode_emits_error_shutdown_reason_on_read_exception(monkeypatch: Any) -> None:
     out = io.StringIO()
     agent = Mock()
     agent.extension_manager = Mock()
 
-    def broken_readline():
+    def broken_readline() -> Any:
         raise OSError("stdin broke")
 
     monkeypatch.setattr("sys.stdin.readline", broken_readline)
@@ -903,7 +914,7 @@ def test_rpc_mode_emits_error_shutdown_reason_on_read_exception(monkeypatch) -> 
 
 
 def test_rpc_mode_emits_extension_shutdown_once_with_real_extension_manager(
-    monkeypatch,
+    monkeypatch: Any,
 ) -> None:
     requests = iter([""])
     out = io.StringIO()
@@ -912,7 +923,7 @@ def test_rpc_mode_emits_extension_shutdown_once_with_real_extension_manager(
     shutdown_events = []
 
     @manager.api.on("session_shutdown")
-    def on_shutdown(event, ctx):
+    def on_shutdown(event: Any, ctx: Any) -> Any:
         shutdown_events.append(event)
 
     agent.extension_manager = manager

@@ -7,7 +7,7 @@ from pig_agent_core.agent import Agent
 from pig_agent_core.tools import Tool
 
 
-def test_agent_initialization_with_enhanced_subsystems():
+def test_agent_initialization_with_enhanced_subsystems() -> None:
     """Test that agent can be initialized with all enhanced subsystems."""
     mock_llm = Mock()
     mock_llm.config.model = "gpt-4"
@@ -27,7 +27,7 @@ def test_agent_initialization_with_enhanced_subsystems():
     assert isinstance(agent.registry, type(agent.registry))
 
 
-def test_agent_add_tool_with_enhanced_registry():
+def test_agent_add_tool_with_enhanced_registry() -> None:
     """Test adding tools to enhanced registry."""
     mock_llm = Mock()
     mock_llm.config.model = "gpt-4"
@@ -55,7 +55,32 @@ def test_agent_add_tool_with_enhanced_registry():
     assert len(agent.registry) == 1
 
 
-def test_agent_plan_tracking():
+def test_agent_tool_adapter_is_applied_to_initial_and_dynamic_tools() -> None:
+    """Hosts can transform or reject tools without replacing Agent.add_tool."""
+
+    def original_tool() -> str:
+        return "original"
+
+    def replacement_tool() -> str:
+        return "replacement"
+
+    def adapt(tool: Tool) -> Tool | None:
+        if tool.name == "rejected":
+            return None
+        return Tool(replacement_tool, name=f"adapted_{tool.name}")
+
+    agent = Agent(
+        llm=Mock(),
+        tools=[Tool(original_tool, name="initial")],
+        tool_adapter=adapt,
+    )
+    agent.add_tool(Tool(original_tool, name="dynamic"))
+    agent.add_tool(Tool(original_tool, name="rejected"))
+
+    assert set(agent.registry.list_active_tools()) == {"adapted_initial", "adapted_dynamic"}
+
+
+def test_agent_plan_tracking() -> None:
     """Test that agent tracks plan tool usage."""
     mock_llm = Mock()
     mock_llm.config.model = "gpt-4"
@@ -66,7 +91,7 @@ def test_agent_plan_tracking():
     assert agent._rounds_since_plan == 0
 
 
-def test_agent_backward_compatibility():
+def test_agent_backward_compatibility() -> None:
     """Test that old API still works (max_iterations)."""
     mock_llm = Mock()
     mock_llm.config.model = "gpt-4"
@@ -76,7 +101,7 @@ def test_agent_backward_compatibility():
     assert agent.max_iterations == 15
 
 
-def test_agent_max_rounds_precedence():
+def test_agent_max_rounds_precedence() -> None:
     """Test that max_rounds takes precedence over max_iterations."""
     mock_llm = Mock()
     mock_llm.config.model = "gpt-4"
@@ -87,7 +112,7 @@ def test_agent_max_rounds_precedence():
 
 
 @pytest.mark.asyncio
-async def test_agent_arun_structure():
+async def test_agent_arun_structure() -> None:
     """Test that arun method exists and has correct structure."""
     mock_llm = Mock()
     mock_llm.config.model = "gpt-4"

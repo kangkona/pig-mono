@@ -1,6 +1,7 @@
 """Contracts for transcript-anchored and provider-constrained tools."""
 
 from types import SimpleNamespace
+from typing import Any, Literal, cast
 from unittest.mock import Mock
 
 import pytest
@@ -45,7 +46,7 @@ def test_tool_result_serializes_added_tool_names_without_breaking_legacy_shape()
 
 
 @pytest.mark.asyncio
-async def test_discover_tools_returns_a_transcript_activation_anchor(monkeypatch) -> None:
+async def test_discover_tools_returns_a_transcript_activation_anchor(monkeypatch: Any) -> None:
     monkeypatch.setattr(
         handlers_core,
         "get_all_schemas",
@@ -138,7 +139,7 @@ def test_session_restores_available_tools_from_the_selected_transcript_branch() 
     assert tree.available_tool_names_at(clean_branch.id, initial_tool_names=["core"]) == {"core"}
 
 
-def test_session_add_tool_result_persists_activation_anchor(tmp_path) -> None:
+def test_session_add_tool_result_persists_activation_anchor(tmp_path: Any) -> None:
     session = Session(name="dynamic", workspace=str(tmp_path), auto_save=False)
     session.add_message("system", "start")
     entry = session.add_tool_result(
@@ -224,7 +225,9 @@ def test_grammar_constraints_are_gated_and_rendered(grammar_type: str) -> None:
         registry.get_provider_schemas(ToolModelCapabilities())
 
     rendered = registry.get_provider_schemas(
-        ToolModelCapabilities(supported_grammar_tools={grammar_type})
+        ToolModelCapabilities(
+            supported_grammar_tools={cast(Literal["regex", "lark"], grammar_type)}
+        )
     )[0]
     assert rendered["function"]["grammar"] == {
         "type": grammar_type,

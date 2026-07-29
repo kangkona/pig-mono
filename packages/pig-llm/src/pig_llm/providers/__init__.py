@@ -1,12 +1,14 @@
 """Provider implementations."""
 
+from typing import Any
+
 from ._base import Provider
 
 # Import providers with graceful fallback for missing dependencies.
 # Each provider's SDK is optional — only the ones you use need to be installed.
 
 
-def _try_import(name, module, attr):
+def _try_import(name: str, module: str, attr: str) -> Any:
     try:
         mod = __import__(f"pig_llm.providers.{module}", fromlist=[attr])
         return getattr(mod, attr)

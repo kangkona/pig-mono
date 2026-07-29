@@ -1,14 +1,15 @@
 """Tests for WhatsApp messenger adapter."""
 
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from pig_messenger.adapters.whatsapp import WhatsAppMessengerAdapter
-from pig_messenger.base import MessengerType
+from pig_messenger.base import MessengerType, WebhookRequest
 
 
 @pytest.fixture
-def adapter():
+def adapter() -> Any:
     """Create WhatsApp adapter."""
     adapter = WhatsAppMessengerAdapter(
         account_sid="AC123",
@@ -19,7 +20,7 @@ def adapter():
     return adapter
 
 
-def test_whatsapp_adapter_capabilities(adapter):
+def test_whatsapp_adapter_capabilities(adapter: Any) -> None:
     """Test WhatsApp adapter capabilities."""
     caps = adapter.capabilities
     assert caps.can_edit is False
@@ -29,7 +30,7 @@ def test_whatsapp_adapter_capabilities(adapter):
 
 
 @pytest.mark.asyncio
-async def test_parse_event(adapter):
+async def test_parse_event(adapter: Any) -> None:
     """Test parsing webhook event."""
     raw_event = {
         "MessageSid": "SM123",
@@ -47,7 +48,7 @@ async def test_parse_event(adapter):
 
 
 @pytest.mark.asyncio
-async def test_parse_event_no_body(adapter):
+async def test_parse_event_no_body(adapter: Any) -> None:
     """Test parsing event without body."""
     raw_event = {"MessageSid": "SM123"}
 
@@ -56,7 +57,7 @@ async def test_parse_event_no_body(adapter):
 
 
 @pytest.mark.asyncio
-async def test_send_message(adapter):
+async def test_send_message(adapter: Any) -> None:
     """Test sending message."""
     mock_response = MagicMock()
     mock_response.json.return_value = {"sid": "SM999"}
@@ -67,11 +68,13 @@ async def test_send_message(adapter):
 
 
 @pytest.mark.asyncio
-async def test_verify_signature(adapter):
+async def test_verify_signature(adapter: Any) -> None:
     """Test signature verification."""
     url = "https://example.com/webhook"
     params = {"From": "whatsapp:+1234567890", "Body": "test"}
     signature = "test_signature"
 
-    result = await adapter.verify_signature(url, params, signature)
+    result = await adapter.verify_signature(
+        WebhookRequest(url=url, params=params, signature=signature)
+    )
     assert isinstance(result, bool)

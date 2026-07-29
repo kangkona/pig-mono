@@ -7,7 +7,7 @@ from pig_tui.keylistener import LiveInputListener
 
 
 @pytest.mark.asyncio
-async def test_listener_is_noop_when_stdin_not_a_tty():
+async def test_listener_is_noop_when_stdin_not_a_tty() -> None:
     # Under pytest stdin is not an interactive TTY, so the listener must degrade
     # to a no-op (no raw mode, no thread) rather than corrupting the terminal.
     cancel = asyncio.Event()
@@ -18,7 +18,7 @@ async def test_listener_is_noop_when_stdin_not_a_tty():
 
 
 @pytest.mark.asyncio
-async def test_esc_byte_sets_cancel_event():
+async def test_esc_byte_sets_cancel_event() -> None:
     cancel = asyncio.Event()
     listener = LiveInputListener(cancel, echo=False)
     listener._loop = asyncio.get_running_loop()
@@ -30,7 +30,7 @@ async def test_esc_byte_sets_cancel_event():
 
 
 @pytest.mark.asyncio
-async def test_typed_line_then_enter_fires_steering():
+async def test_typed_line_then_enter_fires_steering() -> None:
     cancel = asyncio.Event()
     received: list[str] = []
     listener = LiveInputListener(cancel, on_steering=received.append, echo=False)
@@ -46,7 +46,7 @@ async def test_typed_line_then_enter_fires_steering():
 
 
 @pytest.mark.asyncio
-async def test_backspace_edits_line_before_submit():
+async def test_backspace_edits_line_before_submit() -> None:
     cancel = asyncio.Event()
     received: list[str] = []
     listener = LiveInputListener(cancel, on_steering=received.append, echo=False)
@@ -62,7 +62,7 @@ async def test_backspace_edits_line_before_submit():
 
 
 @pytest.mark.asyncio
-async def test_blank_line_does_not_fire_steering():
+async def test_blank_line_does_not_fire_steering() -> None:
     cancel = asyncio.Event()
     received: list[str] = []
     listener = LiveInputListener(cancel, on_steering=received.append, echo=False)
@@ -75,7 +75,7 @@ async def test_blank_line_does_not_fire_steering():
 
 
 @pytest.mark.asyncio
-async def test_on_change_emits_live_buffer():
+async def test_on_change_emits_live_buffer() -> None:
     """Typing fires on_change with the current buffer (for live echo in the UI)."""
     seen: list[tuple[str, int]] = []
     listener = LiveInputListener(
@@ -92,7 +92,7 @@ async def test_on_change_emits_live_buffer():
 
 
 @pytest.mark.asyncio
-async def test_enter_clears_buffer_via_on_change():
+async def test_enter_clears_buffer_via_on_change() -> None:
     received: list[str] = []
     changes: list[str] = []
     listener = LiveInputListener(
@@ -113,7 +113,7 @@ async def test_enter_clears_buffer_via_on_change():
 
 
 @pytest.mark.asyncio
-async def test_multibyte_cjk_input_is_decoded_and_buffered():
+async def test_multibyte_cjk_input_is_decoded_and_buffered() -> None:
     """CJK input (multi-byte UTF-8) must assemble into whole characters."""
     import codecs
 
@@ -133,7 +133,7 @@ async def test_multibyte_cjk_input_is_decoded_and_buffered():
 
 
 @pytest.mark.asyncio
-async def test_cursor_insert_move_and_edit():
+async def test_cursor_insert_move_and_edit() -> None:
     """Arrow/Home/End move the cursor; typing inserts at the cursor."""
     submitted: list[str] = []
     listener = LiveInputListener(asyncio.Event(), on_steering=submitted.append, echo=False)
@@ -150,7 +150,7 @@ async def test_cursor_insert_move_and_edit():
 
 
 @pytest.mark.asyncio
-async def test_home_end_and_backspace_at_cursor():
+async def test_home_end_and_backspace_at_cursor() -> None:
     submitted: list[str] = []
     listener = LiveInputListener(asyncio.Event(), on_steering=submitted.append, echo=False)
     listener._loop = asyncio.get_running_loop()
@@ -167,7 +167,7 @@ async def test_home_end_and_backspace_at_cursor():
 
 
 @pytest.mark.asyncio
-async def test_ctrl_u_clears_and_ctrl_w_deletes_word():
+async def test_ctrl_u_clears_and_ctrl_w_deletes_word() -> None:
     submitted: list[str] = []
     listener = LiveInputListener(asyncio.Event(), on_steering=submitted.append, echo=False)
     listener._loop = asyncio.get_running_loop()
@@ -189,7 +189,7 @@ async def test_ctrl_u_clears_and_ctrl_w_deletes_word():
 
 
 @pytest.mark.asyncio
-async def test_escape_sequence_moves_cursor_not_abort():
+async def test_escape_sequence_moves_cursor_not_abort() -> None:
     cancel = asyncio.Event()
     changes: list[tuple[str, int]] = []
     listener = LiveInputListener(
@@ -206,7 +206,7 @@ async def test_escape_sequence_moves_cursor_not_abort():
 
 
 @pytest.mark.asyncio
-async def test_slash_command_suggestions_emitted():
+async def test_slash_command_suggestions_emitted() -> None:
     cmds = ["/compact", "/clear", "/copy", "/cost", "/model"]
     changes: list[tuple[str, int, list[str]]] = []
     listener = LiveInputListener(
@@ -227,7 +227,7 @@ async def test_slash_command_suggestions_emitted():
 
 
 @pytest.mark.asyncio
-async def test_tab_completes_unique_and_common_prefix():
+async def test_tab_completes_unique_and_common_prefix() -> None:
     cmds = ["/compact", "/copy", "/cost", "/model"]
     submitted: list[str] = []
     listener = LiveInputListener(asyncio.Event(), on_steering=submitted.append, completions=cmds)

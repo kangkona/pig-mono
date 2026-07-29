@@ -1,6 +1,7 @@
 """Session export functionality (HTML, Markdown, etc.)."""
 
 import html
+import re
 from datetime import datetime
 from pathlib import Path
 
@@ -196,13 +197,11 @@ class SessionExporter:
         Returns:
             HTML-formatted content
         """
-        import re
-
         # Escape HTML
         content = html.escape(content)
 
         # Detect code blocks ```
-        def replace_code_block(match):
+        def replace_code_block(match: re.Match[str]) -> str:
             code = match.group(1)
             return f"<pre><code>{code}</code></pre>"
 

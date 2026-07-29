@@ -5,17 +5,27 @@ from __future__ import annotations
 import asyncio
 import json
 from types import SimpleNamespace
+from typing import Any, cast
 
 import pytest
-from pig_agent_core.agent import Agent
+from pig_agent_core.agent import Agent as CoreAgent
 from pig_agent_core.session import Session, SessionTree, serialize_compaction_tool_result
 from pig_agent_core.tools import ToolResult
-from pig_llm import StreamChunk
+from pig_llm import LLM, StreamChunk
 
 
-def test_session_tree_loads_large_jsonl_incrementally(tmp_path) -> None:
+class Agent(CoreAgent):
+    """Test adapter that narrows fake LLMs at the production boundary."""
+
+    def __init__(self, *args: Any, llm: object | None = None, **kwargs: Any) -> None:
+        if llm is not None:
+            kwargs["llm"] = cast(LLM, llm)
+        super().__init__(*args, **kwargs)
+
+
+def test_session_tree_loads_large_jsonl_incrementally(tmp_path: Any) -> None:
     path = tmp_path / "large.jsonl"
-    entries = []
+    entries: list[dict[str, Any]] = []
     for i in range(2000):
         entries.append(
             {
@@ -36,34 +46,36 @@ def test_session_tree_loads_large_jsonl_incrementally(tmp_path) -> None:
     assert tree.current_id == "entry-1999"
 
 
-def test_session_load_streams_tree_lines_without_reading_full_tail(monkeypatch, tmp_path) -> None:
+def test_session_load_streams_tree_lines_without_reading_full_tail(
+    monkeypatch: Any, tmp_path: Any
+) -> None:
     session = Session(name="streamed", workspace=str(tmp_path), auto_save=False)
     session.add_message("user", "hello")
     save_path = session.save()
 
     class GuardedFile:
-        def __init__(self, wrapped):
+        def __init__(self, wrapped: Any) -> None:
             self._wrapped = wrapped
 
-        def __enter__(self):
+        def __enter__(self) -> Any:
             self._wrapped.__enter__()
             return self
 
-        def __exit__(self, *args):
+        def __exit__(self, *args: Any) -> Any:
             return self._wrapped.__exit__(*args)
 
-        def readline(self, *args, **kwargs):
+        def readline(self, *args: Any, **kwargs: Any) -> Any:
             return self._wrapped.readline(*args, **kwargs)
 
-        def __iter__(self):
+        def __iter__(self) -> Any:
             return iter(self._wrapped)
 
-        def read(self, *args, **kwargs):
+        def read(self, *args: Any, **kwargs: Any) -> Any:
             raise AssertionError("Session.load should not materialize the whole JSONL tail")
 
     real_open = open
 
-    def guarded_open(*args, **kwargs):
+    def guarded_open(*args: Any, **kwargs: Any) -> Any:
         return GuardedFile(real_open(*args, **kwargs))
 
     monkeypatch.setattr("builtins.open", guarded_open)
@@ -74,7 +86,7 @@ def test_session_load_streams_tree_lines_without_reading_full_tail(monkeypatch, 
     assert len(loaded.tree.entries) == 1
 
 
-def test_session_save_keeps_header_small_and_excludes_duplicate_tree_payload(tmp_path) -> None:
+def test_session_save_keeps_header_small_and_excludes_duplicate_tree_payload(tmp_path: Any) -> None:
     session = Session(name="header-only", workspace=str(tmp_path), auto_save=False)
     for i in range(50):
         session.add_message("user", f"message {i}")
@@ -89,7 +101,7 @@ def test_session_save_keeps_header_small_and_excludes_duplicate_tree_payload(tmp
 
 
 def test_session_save_streams_tree_lines_without_materializing_full_jsonl(
-    monkeypatch, tmp_path
+    monkeypatch: Any, tmp_path: Any
 ) -> None:
     session = Session(name="stream-save", workspace=str(tmp_path), auto_save=False)
     for i in range(3):
@@ -170,7 +182,7 @@ def test_repeated_session_compact_keeps_single_summary_and_same_tail() -> None:
     assert len(session.tree.entries) == entry_count_after_first
 
 
-def test_session_compact_save_load_preserves_recent_tail_after_reload(tmp_path) -> None:
+def test_session_compact_save_load_preserves_recent_tail_after_reload(tmp_path: Any) -> None:
     session = Session(name="compact-reload", workspace=str(tmp_path), auto_save=False)
     for i in range(10):
         session.add_message("user", f"user {i}")
@@ -185,7 +197,9 @@ def test_session_compact_save_load_preserves_recent_tail_after_reload(tmp_path) 
     ]
 
 
-def test_session_compact_save_preserves_history_and_authoritative_current_root(tmp_path) -> None:
+def test_session_compact_save_preserves_history_and_authoritative_current_root(
+    tmp_path: Any,
+) -> None:
     session = Session(name="compact-save", workspace=str(tmp_path), auto_save=False)
     for i in range(12):
         session.add_message("user", f"user {i}")
@@ -211,10 +225,10 @@ def test_agent_before_tool_call_abort_skips_sibling_tools() -> None:
     class FakeLLM:
         config = SimpleNamespace(model="fake")
 
-        def __init__(self):
+        def __init__(self) -> None:
             self.calls = 0
 
-        def chat(self, messages, tools=None):
+        def chat(self, messages: Any, tools: Any = None) -> Any:
             self.calls += 1
             if self.calls == 1:
                 return SimpleNamespace(
@@ -232,15 +246,15 @@ def test_agent_before_tool_call_abort_skips_sibling_tools() -> None:
                 )
             return SimpleNamespace(content="done", tool_calls=None)
 
-    def first():
+    def first() -> Any:
         executed.append("first")
         return "first"
 
-    def second():
+    def second() -> Any:
         executed.append("second")
         return "second"
 
-    def before_tool_call(name, args):
+    def before_tool_call(name: Any, args: Any) -> Any:
         if name == "first":
             return ToolResult(ok=False, error="blocked", meta={"abort_batch": True})
         return None
@@ -267,10 +281,10 @@ def test_agent_after_tool_call_exception_becomes_error_tool_result() -> None:
     class FakeLLM:
         config = SimpleNamespace(model="fake")
 
-        def __init__(self):
+        def __init__(self) -> None:
             self.calls = 0
 
-        def chat(self, messages, tools=None):
+        def chat(self, messages: Any, tools: Any = None) -> Any:
             self.calls += 1
             if self.calls == 1:
                 return SimpleNamespace(
@@ -284,10 +298,10 @@ def test_agent_after_tool_call_exception_becomes_error_tool_result() -> None:
                 )
             return SimpleNamespace(content="done", tool_calls=None)
 
-    def ok_tool():
+    def ok_tool() -> Any:
         return "ok"
 
-    def after_tool_call(name, args, result):
+    def after_tool_call(name: Any, args: Any, result: Any) -> Any:
         raise RuntimeError("after failed")
 
     agent = Agent(llm=FakeLLM(), tools=[], after_tool_call=after_tool_call, verbose=False)
@@ -306,18 +320,18 @@ async def test_arun_before_tool_call_abort_skips_sibling_tools() -> None:
     executed: list[str] = []
 
     class FakeChunk:
-        def __init__(self, *, content: str = "", tool_calls=None):
+        def __init__(self, *, content: str = "", tool_calls: Any = None) -> None:
             self.content = content
             self.tool_calls = tool_calls
-            self.usage = {}
+            self.usage: dict[str, Any] = {}
 
     class FakeLLM:
         config = SimpleNamespace(model="fake")
 
-        def __init__(self):
+        def __init__(self) -> None:
             self.calls = 0
 
-        async def achat_stream(self, messages, **kwargs):
+        async def achat_stream(self, messages: Any, **kwargs: Any) -> Any:
             self.calls += 1
             if self.calls == 1:
                 yield FakeChunk(
@@ -335,15 +349,15 @@ async def test_arun_before_tool_call_abort_skips_sibling_tools() -> None:
             else:
                 yield FakeChunk(content="done")
 
-    def first():
+    def first() -> Any:
         executed.append("first")
         return "first"
 
-    def second():
+    def second() -> Any:
         executed.append("second")
         return "second"
 
-    def before_tool_call(name, args):
+    def before_tool_call(name: Any, args: Any) -> Any:
         if name == "first":
             return ToolResult(ok=False, error="blocked", meta={"abort_batch": True})
         return None
@@ -369,18 +383,18 @@ async def test_arun_before_tool_call_abort_skips_sibling_tools() -> None:
 @pytest.mark.asyncio
 async def test_arun_after_tool_call_exception_becomes_error_tool_result() -> None:
     class FakeChunk:
-        def __init__(self, *, content: str = "", tool_calls=None):
+        def __init__(self, *, content: str = "", tool_calls: Any = None) -> None:
             self.content = content
             self.tool_calls = tool_calls
-            self.usage = {}
+            self.usage: dict[str, Any] = {}
 
     class FakeLLM:
         config = SimpleNamespace(model="fake")
 
-        def __init__(self):
+        def __init__(self) -> None:
             self.calls = 0
 
-        async def achat_stream(self, messages, **kwargs):
+        async def achat_stream(self, messages: Any, **kwargs: Any) -> Any:
             self.calls += 1
             if self.calls == 1:
                 yield FakeChunk(
@@ -394,10 +408,10 @@ async def test_arun_after_tool_call_exception_becomes_error_tool_result() -> Non
             else:
                 yield FakeChunk(content="done")
 
-    def ok_tool():
+    def ok_tool() -> Any:
         return "ok"
 
-    def after_tool_call(name, args, result):
+    def after_tool_call(name: Any, args: Any, result: Any) -> Any:
         raise RuntimeError("after failed")
 
     agent = Agent(
@@ -419,18 +433,18 @@ async def test_arun_after_tool_call_exception_becomes_error_tool_result() -> Non
 @pytest.mark.asyncio
 async def test_arun_awaits_async_tool_handlers_from_registry() -> None:
     class FakeChunk:
-        def __init__(self, *, content: str = "", tool_calls=None):
+        def __init__(self, *, content: str = "", tool_calls: Any = None) -> None:
             self.content = content
             self.tool_calls = tool_calls
-            self.usage = {}
+            self.usage: dict[str, Any] = {}
 
     class FakeLLM:
         config = SimpleNamespace(model="fake")
 
-        def __init__(self):
+        def __init__(self) -> None:
             self.calls = 0
 
-        async def achat_stream(self, messages, **kwargs):
+        async def achat_stream(self, messages: Any, **kwargs: Any) -> Any:
             self.calls += 1
             if self.calls == 1:
                 yield FakeChunk(
@@ -444,7 +458,7 @@ async def test_arun_awaits_async_tool_handlers_from_registry() -> None:
             else:
                 yield FakeChunk(content="done")
 
-    async def async_tool(args, user_id, meta, cancel=None):
+    async def async_tool(args: Any, user_id: Any, meta: Any, cancel: Any = None) -> Any:
         await asyncio.sleep(0)
         return ToolResult(ok=True, data="async-ok")
 
@@ -468,18 +482,18 @@ async def test_arun_executes_parallel_safe_async_tools_concurrently() -> None:
     started: list[str] = []
 
     class FakeChunk:
-        def __init__(self, *, content: str = "", tool_calls=None):
+        def __init__(self, *, content: str = "", tool_calls: Any = None) -> None:
             self.content = content
             self.tool_calls = tool_calls
-            self.usage = {}
+            self.usage: dict[str, Any] = {}
 
     class FakeLLM:
         config = SimpleNamespace(model="fake")
 
-        def __init__(self):
+        def __init__(self) -> None:
             self.calls = 0
 
-        async def achat_stream(self, messages, **kwargs):
+        async def achat_stream(self, messages: Any, **kwargs: Any) -> Any:
             self.calls += 1
             if self.calls == 1:
                 yield FakeChunk(
@@ -497,12 +511,12 @@ async def test_arun_executes_parallel_safe_async_tools_concurrently() -> None:
             else:
                 yield FakeChunk(content="done")
 
-    async def think(args, user_id, meta, cancel=None):
+    async def think(args: Any, user_id: Any, meta: Any, cancel: Any = None) -> Any:
         started.append("think")
         await asyncio.sleep(0.01)
         return ToolResult(ok=True, data=f"think-parallel:{'get_current_time' in started}")
 
-    async def get_current_time(args, user_id, meta, cancel=None):
+    async def get_current_time(args: Any, user_id: Any, meta: Any, cancel: Any = None) -> Any:
         started.append("get_current_time")
         await asyncio.sleep(0.01)
         return ToolResult(ok=True, data=f"time-parallel:{'think' in started}")
@@ -533,10 +547,10 @@ def test_agent_terminate_tool_result_skips_follow_up_llm_call() -> None:
     class FakeLLM:
         config = SimpleNamespace(model="fake")
 
-        def __init__(self):
+        def __init__(self) -> None:
             self.calls = 0
 
-        def chat(self, messages, tools=None):
+        def chat(self, messages: Any, tools: Any = None) -> Any:
             self.calls += 1
             return SimpleNamespace(
                 content="",
@@ -548,7 +562,7 @@ def test_agent_terminate_tool_result_skips_follow_up_llm_call() -> None:
                 ],
             )
 
-    def terminate():
+    def terminate() -> Any:
         return ToolResult(ok=True, data="finished", meta={"terminate": True})
 
     agent = Agent(llm=FakeLLM(), tools=[], verbose=False)
@@ -561,18 +575,18 @@ def test_agent_terminate_tool_result_skips_follow_up_llm_call() -> None:
     response = agent.run("go")
 
     assert response.content == "finished"
-    assert agent.llm.calls == 1
+    assert cast(Any, agent.llm).calls == 1
 
 
 def test_terminate_tool_result_still_emits_agent_end_and_drains_followup() -> None:
     class FakeLLM:
         config = SimpleNamespace(model="fake")
 
-        def __init__(self):
+        def __init__(self) -> None:
             self.calls = 0
             self.messages: list[str] = []
 
-        def chat(self, messages, tools=None):
+        def chat(self, messages: Any, tools: Any = None) -> Any:
             self.calls += 1
             latest = messages[-1].content
             self.messages.append(latest)
@@ -591,7 +605,7 @@ def test_terminate_tool_result_still_emits_agent_end_and_drains_followup() -> No
     agent_ref: dict[str, Agent] = {}
     queued = {"done": False}
 
-    def on_event(event):
+    def on_event(event: Any) -> Any:
         if (
             event.type.value == "agent_end"
             and event.data.get("success") is True
@@ -600,7 +614,7 @@ def test_terminate_tool_result_still_emits_agent_end_and_drains_followup() -> No
             queued["done"] = True
             agent_ref["agent"].message_queue.add_followup("follow-after-terminate")
 
-    def terminate():
+    def terminate() -> Any:
         return ToolResult(ok=True, data="finished", meta={"terminate": True})
 
     agent = Agent(llm=FakeLLM(), tools=[], verbose=False, event_callback=on_event)
@@ -614,18 +628,18 @@ def test_terminate_tool_result_still_emits_agent_end_and_drains_followup() -> No
     response = agent.run("go")
 
     assert response.content == "reply:follow-after-terminate"
-    assert agent.llm.calls == 2
-    assert agent.llm.messages == ["go", "follow-after-terminate"]
+    assert cast(Any, agent.llm).calls == 2
+    assert cast(Any, agent.llm).messages == ["go", "follow-after-terminate"]
 
 
 def test_agent_followup_queue_processes_all_messages_in_fifo_order() -> None:
     class FakeLLM:
         config = SimpleNamespace(model="fake")
 
-        def __init__(self):
+        def __init__(self) -> None:
             self.messages: list[str] = []
 
-        def chat(self, messages, tools=None):
+        def chat(self, messages: Any, tools: Any = None) -> Any:
             latest = messages[-1].content
             self.messages.append(latest)
             return SimpleNamespace(content=f"reply:{latest}", tool_calls=None)
@@ -637,17 +651,17 @@ def test_agent_followup_queue_processes_all_messages_in_fifo_order() -> None:
     response = agent.run("start")
 
     assert response.content == "reply:follow-2"
-    assert agent.llm.messages == ["start", "follow-1", "follow-2"]
+    assert cast(Any, agent.llm).messages == ["start", "follow-1", "follow-2"]
 
 
 def test_agent_followup_all_mode_processes_entire_batch() -> None:
     class FakeLLM:
         config = SimpleNamespace(model="fake")
 
-        def __init__(self):
+        def __init__(self) -> None:
             self.messages: list[str] = []
 
-        def chat(self, messages, tools=None):
+        def chat(self, messages: Any, tools: Any = None) -> Any:
             latest = messages[-1].content
             self.messages.append(latest)
             return SimpleNamespace(content=f"reply:{latest}", tool_calls=None)
@@ -660,17 +674,17 @@ def test_agent_followup_all_mode_processes_entire_batch() -> None:
     response = agent.run("start")
 
     assert response.content == "reply:follow-2"
-    assert agent.llm.messages == ["start", "follow-1", "follow-2"]
+    assert cast(Any, agent.llm).messages == ["start", "follow-1", "follow-2"]
 
 
 def test_agent_end_callback_can_queue_followup_before_run_returns() -> None:
     class FakeLLM:
         config = SimpleNamespace(model="fake")
 
-        def __init__(self):
+        def __init__(self) -> None:
             self.messages: list[str] = []
 
-        def chat(self, messages, tools=None):
+        def chat(self, messages: Any, tools: Any = None) -> Any:
             latest = messages[-1].content
             self.messages.append(latest)
             return SimpleNamespace(content=f"reply:{latest}", tool_calls=None)
@@ -679,7 +693,7 @@ def test_agent_end_callback_can_queue_followup_before_run_returns() -> None:
 
     queued = {"done": False}
 
-    def on_event(event):
+    def on_event(event: Any) -> Any:
         if (
             event.type.value == "agent_end"
             and event.data.get("success") is True
@@ -694,19 +708,19 @@ def test_agent_end_callback_can_queue_followup_before_run_returns() -> None:
     response = agent.run("start")
 
     assert response.content == "reply:follow-from-end"
-    assert agent.llm.messages == ["start", "follow-from-end"]
+    assert cast(Any, agent.llm).messages == ["start", "follow-from-end"]
 
 
 def test_agent_llm_failure_emits_agent_end_failure_event() -> None:
     class FailingLLM:
         config = SimpleNamespace(model="fake")
 
-        def chat(self, messages, tools=None):
+        def chat(self, messages: Any, tools: Any = None) -> Any:
             raise RuntimeError("boom")
 
     events = []
 
-    def on_event(event):
+    def on_event(event: Any) -> Any:
         if event.type.value == "agent_end":
             events.append(event)
 
@@ -725,8 +739,8 @@ async def test_respond_stream_emits_agent_end_success_event() -> None:
     class FakeLLM:
         config = SimpleNamespace(model="fake")
 
-        def achat_stream(self, messages, tools=None):
-            async def stream():
+        def achat_stream(self, messages: Any, tools: Any = None) -> Any:
+            async def stream() -> Any:
                 yield StreamChunk(content="hello")
                 yield StreamChunk(content=" world")
 
@@ -734,7 +748,7 @@ async def test_respond_stream_emits_agent_end_success_event() -> None:
 
     events = []
 
-    def on_event(event):
+    def on_event(event: Any) -> Any:
         if event.type.value == "agent_end":
             events.append(event)
 
@@ -754,14 +768,14 @@ async def test_respond_stream_success_drains_followup_queued_from_agent_end() ->
     class FakeLLM:
         config = SimpleNamespace(model="fake")
 
-        def __init__(self):
+        def __init__(self) -> None:
             self.messages: list[str] = []
 
-        def achat_stream(self, messages, tools=None):
+        def achat_stream(self, messages: Any, tools: Any = None) -> Any:
             latest = messages[-1].content
             self.messages.append(latest)
 
-            async def stream():
+            async def stream() -> Any:
                 yield StreamChunk(content=f"reply:{latest}")
 
             return stream()
@@ -769,7 +783,7 @@ async def test_respond_stream_success_drains_followup_queued_from_agent_end() ->
     agent_ref: dict[str, Agent] = {}
     queued = {"done": False}
 
-    def on_event(event):
+    def on_event(event: Any) -> Any:
         if (
             event.type.value == "agent_end"
             and event.data.get("success") is True
@@ -795,15 +809,15 @@ async def test_respond_stream_cancellation_emits_agent_end_failure_event() -> No
     class FakeLLM:
         config = SimpleNamespace(model="fake")
 
-        def achat_stream(self, messages, tools=None):
-            async def stream():
+        def achat_stream(self, messages: Any, tools: Any = None) -> Any:
+            async def stream() -> Any:
                 yield StreamChunk(content="ignored")
 
             return stream()
 
     events = []
 
-    def on_event(event):
+    def on_event(event: Any) -> Any:
         if event.type.value == "agent_end":
             events.append(event)
 
@@ -826,14 +840,14 @@ async def test_respond_stream_llm_failure_emits_agent_end_failure_event() -> Non
     class FailingLLM:
         config = SimpleNamespace(model="fake")
 
-        async def achat_stream(self, messages, tools=None):
+        async def achat_stream(self, messages: Any, tools: Any = None) -> Any:
             if False:
                 yield None
             raise RuntimeError("stream boom")
 
     events = []
 
-    def on_event(event):
+    def on_event(event: Any) -> Any:
         if event.type.value == "agent_end":
             events.append(event)
 
@@ -854,13 +868,13 @@ async def test_respond_stream_terminate_tool_result_skips_followup_llm_call() ->
     class FakeLLM:
         config = SimpleNamespace(model="fake")
 
-        def __init__(self):
+        def __init__(self) -> None:
             self.calls = 0
 
-        def achat_stream(self, messages, tools=None):
+        def achat_stream(self, messages: Any, tools: Any = None) -> Any:
             self.calls += 1
 
-            async def stream():
+            async def stream() -> Any:
                 if self.calls == 1:
                     yield StreamChunk(
                         content="",
@@ -877,7 +891,7 @@ async def test_respond_stream_terminate_tool_result_skips_followup_llm_call() ->
 
             return stream()
 
-    def terminate():
+    def terminate() -> Any:
         return ToolResult(ok=True, data="finished", meta={"terminate": True})
 
     llm = FakeLLM()
@@ -902,16 +916,16 @@ async def test_respond_stream_terminate_tool_result_drains_followup_queued_from_
     class FakeLLM:
         config = SimpleNamespace(model="fake")
 
-        def __init__(self):
+        def __init__(self) -> None:
             self.calls = 0
             self.messages: list[str] = []
 
-        def achat_stream(self, messages, tools=None):
+        def achat_stream(self, messages: Any, tools: Any = None) -> Any:
             self.calls += 1
             latest = messages[-1].content
             self.messages.append(latest)
 
-            async def stream():
+            async def stream() -> Any:
                 if self.calls == 1:
                     yield StreamChunk(
                         content="",
@@ -931,7 +945,7 @@ async def test_respond_stream_terminate_tool_result_drains_followup_queued_from_
     agent_ref: dict[str, Agent] = {}
     queued = {"done": False}
 
-    def on_event(event):
+    def on_event(event: Any) -> Any:
         if (
             event.type.value == "agent_end"
             and event.data.get("success") is True
@@ -940,7 +954,7 @@ async def test_respond_stream_terminate_tool_result_drains_followup_queued_from_
             queued["done"] = True
             agent_ref["agent"].message_queue.add_followup("follow-from-stream-end")
 
-    def terminate():
+    def terminate() -> Any:
         return ToolResult(ok=True, data="finished", meta={"terminate": True})
 
     llm = FakeLLM()
@@ -966,8 +980,8 @@ async def test_respond_stream_terminate_ignores_stale_tool_outputs() -> None:
     class FakeLLM:
         config = SimpleNamespace(model="fake")
 
-        def achat_stream(self, messages, tools=None):
-            async def stream():
+        def achat_stream(self, messages: Any, tools: Any = None) -> Any:
+            async def stream() -> Any:
                 yield StreamChunk(
                     content="",
                     tool_calls=[
@@ -981,15 +995,18 @@ async def test_respond_stream_terminate_ignores_stale_tool_outputs() -> None:
 
             return stream()
 
-    def terminate():
+    def terminate() -> Any:
         return ToolResult(ok=True, data="fresh-result", meta={"terminate": True})
 
     agent = Agent(llm=FakeLLM(), tools=[], verbose=False)
     agent.history.append(
-        SimpleNamespace(
-            role="tool",
-            content="stale-result",
-            metadata={"tool_call_id": "call-old", "name": "read_file"},
+        cast(
+            Any,
+            SimpleNamespace(
+                role="tool",
+                content="stale-result",
+                metadata={"tool_call_id": "call-old", "name": "read_file"},
+            ),
         )
     )
     agent.registry.register(
@@ -1017,7 +1034,7 @@ def test_single_terminate_in_batch_stops_agent_any_semantics() -> None:
     class FakeLLM:
         config = SimpleNamespace(model="fake")
 
-        def chat(self, messages, tools=None):
+        def chat(self, messages: Any, tools: Any = None) -> Any:
             call_count[0] += 1
             return SimpleNamespace(
                 content="",
@@ -1027,10 +1044,10 @@ def test_single_terminate_in_batch_stops_agent_any_semantics() -> None:
                 ],
             )
 
-    def terminator():
+    def terminator() -> Any:
         return ToolResult(ok=True, data="done", meta={"terminate": True})
 
-    def non_terminator():
+    def non_terminator() -> Any:
         return ToolResult(ok=True, data="still going")
 
     agent = Agent(llm=FakeLLM(), tools=[], verbose=False)
@@ -1057,13 +1074,13 @@ async def test_respond_stream_before_tool_call_abort_skips_sibling_tools() -> No
     class FakeLLM:
         config = SimpleNamespace(model="fake")
 
-        def __init__(self):
+        def __init__(self) -> None:
             self.calls = 0
 
-        def achat_stream(self, messages, tools=None):
+        def achat_stream(self, messages: Any, tools: Any = None) -> Any:
             self.calls += 1
 
-            async def stream():
+            async def stream() -> Any:
                 if self.calls == 1:
                     yield StreamChunk(
                         content="",
@@ -1085,15 +1102,15 @@ async def test_respond_stream_before_tool_call_abort_skips_sibling_tools() -> No
 
             return stream()
 
-    def first():
+    def first() -> Any:
         executed.append("first")
         return "first"
 
-    def second():
+    def second() -> Any:
         executed.append("second")
         return "second"
 
-    def before_tool_call(name, args):
+    def before_tool_call(name: Any, args: Any) -> Any:
         if name == "first":
             return ToolResult(ok=False, error="blocked", meta={"abort_batch": True})
         return None
@@ -1123,13 +1140,13 @@ async def test_respond_stream_after_tool_call_exception_becomes_error_tool_resul
     class FakeLLM:
         config = SimpleNamespace(model="fake")
 
-        def __init__(self):
+        def __init__(self) -> None:
             self.calls = 0
 
-        def achat_stream(self, messages, tools=None):
+        def achat_stream(self, messages: Any, tools: Any = None) -> Any:
             self.calls += 1
 
-            async def stream():
+            async def stream() -> Any:
                 if self.calls == 1:
                     yield StreamChunk(
                         content="",
@@ -1146,10 +1163,10 @@ async def test_respond_stream_after_tool_call_exception_becomes_error_tool_resul
 
             return stream()
 
-    def ok_tool():
+    def ok_tool() -> Any:
         return "ok"
 
-    def after_tool_call(name, args, result):
+    def after_tool_call(name: Any, args: Any, result: Any) -> Any:
         raise RuntimeError("after failed")
 
     agent = Agent(
@@ -1176,13 +1193,13 @@ async def test_respond_stream_awaits_async_tool_handlers_from_registry() -> None
     class FakeLLM:
         config = SimpleNamespace(model="fake")
 
-        def __init__(self):
+        def __init__(self) -> None:
             self.calls = 0
 
-        def achat_stream(self, messages, tools=None):
+        def achat_stream(self, messages: Any, tools: Any = None) -> Any:
             self.calls += 1
 
-            async def stream():
+            async def stream() -> Any:
                 if self.calls == 1:
                     yield StreamChunk(
                         content="",
@@ -1199,7 +1216,7 @@ async def test_respond_stream_awaits_async_tool_handlers_from_registry() -> None
 
             return stream()
 
-    async def async_tool(args, user_id, meta, cancel=None):
+    async def async_tool(args: Any, user_id: Any, meta: Any, cancel: Any = None) -> Any:
         await asyncio.sleep(0)
         return ToolResult(ok=True, data="async-ok")
 
@@ -1227,13 +1244,13 @@ async def test_respond_stream_executes_parallel_safe_async_tools_concurrently() 
     class FakeLLM:
         config = SimpleNamespace(model="fake")
 
-        def __init__(self):
+        def __init__(self) -> None:
             self.calls = 0
 
-        def achat_stream(self, messages, tools=None):
+        def achat_stream(self, messages: Any, tools: Any = None) -> Any:
             self.calls += 1
 
-            async def stream():
+            async def stream() -> Any:
                 if self.calls == 1:
                     yield StreamChunk(
                         content="",
@@ -1255,12 +1272,12 @@ async def test_respond_stream_executes_parallel_safe_async_tools_concurrently() 
 
             return stream()
 
-    async def think(args, user_id, meta, cancel=None):
+    async def think(args: Any, user_id: Any, meta: Any, cancel: Any = None) -> Any:
         started.append("think")
         await asyncio.sleep(0.01)
         return ToolResult(ok=True, data=f"think-parallel:{'get_current_time' in started}")
 
-    async def get_current_time(args, user_id, meta, cancel=None):
+    async def get_current_time(args: Any, user_id: Any, meta: Any, cancel: Any = None) -> Any:
         started.append("get_current_time")
         await asyncio.sleep(0.01)
         return ToolResult(ok=True, data=f"time-parallel:{'think' in started}")
@@ -1289,12 +1306,12 @@ async def test_respond_stream_executes_parallel_safe_async_tools_concurrently() 
     assert tool_messages[1].content == "time-parallel:True"
 
 
-def _StreamChunk(*, content: str = "", tool_calls=None) -> StreamChunk:
+def _StreamChunk(*, content: str = "", tool_calls: Any = None) -> StreamChunk:
     """Build a StreamChunk fake (text and/or assembled tool calls)."""
     return StreamChunk(content=content, tool_calls=tool_calls)
 
 
-def _ToolDelta(index: int, *, call_id=None, name=None, arguments="{}") -> dict:
+def _ToolDelta(index: int, *, call_id: Any = None, name: Any = None, arguments: Any = "{}") -> dict:
     """Build a canonical tool-call dict (the shape providers assemble)."""
     return {
         "id": call_id,
@@ -1310,14 +1327,14 @@ async def test_master_loop_unbounded_runs_past_default_cap() -> None:
     class FakeLLM:
         config = SimpleNamespace(model="fake")
 
-        def __init__(self):
+        def __init__(self) -> None:
             self.calls = 0
 
-        def achat_stream(self, messages, tools=None):
+        def achat_stream(self, messages: Any, tools: Any = None) -> Any:
             self.calls += 1
             calls = self.calls
 
-            async def stream():
+            async def stream() -> Any:
                 # 25 tool-calling rounds (well past the default 10) then a final answer.
                 if calls <= 25:
                     yield _StreamChunk(
@@ -1328,7 +1345,7 @@ async def test_master_loop_unbounded_runs_past_default_cap() -> None:
 
             return stream()
 
-    def noop():
+    def noop() -> Any:
         return "ok"
 
     llm = FakeLLM()
@@ -1352,8 +1369,8 @@ async def test_master_loop_default_cap_still_enforced() -> None:
     class FakeLLM:
         config = SimpleNamespace(model="fake")
 
-        def achat_stream(self, messages, tools=None):
-            async def stream():
+        def achat_stream(self, messages: Any, tools: Any = None) -> Any:
+            async def stream() -> Any:
                 yield _StreamChunk(
                     tool_calls=[_ToolDelta(0, call_id="c", name="noop", arguments="{}")]
                 )
@@ -1379,8 +1396,8 @@ async def test_master_loop_cancel_before_round_aborts_cleanly() -> None:
     class FakeLLM:
         config = SimpleNamespace(model="fake")
 
-        def achat_stream(self, messages, tools=None):
-            async def stream():
+        def achat_stream(self, messages: Any, tools: Any = None) -> Any:
+            async def stream() -> Any:
                 yield _StreamChunk(content="should not be reached")
 
             return stream()
@@ -1414,8 +1431,8 @@ async def test_master_loop_cancel_mid_stream_preserves_partial() -> None:
     class FakeLLM:
         config = SimpleNamespace(model="fake")
 
-        def achat_stream(self, messages, tools=None):
-            async def stream():
+        def achat_stream(self, messages: Any, tools: Any = None) -> Any:
+            async def stream() -> Any:
                 yield _StreamChunk(content="partial answer ")
                 cancel.set()  # user hits Esc mid-stream
                 yield _StreamChunk(content="this should be dropped")
@@ -1447,16 +1464,16 @@ async def test_master_loop_injects_steering_between_rounds() -> None:
     class FakeLLM:
         config = SimpleNamespace(model="fake")
 
-        def __init__(self):
+        def __init__(self) -> None:
             self.calls = 0
             self.seen_messages: list[list[str]] = []
 
-        def achat_stream(self, messages, tools=None):
+        def achat_stream(self, messages: Any, tools: Any = None) -> Any:
             self.calls += 1
             self.seen_messages.append([m.content for m in messages])
             calls = self.calls
 
-            async def stream():
+            async def stream() -> Any:
                 if calls == 1:
                     yield _StreamChunk(
                         tool_calls=[_ToolDelta(0, call_id="c1", name="noop", arguments="{}")]
@@ -1469,7 +1486,7 @@ async def test_master_loop_injects_steering_between_rounds() -> None:
     llm = FakeLLM()
     agent = Agent(llm=llm, tools=[], verbose=False)
 
-    def noop():
+    def noop() -> Any:
         # Simulate the user typing while the tool ran: queue a steering message.
         agent.message_queue.add_steering("actually do X instead")
         return "ok"
@@ -1492,14 +1509,14 @@ async def test_master_loop_streams_tokens_then_executes_tool_call() -> None:
     class FakeLLM:
         config = SimpleNamespace(model="fake")
 
-        def __init__(self):
+        def __init__(self) -> None:
             self.calls = 0
 
-        def achat_stream(self, messages, tools=None):
+        def achat_stream(self, messages: Any, tools: Any = None) -> Any:
             self.calls += 1
             calls = self.calls
 
-            async def stream():
+            async def stream() -> Any:
                 if calls == 1:
                     # text streamed live, then a chunk carrying the assembled tool call
                     yield _StreamChunk(content="let me ")
@@ -1515,7 +1532,7 @@ async def test_master_loop_streams_tokens_then_executes_tool_call() -> None:
 
     seen_args = []
 
-    def look():
+    def look() -> Any:
         seen_args.append("look")
         return "found"
 
@@ -1542,15 +1559,15 @@ async def test_arun_cancel_mid_stream_aborts_and_preserves_partial() -> None:
     cancel = asyncio.Event()
 
     class FakeChunk:
-        def __init__(self, *, content="", tool_calls=None):
+        def __init__(self, *, content: Any = "", tool_calls: Any = None) -> None:
             self.content = content
             self.tool_calls = tool_calls
-            self.usage = {}
+            self.usage: dict[str, Any] = {}
 
     class FakeLLM:
         config = SimpleNamespace(model="fake")
 
-        async def achat_stream(self, messages, **kwargs):
+        async def achat_stream(self, messages: Any, **kwargs: Any) -> Any:
             yield FakeChunk(content="partial ")
             cancel.set()
             yield FakeChunk(content="dropped")
@@ -1578,16 +1595,16 @@ async def test_master_loop_steering_during_final_answer_is_consumed() -> None:
     class FakeLLM:
         config = SimpleNamespace(model="fake")
 
-        def __init__(self):
+        def __init__(self) -> None:
             self.calls = 0
             self.seen: list[list[str]] = []
 
-        def achat_stream(self, messages, tools=None):
+        def achat_stream(self, messages: Any, tools: Any = None) -> Any:
             self.calls += 1
             self.seen.append([m.content for m in messages])
             calls = self.calls
 
-            async def stream():
+            async def stream() -> Any:
                 yield _StreamChunk(content=f"answer-{calls}")
 
             return stream()
@@ -1612,27 +1629,27 @@ async def test_master_loop_records_billing_for_llm_and_tool_calls() -> None:
     """The streaming path reports LLM rounds + tool calls to the billing hook."""
 
     class Hook:
-        def __init__(self):
-            self.llm = []
-            self.tools = []
+        def __init__(self) -> None:
+            self.llm: list[tuple[Any, Any, Any]] = []
+            self.tools: list[Any] = []
 
-        def on_llm_call(self, model, input_tokens, output_tokens):
+        def on_llm_call(self, model: Any, input_tokens: Any, output_tokens: Any) -> Any:
             self.llm.append((model, input_tokens, output_tokens))
 
-        def on_tool_call(self, tool_name):
+        def on_tool_call(self, tool_name: Any) -> Any:
             self.tools.append(tool_name)
 
     class FakeLLM:
         config = SimpleNamespace(model="gpt-4o-mini")
 
-        def __init__(self):
+        def __init__(self) -> None:
             self.n = 0
 
-        def achat_stream(self, messages, tools=None):
+        def achat_stream(self, messages: Any, tools: Any = None) -> Any:
             self.n += 1
             n = self.n
 
-            async def stream():
+            async def stream() -> Any:
                 if n == 1:
                     yield _StreamChunk(content="checking")
                     yield _StreamChunk(
@@ -1662,20 +1679,20 @@ async def test_master_loop_uses_real_provider_usage_when_present() -> None:
     """Billing uses real provider usage from the stream, not the local estimate."""
 
     class Hook:
-        def __init__(self):
-            self.llm = []
+        def __init__(self) -> None:
+            self.llm: list[tuple[Any, Any]] = []
 
-        def on_llm_call(self, model, input_tokens, output_tokens):
+        def on_llm_call(self, model: Any, input_tokens: Any, output_tokens: Any) -> Any:
             self.llm.append((input_tokens, output_tokens))
 
-        def on_tool_call(self, tool_name):
+        def on_tool_call(self, tool_name: Any) -> Any:
             pass
 
     class FakeLLM:
         config = SimpleNamespace(model="gpt-4o-mini")
 
-        def achat_stream(self, messages, tools=None):
-            async def stream():
+        def achat_stream(self, messages: Any, tools: Any = None) -> Any:
+            async def stream() -> Any:
                 yield _StreamChunk(content="hi")
                 yield StreamChunk(
                     content="",

@@ -60,7 +60,7 @@ def _empty_choices_chunk() -> SimpleNamespace:
 
 
 class _AsyncChunks:
-    def __init__(self, chunks: list[SimpleNamespace]):
+    def __init__(self, chunks: list[SimpleNamespace]) -> None:
         self._chunks = iter(chunks)
 
     def __aiter__(self) -> "_AsyncChunks":
@@ -233,7 +233,9 @@ def test_native_openai_sets_prompt_cache_retention_for_long_cache() -> None:
     assert sync_create.call_args.kwargs["prompt_cache_retention"] == "24h"
 
 
-def test_native_openai_uses_environment_default_for_long_cache_retention(monkeypatch) -> None:
+def test_native_openai_uses_environment_default_for_long_cache_retention(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     sync_create = Mock(return_value=_completion_response())
     provider = _provider_with_clients(sync_create, AsyncMock())
 
@@ -1208,7 +1210,12 @@ async def test_astream_skips_usage_only_chunks_without_choices() -> None:
 async def test_astream_assembles_streamed_tool_calls() -> None:
     """openai.astream yields text live then a final chunk with assembled tool calls."""
 
-    def _chunk(*, content=None, tool_calls=None, finish_reason=None):
+    def _chunk(
+        *,
+        content: str | None = None,
+        tool_calls: list[SimpleNamespace] | None = None,
+        finish_reason: str | None = None,
+    ) -> SimpleNamespace:
         return SimpleNamespace(
             id="c",
             choices=[

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
-from typing import Protocol, runtime_checkable
+from typing import Protocol, TypeGuard, runtime_checkable
 
 
 @runtime_checkable
@@ -47,13 +47,13 @@ class Container(Protocol):
 
 
 @runtime_checkable
-class Focusable(Protocol):
+class Focusable(Component, Protocol):
     """Protocol for components that can receive focus from the runtime."""
 
     focused: bool
 
 
-def is_focusable(component: Component | None) -> bool:
+def is_focusable(component: Component | None) -> TypeGuard[Focusable]:
     return component is not None and isinstance(component, Focusable)
 
 
@@ -305,7 +305,7 @@ class TreeBrowserState:
             if detail_state is not None and detail_state.path_labels
             else self.path_state.parts
             if self.path_state is not None
-            else self.breadcrumbs
+            else self._normalize_breadcrumbs(self.breadcrumbs)
         )
         selected_label = (
             detail_state.path_labels[-1]

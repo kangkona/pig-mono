@@ -135,7 +135,7 @@ class FileReferenceParser:
         return "\n".join(preview_parts)
 
 
-def demo():
+def demo() -> None:
     """Demonstrate file reference parsing."""
 
     parser = FileReferenceParser(Path.cwd())

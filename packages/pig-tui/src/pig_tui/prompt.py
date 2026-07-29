@@ -2,6 +2,8 @@
 
 from pathlib import Path
 
+from prompt_toolkit import PromptSession
+from prompt_toolkit.history import History
 from rich.console import Console
 from rich.prompt import Confirm
 from rich.prompt import Prompt as RichPrompt
@@ -10,7 +12,7 @@ from rich.prompt import Prompt as RichPrompt
 class Prompt:
     """Interactive prompt for user input."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize prompt."""
         self.console = Console()
 
@@ -32,6 +34,13 @@ class Prompt:
         Returns:
             User input
         """
+        if default is None:
+            return RichPrompt.ask(
+                question,
+                password=password,
+                choices=choices,
+                console=self.console,
+            )
         return RichPrompt.ask(
             question,
             default=default,
@@ -79,8 +88,7 @@ class InteractivePrompt:
         commands: list[str],
         workspace: str = ".",
         history_file: str | None = None,
-    ):
-        from prompt_toolkit import PromptSession
+    ) -> None:
         from prompt_toolkit.history import FileHistory, InMemoryHistory
 
         from .advanced import PyCodeCompleter
@@ -90,11 +98,11 @@ class InteractivePrompt:
         if history_file:
             history_path = Path(history_file)
             history_path.parent.mkdir(parents=True, exist_ok=True)
-            history = FileHistory(str(history_path))
+            history: History = FileHistory(str(history_path))
         else:
             history = InMemoryHistory()
 
-        self.session = PromptSession(
+        self.session: PromptSession[str] = PromptSession(
             completer=self.completer,
             history=history,
             complete_while_typing=False,

@@ -4,6 +4,8 @@ Each adapter has optional dependencies (slack-sdk, discord.py, etc.).
 Imports are lazy so you only need the deps for the adapters you use.
 """
 
+from typing import Any
+
 __all__ = [
     "SlackAdapter",
     "DiscordAdapter",
@@ -13,23 +15,23 @@ __all__ = [
 ]
 
 
-def __getattr__(name: str):
+def __getattr__(name: str) -> Any:
     if name == "SlackAdapter":
-        from .slack import SlackAdapter
+        from .slack import SlackMessengerAdapter
 
-        return SlackAdapter
+        return SlackMessengerAdapter
     if name == "DiscordAdapter":
-        from .discord import DiscordAdapter
+        from .discord import DiscordMessengerAdapter
 
-        return DiscordAdapter
+        return DiscordMessengerAdapter
     if name == "TelegramAdapter":
-        from .telegram import TelegramAdapter
+        from .telegram import TelegramMessengerAdapter
 
-        return TelegramAdapter
+        return TelegramMessengerAdapter
     if name == "WhatsAppAdapter":
-        from .whatsapp import WhatsAppAdapter
+        from .whatsapp import WhatsAppMessengerAdapter
 
-        return WhatsAppAdapter
+        return WhatsAppMessengerAdapter
     if name == "FeishuAdapter":
         from .feishu import FeishuAdapter
 

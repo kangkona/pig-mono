@@ -7,7 +7,7 @@ from pig_agent_core.memory import InMemoryProvider, Message
 class TestMessage:
     """Test Message dataclass."""
 
-    def test_basic_message(self):
+    def test_basic_message(self) -> None:
         """Test creating a basic message."""
         msg = Message(role="user", content="Hello")
         assert msg.role == "user"
@@ -16,13 +16,13 @@ class TestMessage:
         assert msg.tool_call_id is None
         assert msg.name is None
 
-    def test_message_with_tool_calls(self):
+    def test_message_with_tool_calls(self) -> None:
         """Test message with tool calls."""
         tool_calls = [{"id": "call_1", "function": {"name": "search", "arguments": "{}"}}]
         msg = Message(role="assistant", content="", tool_calls=tool_calls)
         assert msg.tool_calls == tool_calls
 
-    def test_message_with_tool_call_id(self):
+    def test_message_with_tool_call_id(self) -> None:
         """Test tool result message."""
         msg = Message(
             role="tool",
@@ -33,20 +33,20 @@ class TestMessage:
         assert msg.tool_call_id == "call_1"
         assert msg.name == "search"
 
-    def test_model_dump_basic(self):
+    def test_model_dump_basic(self) -> None:
         """Test model_dump for basic message."""
         msg = Message(role="user", content="Hello")
         dumped = msg.model_dump()
         assert dumped == {"role": "user", "content": "Hello"}
 
-    def test_model_dump_with_tool_calls(self):
+    def test_model_dump_with_tool_calls(self) -> None:
         """Test model_dump with tool calls."""
         tool_calls = [{"id": "call_1"}]
         msg = Message(role="assistant", content="", tool_calls=tool_calls)
         dumped = msg.model_dump()
         assert dumped["tool_calls"] == tool_calls
 
-    def test_model_dump_with_tool_result(self):
+    def test_model_dump_with_tool_result(self) -> None:
         """Test model_dump for tool result."""
         msg = Message(
             role="tool",
@@ -63,14 +63,14 @@ class TestInMemoryProvider:
     """Test InMemoryProvider implementation."""
 
     @pytest.mark.asyncio
-    async def test_empty_session(self):
+    async def test_empty_session(self) -> None:
         """Test getting messages from empty session."""
         provider = InMemoryProvider()
         messages = await provider.get_messages("session_1")
         assert messages == []
 
     @pytest.mark.asyncio
-    async def test_add_and_get_message(self):
+    async def test_add_and_get_message(self) -> None:
         """Test adding and retrieving a message."""
         provider = InMemoryProvider()
         msg = Message(role="user", content="Hello")
@@ -83,7 +83,7 @@ class TestInMemoryProvider:
         assert messages[0].content == "Hello"
 
     @pytest.mark.asyncio
-    async def test_multiple_messages(self):
+    async def test_multiple_messages(self) -> None:
         """Test adding multiple messages."""
         provider = InMemoryProvider()
 
@@ -102,7 +102,7 @@ class TestInMemoryProvider:
         assert messages[2].content == "How are you?"
 
     @pytest.mark.asyncio
-    async def test_multiple_sessions(self):
+    async def test_multiple_sessions(self) -> None:
         """Test messages are isolated per session."""
         provider = InMemoryProvider()
 
@@ -121,7 +121,7 @@ class TestInMemoryProvider:
         assert messages2[0].content == "Session 2"
 
     @pytest.mark.asyncio
-    async def test_clear_messages(self):
+    async def test_clear_messages(self) -> None:
         """Test clearing messages."""
         provider = InMemoryProvider()
 
@@ -134,21 +134,21 @@ class TestInMemoryProvider:
         assert messages == []
 
     @pytest.mark.asyncio
-    async def test_clear_nonexistent_session(self):
+    async def test_clear_nonexistent_session(self) -> None:
         """Test clearing messages from nonexistent session."""
         provider = InMemoryProvider()
         await provider.clear_messages("nonexistent")
         # Should not raise error
 
     @pytest.mark.asyncio
-    async def test_get_metadata_empty(self):
+    async def test_get_metadata_empty(self) -> None:
         """Test getting metadata from empty session."""
         provider = InMemoryProvider()
         metadata = await provider.get_metadata("session_1")
         assert metadata == {}
 
     @pytest.mark.asyncio
-    async def test_set_and_get_metadata(self):
+    async def test_set_and_get_metadata(self) -> None:
         """Test setting and getting metadata."""
         provider = InMemoryProvider()
         metadata = {"user_id": "user_123", "preferences": {"theme": "dark"}}
@@ -159,7 +159,7 @@ class TestInMemoryProvider:
         assert retrieved == metadata
 
     @pytest.mark.asyncio
-    async def test_metadata_isolation(self):
+    async def test_metadata_isolation(self) -> None:
         """Test metadata is isolated per session."""
         provider = InMemoryProvider()
 
@@ -173,7 +173,7 @@ class TestInMemoryProvider:
         assert meta2["key"] == "value2"
 
     @pytest.mark.asyncio
-    async def test_update_metadata(self):
+    async def test_update_metadata(self) -> None:
         """Test updating metadata."""
         provider = InMemoryProvider()
 
@@ -184,7 +184,7 @@ class TestInMemoryProvider:
         assert metadata["key"] == "new"
 
     @pytest.mark.asyncio
-    async def test_messages_with_tool_calls(self):
+    async def test_messages_with_tool_calls(self) -> None:
         """Test storing messages with tool calls."""
         provider = InMemoryProvider()
 
@@ -203,7 +203,7 @@ class TestInMemoryProvider:
         assert messages[0].tool_calls == tool_calls
 
     @pytest.mark.asyncio
-    async def test_conversation_flow(self):
+    async def test_conversation_flow(self) -> None:
         """Test a complete conversation flow."""
         provider = InMemoryProvider()
 

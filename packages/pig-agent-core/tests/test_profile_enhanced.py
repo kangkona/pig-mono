@@ -2,6 +2,7 @@
 
 import os
 import time
+from typing import Any
 
 from pig_agent_core.resilience.profile import (
     DEFAULT_COOLDOWNS,
@@ -15,7 +16,7 @@ from pig_agent_core.resilience.profile import (
 class TestFailoverReason:
     """Test FailoverReason enum."""
 
-    def test_failover_reason_values(self):
+    def test_failover_reason_values(self) -> None:
         """Test that all failover reasons have expected values."""
         assert FailoverReason.AUTH.value == "auth"
         assert FailoverReason.RATE_LIMIT.value == "rate_limit"
@@ -23,7 +24,7 @@ class TestFailoverReason:
         assert FailoverReason.TIMEOUT.value == "timeout"
         assert FailoverReason.CONTEXT_OVERFLOW.value == "context_overflow"
 
-    def test_default_cooldowns_exist(self):
+    def test_default_cooldowns_exist(self) -> None:
         """Test that default cooldowns are defined for all reasons."""
         for reason in FailoverReason:
             assert reason in DEFAULT_COOLDOWNS
@@ -33,82 +34,82 @@ class TestFailoverReason:
 class TestClassifyFailure:
     """Test failure classification function."""
 
-    def test_classify_auth_error_unauthorized(self):
+    def test_classify_auth_error_unauthorized(self) -> None:
         """Test classification of unauthorized error."""
         error = "Error: Unauthorized access"
         assert classify_failure(error) == FailoverReason.AUTH
 
-    def test_classify_auth_error_invalid_key(self):
+    def test_classify_auth_error_invalid_key(self) -> None:
         """Test classification of invalid API key error."""
         error = "Invalid API key provided"
         assert classify_failure(error) == FailoverReason.AUTH
 
-    def test_classify_auth_error_401(self):
+    def test_classify_auth_error_401(self) -> None:
         """Test classification of 401 error."""
         error = "HTTP 401: Authentication failed"
         assert classify_failure(error) == FailoverReason.AUTH
 
-    def test_classify_auth_error_403(self):
+    def test_classify_auth_error_403(self) -> None:
         """Test classification of 403 error."""
         error = "HTTP 403: Forbidden"
         assert classify_failure(error) == FailoverReason.AUTH
 
-    def test_classify_rate_limit_error(self):
+    def test_classify_rate_limit_error(self) -> None:
         """Test classification of rate limit error."""
         error = "Rate limit exceeded"
         assert classify_failure(error) == FailoverReason.RATE_LIMIT
 
-    def test_classify_rate_limit_429(self):
+    def test_classify_rate_limit_429(self) -> None:
         """Test classification of 429 error."""
         error = "HTTP 429: Too many requests"
         assert classify_failure(error) == FailoverReason.RATE_LIMIT
 
-    def test_classify_billing_error_quota(self):
+    def test_classify_billing_error_quota(self) -> None:
         """Test classification of quota exceeded error."""
         error = "Quota exceeded for this API key"
         assert classify_failure(error) == FailoverReason.BILLING
 
-    def test_classify_billing_error_payment(self):
+    def test_classify_billing_error_payment(self) -> None:
         """Test classification of payment error."""
         error = "Payment required to continue"
         assert classify_failure(error) == FailoverReason.BILLING
 
-    def test_classify_billing_error_402(self):
+    def test_classify_billing_error_402(self) -> None:
         """Test classification of 402 error."""
         error = "HTTP 402: Payment required"
         assert classify_failure(error) == FailoverReason.BILLING
 
-    def test_classify_timeout_error(self):
+    def test_classify_timeout_error(self) -> None:
         """Test classification of timeout error."""
         error = "Request timed out after 30 seconds"
         assert classify_failure(error) == FailoverReason.TIMEOUT
 
-    def test_classify_timeout_deadline(self):
+    def test_classify_timeout_deadline(self) -> None:
         """Test classification of deadline exceeded error."""
         error = "Deadline exceeded"
         assert classify_failure(error) == FailoverReason.TIMEOUT
 
-    def test_classify_context_overflow_error(self):
+    def test_classify_context_overflow_error(self) -> None:
         """Test classification of context overflow error."""
         error = "Context length exceeded maximum"
         assert classify_failure(error) == FailoverReason.CONTEXT_OVERFLOW
 
-    def test_classify_context_token_limit(self):
+    def test_classify_context_token_limit(self) -> None:
         """Test classification of token limit error."""
         error = "Token limit reached"
         assert classify_failure(error) == FailoverReason.CONTEXT_OVERFLOW
 
-    def test_classify_unknown_error_defaults_to_rate_limit(self):
+    def test_classify_unknown_error_defaults_to_rate_limit(self) -> None:
         """Test that unknown errors default to rate limit."""
         error = "Some unknown error occurred"
         assert classify_failure(error) == FailoverReason.RATE_LIMIT
 
-    def test_classify_exception_object(self):
+    def test_classify_exception_object(self) -> None:
         """Test classification with exception object."""
         error = ValueError("Unauthorized access")
         assert classify_failure(error) == FailoverReason.AUTH
 
-    def test_classify_case_insensitive(self):
+    def test_classify_case_insensitive(self) -> None:
         """Test that classification is case-insensitive."""
         assert classify_failure("UNAUTHORIZED") == FailoverReason.AUTH
         assert classify_failure("Rate Limit") == FailoverReason.RATE_LIMIT
@@ -118,7 +119,7 @@ class TestClassifyFailure:
 class TestProfileManagerEnhanced:
     """Test enhanced profile manager features."""
 
-    def test_init_with_cooldown_overrides(self):
+    def test_init_with_cooldown_overrides(self) -> None:
         """Test initialization with custom cooldown overrides."""
         overrides = {
             FailoverReason.AUTH: 600.0,
@@ -133,7 +134,7 @@ class TestProfileManagerEnhanced:
             manager.cooldowns[FailoverReason.BILLING] == DEFAULT_COOLDOWNS[FailoverReason.BILLING]
         )
 
-    def test_mark_profile_failed_with_reason(self):
+    def test_mark_profile_failed_with_reason(self) -> None:
         """Test marking profile failed with failure reason."""
         profile = APIProfile(api_key="test-key", model="gpt-4")
         manager = ProfileManager(profiles=[profile])
@@ -146,7 +147,7 @@ class TestProfileManagerEnhanced:
         expected_cooldown = DEFAULT_COOLDOWNS[FailoverReason.AUTH]
         assert profile.cooldown_until > time.time() + expected_cooldown - 1
 
-    def test_mark_profile_failed_with_explicit_cooldown(self):
+    def test_mark_profile_failed_with_explicit_cooldown(self) -> None:
         """Test that explicit cooldown overrides reason-based cooldown."""
         profile = APIProfile(api_key="test-key", model="gpt-4")
         manager = ProfileManager(profiles=[profile])
@@ -157,7 +158,7 @@ class TestProfileManagerEnhanced:
         # Should use explicit cooldown (10s), not AUTH cooldown (300s)
         assert profile.cooldown_until < time.time() + 15
 
-    def test_mark_profile_failed_with_error_string(self):
+    def test_mark_profile_failed_with_error_string(self) -> None:
         """Test marking profile failed with error string."""
         profile = APIProfile(api_key="test-key", model="gpt-4")
         manager = ProfileManager(profiles=[profile])
@@ -167,7 +168,7 @@ class TestProfileManagerEnhanced:
         assert reason == FailoverReason.RATE_LIMIT
         assert not profile.is_available()
 
-    def test_mark_profile_failed_with_error_exception(self):
+    def test_mark_profile_failed_with_error_exception(self) -> None:
         """Test marking profile failed with exception object."""
         profile = APIProfile(api_key="test-key", model="gpt-4")
         manager = ProfileManager(profiles=[profile])
@@ -178,7 +179,7 @@ class TestProfileManagerEnhanced:
         assert reason == FailoverReason.AUTH
         assert not profile.is_available()
 
-    def test_different_cooldowns_per_failure_type(self):
+    def test_different_cooldowns_per_failure_type(self) -> None:
         """Test that different failure types get different cooldowns."""
         manager = ProfileManager()
 
@@ -200,7 +201,7 @@ class TestProfileManagerEnhanced:
 class TestEnvVarAliases:
     """Test PIG_AGENT_* and LITE_AGENT_* environment variable aliases."""
 
-    def test_from_env_with_pig_agent_key(self, monkeypatch):
+    def test_from_env_with_pig_agent_key(self, monkeypatch: Any) -> None:
         """Test loading from PIG_AGENT_API_KEY."""
         monkeypatch.setenv("PIG_AGENT_API_KEY", "pig-key-123")
 
@@ -209,7 +210,7 @@ class TestEnvVarAliases:
         assert len(manager.profiles) == 1
         assert manager.profiles[0].api_key == "pig-key-123"
 
-    def test_from_env_with_lite_agent_key(self, monkeypatch):
+    def test_from_env_with_lite_agent_key(self, monkeypatch: Any) -> None:
         """Test loading from LITE_AGENT_API_KEY (backward compat)."""
         monkeypatch.setenv("LITE_AGENT_API_KEY", "lite-key-456")
 
@@ -218,7 +219,7 @@ class TestEnvVarAliases:
         assert len(manager.profiles) == 1
         assert manager.profiles[0].api_key == "lite-key-456"
 
-    def test_from_env_pig_agent_takes_precedence(self, monkeypatch):
+    def test_from_env_pig_agent_takes_precedence(self, monkeypatch: Any) -> None:
         """Test that PIG_AGENT_* takes precedence over LITE_AGENT_*."""
         monkeypatch.setenv("PIG_AGENT_API_KEY", "pig-key")
         monkeypatch.setenv("LITE_AGENT_API_KEY", "lite-key")
@@ -228,7 +229,7 @@ class TestEnvVarAliases:
         assert len(manager.profiles) == 1
         assert manager.profiles[0].api_key == "pig-key"
 
-    def test_from_env_with_numbered_pig_agent_keys(self, monkeypatch):
+    def test_from_env_with_numbered_pig_agent_keys(self, monkeypatch: Any) -> None:
         """Test loading numbered PIG_AGENT_API_KEY_* variables."""
         monkeypatch.setenv("PIG_AGENT_API_KEY", "pig-key-0")
         monkeypatch.setenv("PIG_AGENT_API_KEY_1", "pig-key-1")
@@ -241,7 +242,7 @@ class TestEnvVarAliases:
         assert manager.profiles[1].api_key == "pig-key-1"
         assert manager.profiles[2].api_key == "pig-key-2"
 
-    def test_from_env_with_numbered_lite_agent_keys(self, monkeypatch):
+    def test_from_env_with_numbered_lite_agent_keys(self, monkeypatch: Any) -> None:
         """Test loading numbered LITE_AGENT_API_KEY_* variables."""
         monkeypatch.setenv("LITE_AGENT_API_KEY", "lite-key-0")
         monkeypatch.setenv("LITE_AGENT_API_KEY_1", "lite-key-1")
@@ -252,7 +253,7 @@ class TestEnvVarAliases:
         assert manager.profiles[0].api_key == "lite-key-0"
         assert manager.profiles[1].api_key == "lite-key-1"
 
-    def test_from_env_custom_prefix_still_works(self, monkeypatch):
+    def test_from_env_custom_prefix_still_works(self, monkeypatch: Any) -> None:
         """Test that custom prefix still works."""
         monkeypatch.setenv("CUSTOM_KEY", "custom-123")
 
@@ -261,7 +262,7 @@ class TestEnvVarAliases:
         assert len(manager.profiles) == 1
         assert manager.profiles[0].api_key == "custom-123"
 
-    def test_from_env_mixed_sources(self, monkeypatch):
+    def test_from_env_mixed_sources(self, monkeypatch: Any) -> None:
         """Test loading from mixed PIG_AGENT and LITE_AGENT sources."""
         monkeypatch.setenv("PIG_AGENT_API_KEY", "pig-key-0")
         monkeypatch.setenv("LITE_AGENT_API_KEY_1", "lite-key-1")
@@ -272,7 +273,7 @@ class TestEnvVarAliases:
         # Should load all keys
         assert len(manager.profiles) == 3
 
-    def test_from_env_no_keys_returns_empty(self, monkeypatch):
+    def test_from_env_no_keys_returns_empty(self, monkeypatch: Any) -> None:
         """Test that no keys returns empty profile list."""
         # Clear any existing keys
         for key in list(os.environ.keys()):
@@ -287,7 +288,7 @@ class TestEnvVarAliases:
 class TestBackwardCompatibility:
     """Test that enhanced features maintain backward compatibility."""
 
-    def test_mark_profile_failed_without_reason_still_works(self):
+    def test_mark_profile_failed_without_reason_still_works(self) -> None:
         """Test that old mark_profile_failed API still works."""
         profile = APIProfile(api_key="test-key", model="gpt-4")
         manager = ProfileManager(profiles=[profile])
@@ -297,7 +298,7 @@ class TestBackwardCompatibility:
 
         assert not profile.is_available()
 
-    def test_mark_profile_failed_no_params_uses_default(self):
+    def test_mark_profile_failed_no_params_uses_default(self) -> None:
         """Test that mark_profile_failed with no params uses default cooldown."""
         profile = APIProfile(api_key="test-key", model="gpt-4")
         manager = ProfileManager(profiles=[profile], default_cooldown=45.0)
@@ -307,7 +308,7 @@ class TestBackwardCompatibility:
         # Should use default cooldown
         assert profile.cooldown_until > time.time() + 40
 
-    def test_from_env_without_aliases_still_works(self, monkeypatch):
+    def test_from_env_without_aliases_still_works(self, monkeypatch: Any) -> None:
         """Test that from_env without aliases still works."""
         monkeypatch.setenv("OPENAI_API_KEY", "openai-key")
 

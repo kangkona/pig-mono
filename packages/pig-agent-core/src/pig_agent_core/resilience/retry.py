@@ -505,7 +505,7 @@ async def resilient_streaming_call(
                         logger.warning("Compression did not reduce message count")
 
                 # Layer 3: Fallback model
-                if profile_manager:
+                if profile_manager and isinstance(current_model, str):
                     fallback_model = profile_manager.get_fallback_model(
                         current_model, _active_provider(llm, profile_manager)
                     )
@@ -597,7 +597,7 @@ async def resilient_call(
                     model=current_model,
                     compaction_checkpoint_id=compaction_checkpoint_id,
                 )
-            return cast(str, response.content)
+            return response.content
 
         except Exception as e:
             logger.warning(f"LLM call failed (attempt {attempt + 1}/{total_attempts}): {e}")
@@ -711,7 +711,7 @@ async def resilient_call(
                         logger.warning("Compression did not reduce message count")
 
                 # Layer 3: Fallback model
-                if profile_manager:
+                if profile_manager and isinstance(current_model, str):
                     fallback_model = profile_manager.get_fallback_model(
                         current_model, _active_provider(llm, profile_manager)
                     )
@@ -875,7 +875,7 @@ def resilient_sync_call(
                             compressed_count=len(compressed),
                         )
                         continue
-                if profile_manager:
+                if profile_manager and isinstance(current_model, str):
                     fallback_model = profile_manager.get_fallback_model(
                         current_model, _active_provider(llm, profile_manager)
                     )

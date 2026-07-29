@@ -1,5 +1,6 @@
 """Tests for Feishu compatibility adapter."""
 
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -7,7 +8,7 @@ from pig_messenger.base import MessengerType
 
 
 @pytest.fixture
-def adapter():
+def adapter() -> Any:
     """Create Feishu compat adapter."""
     with patch("pig_messenger.adapters.feishu_compat.FeishuAdapter"):
         from pig_messenger.adapters.feishu_compat import FeishuMessengerAdapter
@@ -22,7 +23,7 @@ def adapter():
         return adapter
 
 
-def test_feishu_compat_capabilities(adapter):
+def test_feishu_compat_capabilities(adapter: Any) -> None:
     """Test Feishu compat capabilities."""
     caps = adapter.capabilities
     assert caps.can_edit is True
@@ -31,7 +32,7 @@ def test_feishu_compat_capabilities(adapter):
 
 
 @pytest.mark.asyncio
-async def test_parse_event(adapter):
+async def test_parse_event(adapter: Any) -> None:
     """Test parsing event."""
     raw_event = {
         "event": {
@@ -59,7 +60,7 @@ async def test_parse_event(adapter):
 
 
 @pytest.mark.asyncio
-async def test_send_message(adapter):
+async def test_send_message(adapter: Any) -> None:
     """Test sending message."""
     result = await adapter.send_message("chat456", "Test")
     assert result["message_id"] == "msg123"

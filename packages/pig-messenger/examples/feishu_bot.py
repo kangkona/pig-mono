@@ -24,6 +24,7 @@ Usage:
 """
 
 import os
+from typing import Any
 
 from pig_messenger.adapters.feishu import FeishuAdapter
 
@@ -33,7 +34,7 @@ adapter = FeishuAdapter(
 )
 
 
-async def on_message(msg):
+async def on_message(msg: Any) -> None:
     """Echo received messages back to the chat."""
     print(f"\n[Received] sender={msg.user_id}, chat={msg.channel_id}")
     print(f"  text={msg.text}, mention={msg.is_mention}")

@@ -3,6 +3,7 @@
 import asyncio
 import os
 from types import SimpleNamespace
+from typing import Any, cast
 from unittest.mock import patch
 
 from pig_agent_core.resilience.retry import resilient_call
@@ -10,17 +11,17 @@ from pig_coding_agent.resilience import (
     create_profile_manager_from_env,
     get_profile_status,
 )
-from pig_llm import Response
+from pig_llm import LLM, Response
 
 
-def test_create_profile_manager_no_keys():
+def test_create_profile_manager_no_keys() -> None:
     """Test creating profile manager with no API keys."""
     with patch.dict(os.environ, {}, clear=True):
         manager = create_profile_manager_from_env()
         assert manager is None
 
 
-def test_create_profile_manager_single_key():
+def test_create_profile_manager_single_key() -> None:
     """Test creating profile manager with single API key."""
     with patch.dict(os.environ, {"OPENAI_API_KEY": "sk-test123"}, clear=True):
         manager = create_profile_manager_from_env()
@@ -31,7 +32,7 @@ def test_create_profile_manager_single_key():
         assert manager.profiles[0].metadata["provider"] == "openai"
 
 
-def test_create_profile_manager_multiple_keys():
+def test_create_profile_manager_multiple_keys() -> None:
     """Test creating profile manager with multiple API keys."""
     with patch.dict(
         os.environ,
@@ -58,11 +59,11 @@ def test_create_profile_manager_multiple_keys():
         assert anthropic_profiles[0].api_key == "sk-ant-test1"
 
 
-def test_mixed_provider_failover_never_builds_openai_client_with_anthropic_key():
+def test_mixed_provider_failover_never_builds_openai_client_with_anthropic_key() -> None:
     constructed: list[tuple[str, str]] = []
 
     class OfflineOpenAI:
-        def __init__(self, api_key: str) -> None:
+        def __init__(self: Any, api_key: str) -> None:
             self.api_key = api_key
             self.config = SimpleNamespace(
                 provider="openai",
@@ -71,12 +72,12 @@ def test_mixed_provider_failover_never_builds_openai_client_with_anthropic_key()
             )
 
         @classmethod
-        def with_profile(cls, llm, *, api_key: str, model: str):
+        def with_profile(cls: Any, llm: Any, *, api_key: str, model: str) -> Any:
             del llm
             constructed.append((api_key, model))
             return cls(api_key)
 
-        async def achat(self, *, messages, **kwargs):
+        async def achat(self: Any, *, messages: Any, **kwargs: Any) -> Any:
             del messages, kwargs
             if self.api_key == "openai-bad":
                 raise Exception("invalid api key")
@@ -95,7 +96,7 @@ def test_mixed_provider_failover_never_builds_openai_client_with_anthropic_key()
         assert manager is not None
         result = asyncio.run(
             resilient_call(
-                OfflineOpenAI("openai-bad"),
+                cast(LLM, OfflineOpenAI("openai-bad")),
                 [],
                 profile_manager=manager,
                 max_retries=1,
@@ -110,7 +111,7 @@ def test_mixed_provider_failover_never_builds_openai_client_with_anthropic_key()
     assert manager.get_fallback_model("gpt-4", "anthropic") == "claude-3-5-sonnet-20241022"
 
 
-def test_create_profile_manager_fallback_models():
+def test_create_profile_manager_fallback_models() -> None:
     """Test profile manager has fallback models configured."""
     with patch.dict(os.environ, {"OPENAI_API_KEY": "sk-test"}, clear=True):
         manager = create_profile_manager_from_env()
@@ -120,7 +121,7 @@ def test_create_profile_manager_fallback_models():
         assert "gpt-3.5-turbo" in manager.fallback_models
 
 
-def test_get_profile_status():
+def test_get_profile_status() -> None:
     """Test getting profile status."""
     with patch.dict(
         os.environ,
@@ -146,7 +147,7 @@ def test_get_profile_status():
         assert profile_info["available"] is True
 
 
-def test_get_profile_status_with_cooldown():
+def test_get_profile_status_with_cooldown() -> None:
     """Test profile status with cooldown."""
     with patch.dict(os.environ, {"OPENAI_API_KEY": "sk-test"}, clear=True):
         manager = create_profile_manager_from_env()

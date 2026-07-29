@@ -1,11 +1,13 @@
 """Tests for file reference system."""
 
+from typing import Any
+
 import pytest
 from pig_coding_agent.file_reference import FileReferenceParser
 
 
 @pytest.fixture
-def temp_workspace(tmp_path):
+def temp_workspace(tmp_path: Any) -> Any:
     """Create temp workspace with files."""
     workspace = tmp_path / "workspace"
     workspace.mkdir()
@@ -21,13 +23,13 @@ def temp_workspace(tmp_path):
     return workspace
 
 
-def test_file_reference_parser_creation(temp_workspace):
+def test_file_reference_parser_creation(temp_workspace: Any) -> None:
     """Test creating parser."""
     parser = FileReferenceParser(temp_workspace)
     assert parser.workspace == temp_workspace
 
 
-def test_parse_references(temp_workspace):
+def test_parse_references(temp_workspace: Any) -> None:
     """Test parsing @references."""
     parser = FileReferenceParser(temp_workspace)
 
@@ -39,7 +41,7 @@ def test_parse_references(temp_workspace):
     assert "README.md" in refs
 
 
-def test_parse_path_references(temp_workspace):
+def test_parse_path_references(temp_workspace: Any) -> None:
     """Test parsing @path/file references."""
     parser = FileReferenceParser(temp_workspace)
 
@@ -50,7 +52,7 @@ def test_parse_path_references(temp_workspace):
     assert "src/utils.py" in refs
 
 
-def test_resolve_file_exists(temp_workspace):
+def test_resolve_file_exists(temp_workspace: Any) -> None:
     """Test resolving existing file."""
     parser = FileReferenceParser(temp_workspace)
 
@@ -61,7 +63,7 @@ def test_resolve_file_exists(temp_workspace):
     assert "def main()" in content
 
 
-def test_resolve_file_not_found(temp_workspace):
+def test_resolve_file_not_found(temp_workspace: Any) -> None:
     """Test resolving non-existent file."""
     parser = FileReferenceParser(temp_workspace)
 
@@ -71,7 +73,7 @@ def test_resolve_file_not_found(temp_workspace):
     assert "not found" in error.lower()
 
 
-def test_resolve_nested_file(temp_workspace):
+def test_resolve_nested_file(temp_workspace: Any) -> None:
     """Test resolving nested file."""
     parser = FileReferenceParser(temp_workspace)
 
@@ -81,7 +83,7 @@ def test_resolve_nested_file(temp_workspace):
     assert "def util()" in content
 
 
-def test_expand_references(temp_workspace):
+def test_expand_references(temp_workspace: Any) -> None:
     """Test expanding references."""
     parser = FileReferenceParser(temp_workspace)
 
@@ -93,7 +95,7 @@ def test_expand_references(temp_workspace):
     assert "--- File:" in expanded
 
 
-def test_expand_multiple_references(temp_workspace):
+def test_expand_multiple_references(temp_workspace: Any) -> None:
     """Test expanding multiple references."""
     parser = FileReferenceParser(temp_workspace)
 
@@ -104,7 +106,7 @@ def test_expand_multiple_references(temp_workspace):
     assert "# Project" in expanded
 
 
-def test_get_preview(temp_workspace):
+def test_get_preview(temp_workspace: Any) -> None:
     """Test getting reference preview."""
     parser = FileReferenceParser(temp_workspace)
 
@@ -116,7 +118,9 @@ def test_get_preview(temp_workspace):
     assert "bytes" in preview
 
 
-def test_get_preview_hyperlinks_file_paths_when_supported(temp_workspace, monkeypatch):
+def test_get_preview_hyperlinks_file_paths_when_supported(
+    temp_workspace: Any, monkeypatch: Any
+) -> None:
     parser = FileReferenceParser(temp_workspace)
     monkeypatch.setenv("TERM_PROGRAM", "WezTerm")
     monkeypatch.delenv("NO_COLOR", raising=False)
@@ -127,7 +131,7 @@ def test_get_preview_hyperlinks_file_paths_when_supported(temp_workspace, monkey
     assert "main.py" in preview
 
 
-def test_security_outside_workspace(temp_workspace):
+def test_security_outside_workspace(temp_workspace: Any) -> None:
     """Test security - prevent accessing outside workspace."""
     parser = FileReferenceParser(temp_workspace)
 
@@ -137,7 +141,7 @@ def test_security_outside_workspace(temp_workspace):
     assert "outside workspace" in error.lower()
 
 
-def test_no_references(temp_workspace):
+def test_no_references(temp_workspace: Any) -> None:
     """Test text without references."""
     parser = FileReferenceParser(temp_workspace)
 

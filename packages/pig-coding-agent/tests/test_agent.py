@@ -1,6 +1,7 @@
 """Tests for CodingAgent."""
 
 import json
+from typing import Any
 from unittest.mock import Mock, patch
 
 import pytest
@@ -13,7 +14,7 @@ from pig_llm import Response
 
 
 @pytest.fixture
-def mock_llm():
+def mock_llm() -> Any:
     """Create a mock LLM."""
     llm = Mock()
     llm.config = Mock(model="test-model")
@@ -21,14 +22,14 @@ def mock_llm():
 
 
 @pytest.fixture
-def temp_workspace(tmp_path):
+def temp_workspace(tmp_path: Any) -> Any:
     """Create a temporary workspace."""
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     return workspace
 
 
-def test_coding_agent_creation(mock_llm, temp_workspace):
+def test_coding_agent_creation(mock_llm: Any, temp_workspace: Any) -> None:
     """Test creating a coding agent."""
     agent = CodingAgent(
         llm=mock_llm,
@@ -43,7 +44,7 @@ def test_coding_agent_creation(mock_llm, temp_workspace):
     assert agent.result_factory is not None
 
 
-def test_coding_agent_default_llm(temp_workspace):
+def test_coding_agent_default_llm(temp_workspace: Any) -> None:
     """Test agent with default LLM."""
     with patch("pig_coding_agent.agent.LLM") as mock_llm_class:
         mock_llm = Mock()
@@ -53,7 +54,7 @@ def test_coding_agent_default_llm(temp_workspace):
         assert agent.llm == mock_llm
 
 
-def test_coding_agent_has_tools(mock_llm, temp_workspace):
+def test_coding_agent_has_tools(mock_llm: Any, temp_workspace: Any) -> None:
     """Test agent has required tools."""
     agent = CodingAgent(llm=mock_llm, workspace=str(temp_workspace))
 
@@ -70,7 +71,7 @@ def test_coding_agent_has_tools(mock_llm, temp_workspace):
     assert "git_push" not in tool_names
 
 
-def test_coding_agent_system_prompt(mock_llm, temp_workspace):
+def test_coding_agent_system_prompt(mock_llm: Any, temp_workspace: Any) -> None:
     """Test agent has proper system prompt."""
     agent = CodingAgent(llm=mock_llm, workspace=str(temp_workspace))
 
@@ -80,7 +81,9 @@ def test_coding_agent_system_prompt(mock_llm, temp_workspace):
     assert "confirm destructive operations" not in system_prompt.lower()
 
 
-def test_coding_agent_uses_injected_permission_policy_for_tools(mock_llm, temp_workspace):
+def test_coding_agent_uses_injected_permission_policy_for_tools(
+    mock_llm: Any, temp_workspace: Any
+) -> None:
     """CodingAgent should expose one policy boundary for file writes and shell execution."""
     agent = CodingAgent(
         llm=mock_llm,
@@ -99,14 +102,17 @@ def test_coding_agent_uses_injected_permission_policy_for_tools(mock_llm, temp_w
 
 
 def test_coding_agent_interactive_permission_policy_uses_runtime_confirmation(
-    mock_llm, temp_workspace
-):
+    mock_llm: Any, temp_workspace: Any
+) -> None:
     agent = CodingAgent(llm=mock_llm, workspace=str(temp_workspace), verbose=False)
     terminal_runtime = Mock()
     terminal_runtime.confirm.return_value = True
-    agent.interaction_runtime._build_terminal_runtime = Mock(return_value=terminal_runtime)
-
-    allowed, reason = agent.permission_policy.check("write_file", "demo.txt")
+    with patch.object(
+        agent.interaction_runtime,
+        "_build_terminal_runtime",
+        return_value=terminal_runtime,
+    ):
+        allowed, reason = agent.permission_policy.check("write_file", "demo.txt")
 
     assert allowed is True
     assert reason is None
@@ -115,8 +121,8 @@ def test_coding_agent_interactive_permission_policy_uses_runtime_confirmation(
 
 @pytest.mark.parametrize("tool_name", ["write_file", "edit_file", "run_command"])
 def test_extension_side_effect_tools_use_agent_permission_boundary(
-    mock_llm, temp_workspace, tool_name
-):
+    mock_llm: Any, temp_workspace: Any, tool_name: Any
+) -> None:
     calls = []
 
     def side_effect(target: str) -> str:
@@ -146,7 +152,9 @@ def test_extension_side_effect_tools_use_agent_permission_boundary(
     assert calls == []
 
 
-def test_extension_edit_file_retains_interactive_confirmation(mock_llm, temp_workspace):
+def test_extension_edit_file_retains_interactive_confirmation(
+    mock_llm: Any, temp_workspace: Any
+) -> None:
     calls = []
 
     def edit_file(path: str) -> str:
@@ -162,10 +170,13 @@ def test_extension_edit_file_retains_interactive_confirmation(mock_llm, temp_wor
     )
     terminal_runtime = Mock()
     terminal_runtime.confirm.return_value = True
-    agent.interaction_runtime._build_terminal_runtime = Mock(return_value=terminal_runtime)
-    agent.add_tool(Tool(edit_file, name="edit_file", description="edit a file"))
-
-    result = agent.agent.registry.execute_sync("edit_file", {"path": "demo.py"})
+    with patch.object(
+        agent.interaction_runtime,
+        "_build_terminal_runtime",
+        return_value=terminal_runtime,
+    ):
+        agent.add_tool(Tool(edit_file, name="edit_file", description="edit a file"))
+        result = agent.agent.registry.execute_sync("edit_file", {"path": "demo.py"})
 
     assert result.ok is True
     assert result.data == "edited"
@@ -173,7 +184,7 @@ def test_extension_edit_file_retains_interactive_confirmation(mock_llm, temp_wor
     terminal_runtime.confirm.assert_called_once_with("Allow edit_file on demo.py?", default=False)
 
 
-def test_coding_agent_run_once(mock_llm, temp_workspace):
+def test_coding_agent_run_once(mock_llm: Any, temp_workspace: Any) -> None:
     """Test running agent once."""
     # Mock the agent's run method
     with patch("pig_coding_agent.agent.Agent") as mock_agent_class:
@@ -192,7 +203,9 @@ def test_coding_agent_run_once(mock_llm, temp_workspace):
         ]
 
 
-def test_coding_agent_run_once_persists_transcript_and_usage(mock_llm, temp_workspace):
+def test_coding_agent_run_once_persists_transcript_and_usage(
+    mock_llm: Any, temp_workspace: Any
+) -> None:
     mock_llm.config.model = "test-model"
     mock_llm.config.max_retries = 1
     mock_llm.chat.return_value = Response(
@@ -230,7 +243,7 @@ def test_coding_agent_run_once_persists_transcript_and_usage(mock_llm, temp_work
     assert loaded.usage_ledger.snapshot()["by_kind"]["assistant"]["input_tokens"] == 13
 
 
-def test_coding_agent_handle_exit_command(mock_llm, temp_workspace):
+def test_coding_agent_handle_exit_command(mock_llm: Any, temp_workspace: Any) -> None:
     """Test handling exit command."""
     agent = CodingAgent(llm=mock_llm, workspace=str(temp_workspace))
 
@@ -238,7 +251,7 @@ def test_coding_agent_handle_exit_command(mock_llm, temp_workspace):
         agent._handle_command("/exit")
 
 
-def test_coding_agent_handle_quit_command(mock_llm, temp_workspace):
+def test_coding_agent_handle_quit_command(mock_llm: Any, temp_workspace: Any) -> None:
     """Test handling quit command."""
     agent = CodingAgent(llm=mock_llm, workspace=str(temp_workspace))
 
@@ -246,7 +259,7 @@ def test_coding_agent_handle_quit_command(mock_llm, temp_workspace):
         agent._handle_command("/quit")
 
 
-def test_coding_agent_handle_clear_command(mock_llm, temp_workspace):
+def test_coding_agent_handle_clear_command(mock_llm: Any, temp_workspace: Any) -> None:
     """Test handling clear command."""
     with patch("pig_coding_agent.agent.Agent") as mock_agent_class:
         mock_agent_instance = Mock()
@@ -258,7 +271,7 @@ def test_coding_agent_handle_clear_command(mock_llm, temp_workspace):
         mock_agent_instance.clear_history.assert_called_once()
 
 
-def test_coding_agent_handle_help_command(mock_llm, temp_workspace):
+def test_coding_agent_handle_help_command(mock_llm: Any, temp_workspace: Any) -> None:
     """Test handling help command."""
     agent = CodingAgent(llm=mock_llm, workspace=str(temp_workspace))
     agent.ui = Mock()
@@ -268,7 +281,7 @@ def test_coding_agent_handle_help_command(mock_llm, temp_workspace):
     agent.ui.panel.assert_called()
 
 
-def test_coding_agent_handle_files_command(mock_llm, temp_workspace):
+def test_coding_agent_handle_files_command(mock_llm: Any, temp_workspace: Any) -> None:
     """Test handling files command."""
     # Create some test files
     (temp_workspace / "test.txt").write_text("content")
@@ -280,7 +293,7 @@ def test_coding_agent_handle_files_command(mock_llm, temp_workspace):
     agent.ui.panel.assert_called()
 
 
-def test_coding_agent_handle_status_command(mock_llm, temp_workspace):
+def test_coding_agent_handle_status_command(mock_llm: Any, temp_workspace: Any) -> None:
     """Test handling status command."""
     agent = CodingAgent(llm=mock_llm, workspace=str(temp_workspace))
     agent.ui = Mock()
@@ -289,7 +302,7 @@ def test_coding_agent_handle_status_command(mock_llm, temp_workspace):
     agent.ui.panel.assert_called()
 
 
-def test_coding_agent_handle_unknown_command(mock_llm, temp_workspace):
+def test_coding_agent_handle_unknown_command(mock_llm: Any, temp_workspace: Any) -> None:
     """Test handling unknown command."""
     agent = CodingAgent(llm=mock_llm, workspace=str(temp_workspace))
     agent.ui = Mock()
@@ -298,7 +311,9 @@ def test_coding_agent_handle_unknown_command(mock_llm, temp_workspace):
     agent.ui.error.assert_called()
 
 
-def test_coding_agent_handle_command_delegates_to_interaction_runtime(mock_llm, temp_workspace):
+def test_coding_agent_handle_command_delegates_to_interaction_runtime(
+    mock_llm: Any, temp_workspace: Any
+) -> None:
     """CodingAgent should keep only a thin delegation surface for interactive commands."""
     agent = CodingAgent(llm=mock_llm, workspace=str(temp_workspace), verbose=False)
     agent.interaction_runtime = Mock()
@@ -308,7 +323,9 @@ def test_coding_agent_handle_command_delegates_to_interaction_runtime(mock_llm, 
     agent.interaction_runtime.handle_command.assert_called_once_with("/help")
 
 
-def test_interaction_runtime_handle_command_delegates_to_dispatcher(mock_llm, temp_workspace):
+def test_interaction_runtime_handle_command_delegates_to_dispatcher(
+    mock_llm: Any, temp_workspace: Any
+) -> None:
     agent = CodingAgent(llm=mock_llm, workspace=str(temp_workspace), verbose=False)
     agent.interaction_runtime.dispatcher = Mock()
 
@@ -317,7 +334,9 @@ def test_interaction_runtime_handle_command_delegates_to_dispatcher(mock_llm, te
     agent.interaction_runtime.dispatcher.dispatch.assert_called_once_with("/help")
 
 
-def test_coding_agent_run_interactive_delegates_to_interactive_mode(mock_llm, temp_workspace):
+def test_coding_agent_run_interactive_delegates_to_interactive_mode(
+    mock_llm: Any, temp_workspace: Any
+) -> None:
     agent = CodingAgent(llm=mock_llm, workspace=str(temp_workspace), verbose=False)
     agent.interactive_mode = Mock()
 
@@ -326,12 +345,14 @@ def test_coding_agent_run_interactive_delegates_to_interactive_mode(mock_llm, te
     agent.interactive_mode.run_interactive.assert_called_once_with()
 
 
-def test_coding_agent_run_turn_delegates_to_interactive_mode(mock_llm, temp_workspace):
+def test_coding_agent_run_turn_delegates_to_interactive_mode(
+    mock_llm: Any, temp_workspace: Any
+) -> None:
     import asyncio
 
     agent = CodingAgent(llm=mock_llm, workspace=str(temp_workspace), verbose=False)
 
-    async def _run_turn(user_input, cancel=None):
+    async def _run_turn(user_input: Any, cancel: Any = None) -> Any:
         assert user_input == "hello"
         assert cancel is None
 
@@ -343,7 +364,7 @@ def test_coding_agent_run_turn_delegates_to_interactive_mode(mock_llm, temp_work
     agent.interactive_mode.run_turn.assert_called_once()
 
 
-def test_coding_agent_exposes_app_layer_services(mock_llm, temp_workspace):
+def test_coding_agent_exposes_app_layer_services(mock_llm: Any, temp_workspace: Any) -> None:
     agent = CodingAgent(llm=mock_llm, workspace=str(temp_workspace), verbose=False)
 
     assert agent.interaction_runtime is not None
@@ -354,7 +375,9 @@ def test_coding_agent_exposes_app_layer_services(mock_llm, temp_workspace):
     assert hasattr(agent.interaction_runtime, "_build_prefix_command_routes")
 
 
-def test_interaction_catalog_builds_base_and_dynamic_commands(mock_llm, temp_workspace):
+def test_interaction_catalog_builds_base_and_dynamic_commands(
+    mock_llm: Any, temp_workspace: Any
+) -> None:
     agent = CodingAgent(llm=mock_llm, workspace=str(temp_workspace), verbose=False)
 
     commands = agent.interaction_catalog.build_commands()
@@ -363,7 +386,9 @@ def test_interaction_catalog_builds_base_and_dynamic_commands(mock_llm, temp_wor
         assert command in commands
 
 
-def test_interaction_runtime_prefix_routes_cover_command_families(mock_llm, temp_workspace):
+def test_interaction_runtime_prefix_routes_cover_command_families(
+    mock_llm: Any, temp_workspace: Any
+) -> None:
     agent = CodingAgent(llm=mock_llm, workspace=str(temp_workspace), verbose=False)
 
     routes = agent.interaction_runtime._build_prefix_command_routes()
@@ -383,7 +408,9 @@ def test_interaction_runtime_prefix_routes_cover_command_families(mock_llm, temp
         assert prefix in routes
 
 
-def test_coding_agent_session_commands_return_structured_results(mock_llm, temp_workspace):
+def test_coding_agent_session_commands_return_structured_results(
+    mock_llm: Any, temp_workspace: Any
+) -> None:
     agent = CodingAgent(llm=mock_llm, workspace=str(temp_workspace), verbose=False)
     agent.session.add_message("user", "hello")
     agent.session.add_message("assistant", "world")
@@ -398,7 +425,9 @@ def test_coding_agent_session_commands_return_structured_results(mock_llm, temp_
     assert "session_id" in new_result
 
 
-def test_coding_agent_tree_actions_return_structured_results(mock_llm, temp_workspace):
+def test_coding_agent_tree_actions_return_structured_results(
+    mock_llm: Any, temp_workspace: Any
+) -> None:
     agent = CodingAgent(llm=mock_llm, workspace=str(temp_workspace), verbose=False)
     entry = agent.session.add_message("user", "branch here")
 
@@ -420,7 +449,7 @@ def test_coding_agent_tree_actions_return_structured_results(mock_llm, temp_work
     assert fork_result["entries"] == 1
 
 
-def test_tree_browser_view_data_can_filter_children(mock_llm, temp_workspace):
+def test_tree_browser_view_data_can_filter_children(mock_llm: Any, temp_workspace: Any) -> None:
     agent = CodingAgent(llm=mock_llm, workspace=str(temp_workspace), verbose=False)
     root = agent.session.add_message("user", "root")
     child_a = agent.session.add_message("assistant", "child a", parent_id=root.id)
@@ -465,7 +494,9 @@ def test_tree_browser_view_data_can_filter_children(mock_llm, temp_workspace):
     assert detail_rows["Path"] == "2"
 
 
-def test_coding_agent_setting_update_returns_structured_result(mock_llm, temp_workspace):
+def test_coding_agent_setting_update_returns_structured_result(
+    mock_llm: Any, temp_workspace: Any
+) -> None:
     agent = CodingAgent(llm=mock_llm, workspace=str(temp_workspace), verbose=False)
 
     result = agent.app_actions.set_setting("auto_compact_threshold", "0.5")
@@ -479,8 +510,8 @@ def test_coding_agent_setting_update_returns_structured_result(mock_llm, temp_wo
 
 
 def test_coding_agent_settings_expose_only_runtime_backed_application_modes(
-    mock_llm, temp_workspace
-):
+    mock_llm: Any, temp_workspace: Any
+) -> None:
     agent = CodingAgent(llm=mock_llm, workspace=str(temp_workspace), verbose=False)
 
     assert agent._EDITABLE_SETTINGS == ("auto_compact", "auto_compact_threshold")
@@ -504,8 +535,8 @@ def test_coding_agent_settings_expose_only_runtime_backed_application_modes(
     ],
 )
 def test_coding_agent_setting_boolean_tokens_are_explicit(
-    mock_llm, temp_workspace, raw_value, expected
-):
+    mock_llm: Any, temp_workspace: Any, raw_value: Any, expected: Any
+) -> None:
     agent = CodingAgent(llm=mock_llm, workspace=str(temp_workspace), verbose=False)
 
     result = agent.app_actions.set_setting("auto_compact", raw_value)
@@ -517,15 +548,17 @@ def test_coding_agent_setting_boolean_tokens_are_explicit(
 
 
 def test_coding_agent_compact_and_export_return_structured_results(
-    mock_llm, temp_workspace, tmp_path
-):
+    mock_llm: Any, temp_workspace: Any, tmp_path: Any
+) -> None:
     agent = CodingAgent(llm=mock_llm, workspace=str(temp_workspace), verbose=False)
     for i in range(4):
         agent.session.add_message("user", f"Message {i}")
 
     compact_result = agent.app_actions.compact_session(None)
     assert compact_result["ok"] is True
-    assert compact_result["before"] >= compact_result["after"]
+    assert compact_result.before is not None
+    assert compact_result.after is not None
+    assert compact_result.before >= compact_result.after
 
     export_path = tmp_path / "demo.html"
     with patch("pig_agent_core.SessionExporter.export_to_html", return_value=export_path):
@@ -534,7 +567,9 @@ def test_coding_agent_compact_and_export_return_structured_results(
     assert export_result["exported"] == str(export_path)
 
 
-def test_coding_agent_short_compaction_does_not_reuse_stale_checkpoint(mock_llm, temp_workspace):
+def test_coding_agent_short_compaction_does_not_reuse_stale_checkpoint(
+    mock_llm: Any, temp_workspace: Any
+) -> None:
     agent = CodingAgent(llm=mock_llm, workspace=str(temp_workspace), verbose=False)
     for i in range(12):
         agent.session.add_message("user", f"Message {i}")
@@ -546,7 +581,9 @@ def test_coding_agent_short_compaction_does_not_reuse_stale_checkpoint(mock_llm,
     assert second["checkpoint_id"] is None
 
 
-def test_coding_agent_app_actions_cover_session_tree_and_settings_flows(mock_llm, temp_workspace):
+def test_coding_agent_app_actions_cover_session_tree_and_settings_flows(
+    mock_llm: Any, temp_workspace: Any
+) -> None:
     agent = CodingAgent(llm=mock_llm, workspace=str(temp_workspace), verbose=False)
 
     for name in (
@@ -571,7 +608,7 @@ def test_coding_agent_app_actions_cover_session_tree_and_settings_flows(mock_llm
         assert hasattr(agent.app_actions, name)
 
 
-def test_coding_agent_verbose_mode(mock_llm, temp_workspace):
+def test_coding_agent_verbose_mode(mock_llm: Any, temp_workspace: Any) -> None:
     """Test agent in verbose mode."""
     agent = CodingAgent(
         llm=mock_llm,
@@ -583,7 +620,9 @@ def test_coding_agent_verbose_mode(mock_llm, temp_workspace):
     assert agent.agent.verbose is True
 
 
-def test_coding_agent_reuses_existing_session_by_session_id(mock_llm, temp_workspace):
+def test_coding_agent_reuses_existing_session_by_session_id(
+    mock_llm: Any, temp_workspace: Any
+) -> None:
     session = Session(name="existing", workspace=str(temp_workspace), auto_save=False)
     session.add_message("user", "hello")
     save_path = session.save()
@@ -601,7 +640,9 @@ def test_coding_agent_reuses_existing_session_by_session_id(mock_llm, temp_works
     assert len(agent.session.tree.entries) == 1
 
 
-def test_coding_agent_creates_new_session_when_session_id_missing(mock_llm, temp_workspace):
+def test_coding_agent_creates_new_session_when_session_id_missing(
+    mock_llm: Any, temp_workspace: Any
+) -> None:
     agent = CodingAgent(
         llm=mock_llm,
         workspace=str(temp_workspace),
@@ -613,8 +654,8 @@ def test_coding_agent_creates_new_session_when_session_id_missing(mock_llm, temp
 
 
 def test_coding_agent_preserves_full_explicit_session_id_in_saved_filename(
-    mock_llm, temp_workspace
-):
+    mock_llm: Any, temp_workspace: Any
+) -> None:
     agent = CodingAgent(
         llm=mock_llm,
         workspace=str(temp_workspace),
@@ -627,7 +668,9 @@ def test_coding_agent_preserves_full_explicit_session_id_in_saved_filename(
     assert saved.name == "coding-session-manual-session-id.jsonl"
 
 
-def test_coding_agent_uses_env_session_dir_for_new_sessions(mock_llm, tmp_path, monkeypatch):
+def test_coding_agent_uses_env_session_dir_for_new_sessions(
+    mock_llm: Any, tmp_path: Any, monkeypatch: Any
+) -> None:
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     session_dir = tmp_path / "custom-sessions"
@@ -643,7 +686,9 @@ def test_coding_agent_uses_env_session_dir_for_new_sessions(mock_llm, tmp_path, 
     assert saved.parent == session_dir
 
 
-def test_list_sessions_reports_resolved_env_session_dir(mock_llm, tmp_path, monkeypatch):
+def test_list_sessions_reports_resolved_env_session_dir(
+    mock_llm: Any, tmp_path: Any, monkeypatch: Any
+) -> None:
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     session_dir = tmp_path / "custom-sessions"
@@ -656,13 +701,16 @@ def test_list_sessions_reports_resolved_env_session_dir(mock_llm, tmp_path, monk
     )
     agent.ui = Mock()
 
+    assert agent.interaction_runtime.views is not None
     agent.interaction_runtime.views.list_sessions()
 
     messages = [call.args[0] for call in agent.ui.system.call_args_list]
     assert f"Sessions are saved to: {session_dir}" in messages
 
 
-def test_coding_agent_explicit_session_dir_overrides_env(mock_llm, tmp_path, monkeypatch):
+def test_coding_agent_explicit_session_dir_overrides_env(
+    mock_llm: Any, tmp_path: Any, monkeypatch: Any
+) -> None:
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     env_session_dir = tmp_path / "env-sessions"
@@ -680,7 +728,9 @@ def test_coding_agent_explicit_session_dir_overrides_env(mock_llm, tmp_path, mon
     assert saved.parent == explicit_session_dir
 
 
-def test_coding_agent_uses_project_config_session_dir_when_env_missing(mock_llm, tmp_path):
+def test_coding_agent_uses_project_config_session_dir_when_env_missing(
+    mock_llm: Any, tmp_path: Any
+) -> None:
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     session_dir = tmp_path / "config-sessions"
@@ -706,8 +756,8 @@ def test_coding_agent_uses_project_config_session_dir_when_env_missing(mock_llm,
 
 
 def test_coding_agent_uses_global_config_session_dir_when_project_missing(
-    mock_llm, tmp_path, monkeypatch
-):
+    mock_llm: Any, tmp_path: Any, monkeypatch: Any
+) -> None:
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     session_dir = tmp_path / "global-sessions"
@@ -733,8 +783,8 @@ def test_coding_agent_uses_global_config_session_dir_when_project_missing(
 
 
 def test_coding_agent_project_config_session_dir_overrides_global_config(
-    mock_llm, tmp_path, monkeypatch
-):
+    mock_llm: Any, tmp_path: Any, monkeypatch: Any
+) -> None:
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     global_session_dir = tmp_path / "global-sessions"
@@ -764,7 +814,7 @@ def test_coding_agent_project_config_session_dir_overrides_global_config(
     assert saved.parent == project_session_dir
 
 
-def test_coding_agent_fork_keeps_explicit_session_id(mock_llm, temp_workspace):
+def test_coding_agent_fork_keeps_explicit_session_id(mock_llm: Any, temp_workspace: Any) -> None:
     source = Session(name="existing", workspace=str(temp_workspace), auto_save=False)
     source.add_message("user", "hello")
     source.add_message("assistant", "world")
@@ -783,7 +833,9 @@ def test_coding_agent_fork_keeps_explicit_session_id(mock_llm, temp_workspace):
     assert len(agent.session.tree.entries) == 2
 
 
-def test_coding_agent_verbose_false_suppresses_startup_prints_on_resume(mock_llm, temp_workspace):
+def test_coding_agent_verbose_false_suppresses_startup_prints_on_resume(
+    mock_llm: Any, temp_workspace: Any
+) -> None:
     session = Session(name="existing", workspace=str(temp_workspace), auto_save=False)
     session.add_message("user", "hello")
     session_path = session.save()
@@ -808,7 +860,7 @@ def test_coding_agent_verbose_false_suppresses_startup_prints_on_resume(mock_llm
     mock_print.assert_not_called()
 
 
-def test_coding_agent_rejects_invalid_manual_session_id(mock_llm, temp_workspace):
+def test_coding_agent_rejects_invalid_manual_session_id(mock_llm: Any, temp_workspace: Any) -> None:
     with pytest.raises(ValueError, match="Session id must be non-empty"):
         CodingAgent(
             llm=mock_llm,
@@ -818,7 +870,9 @@ def test_coding_agent_rejects_invalid_manual_session_id(mock_llm, temp_workspace
         )
 
 
-def test_login_command_does_not_advertise_oauth_or_subscription_login(mock_llm, temp_workspace):
+def test_login_command_does_not_advertise_oauth_or_subscription_login(
+    mock_llm: Any, temp_workspace: Any
+) -> None:
     agent = CodingAgent(llm=mock_llm, workspace=str(temp_workspace), verbose=False)
     agent.ui = Mock()
 
@@ -830,7 +884,9 @@ def test_login_command_does_not_advertise_oauth_or_subscription_login(mock_llm, 
     assert "API keys" in panel
 
 
-def test_tree_command_switches_to_entry_prefix_and_rebuilds_history(mock_llm, temp_workspace):
+def test_tree_command_switches_to_entry_prefix_and_rebuilds_history(
+    mock_llm: Any, temp_workspace: Any
+) -> None:
     agent = CodingAgent(llm=mock_llm, workspace=str(temp_workspace), verbose=False)
     agent.ui = Mock()
     first = agent.session.add_message("user", "first prompt")
@@ -846,7 +902,9 @@ def test_tree_command_switches_to_entry_prefix_and_rebuilds_history(mock_llm, te
     assert second.id in agent.session.tree.entries
 
 
-def test_tree_command_emits_extension_lifecycle_when_switching_entry(mock_llm, temp_workspace):
+def test_tree_command_emits_extension_lifecycle_when_switching_entry(
+    mock_llm: Any, temp_workspace: Any
+) -> None:
     ext_dir = temp_workspace / ".agents" / "extensions"
     ext_dir.mkdir(parents=True)
     log_file = temp_workspace / "tree_events.log"
@@ -888,7 +946,9 @@ def extension(api):
     ]
 
 
-def test_tree_label_command_persists_label_and_shows_in_tree(mock_llm, temp_workspace):
+def test_tree_label_command_persists_label_and_shows_in_tree(
+    mock_llm: Any, temp_workspace: Any
+) -> None:
     agent = CodingAgent(llm=mock_llm, workspace=str(temp_workspace), verbose=False)
     agent.ui = Mock()
     entry = agent.session.add_message("user", "label me")

@@ -4,9 +4,11 @@ import json
 import os
 import signal
 import sys
+from collections.abc import Callable
 from io import UnsupportedOperation
 from pathlib import Path
-from typing import Any, TypeVar
+from types import FrameType
+from typing import Any, TextIO, TypeVar
 
 import typer
 from pig_agent_core import assert_valid_session_id
@@ -67,7 +69,7 @@ def _resolve_option_value(value: T) -> T | None:
 class JsonLineWriter:
     """Strict JSONL protocol writer for non-interactive modes."""
 
-    def __init__(self, output=None):
+    def __init__(self, output: TextIO | None = None) -> None:
         self.output = output or sys.stdout
 
     def write(self, payload: dict[str, Any]) -> None:
@@ -75,7 +77,7 @@ class JsonLineWriter:
         self.output.flush()
 
 
-def _shutdown_extensions(agent: Any, reason: str) -> None:
+def _shutdown_extensions(agent: CodingAgent, reason: str) -> None:
     """Forward protocol shutdown reasons into extension cleanup."""
     extension_manager = getattr(agent, "extension_manager", None)
     if extension_manager is None:
@@ -86,12 +88,12 @@ def _shutdown_extensions(agent: Any, reason: str) -> None:
     extension_manager.cleanup(reason=reason)
 
 
-def _run_with_signal_cleanup(agent: Any, runner) -> None:
+def _run_with_signal_cleanup(agent: CodingAgent, runner: Callable[[], None]) -> None:
     """Run a callable while ensuring SIGTERM/SIGHUP trigger extension cleanup."""
     previous_handlers: dict[int, Any] = {}
     sighup = getattr(signal, "SIGHUP", None)
 
-    def _handle_signal(sig, frame) -> None:
+    def _handle_signal(sig: int, frame: FrameType | None) -> None:
         reason = "sighup" if sighup is not None and sig == sighup else "sigterm"
         shutdown = vars(agent).get("_protocol_shutdown") if hasattr(agent, "__dict__") else None
         if callable(shutdown):
@@ -223,7 +225,7 @@ def main(
         "--approve/--no-approve",
         help="Allow or deny project-local settings, instructions, and extensions",
     ),
-):
+) -> None:
     """Start interactive coding agent."""
     if ctx.invoked_subcommand is not None:
         return
@@ -450,7 +452,7 @@ def main(
         _run_with_signal_cleanup(agent, agent.run_interactive)
 
 
-def run_json_mode(agent):
+def run_json_mode(agent: CodingAgent) -> None:
     """Run agent in JSON output mode.
 
     Args:
@@ -461,7 +463,7 @@ def run_json_mode(agent):
     json_out = JSONOutputMode()
 
     def emit_shutdown(reason: str) -> None:
-        if getattr(agent, "_protocol_shutdown_emitted", False):
+        if agent._protocol_shutdown_emitted:
             return
         agent._protocol_shutdown_emitted = True
         _shutdown_extensions(agent, reason)
@@ -541,11 +543,11 @@ def run_json_mode(agent):
                     emit_shutdown("error")
                     break
     finally:
-        if getattr(agent, "_protocol_shutdown", None) is emit_shutdown:
+        if agent._protocol_shutdown is emit_shutdown:
             agent._protocol_shutdown = None
 
 
-def run_rpc_mode(agent):
+def run_rpc_mode(agent: CodingAgent) -> None:
     """Run agent in RPC mode.
 
     Args:
@@ -556,7 +558,7 @@ def run_rpc_mode(agent):
     rpc = RPCMode()
 
     def emit_shutdown(reason: str) -> None:
-        if getattr(agent, "_protocol_shutdown_emitted", False):
+        if agent._protocol_shutdown_emitted:
             return
         agent._protocol_shutdown_emitted = True
         _shutdown_extensions(agent, reason)
@@ -565,7 +567,7 @@ def run_rpc_mode(agent):
     agent._protocol_shutdown = emit_shutdown
     agent._protocol_shutdown_emitted = False
 
-    def handle_request(method: str, params: dict) -> Any:
+    def handle_request(method: str, params: dict[str, Any]) -> Any:
         """Handle RPC requests.
 
         Args:
@@ -650,7 +652,7 @@ def run_rpc_mode(agent):
         rpc.run_server(handle_request)
         emit_shutdown(getattr(rpc, "last_shutdown_reason", None) or "eof")
     finally:
-        if getattr(agent, "_protocol_shutdown", None) is emit_shutdown:
+        if agent._protocol_shutdown is emit_shutdown:
             agent._protocol_shutdown = None
 
 
@@ -659,7 +661,7 @@ def gen(
     description: str = typer.Argument(..., help="What to generate"),
     output: Path | None = typer.Option(None, "--output", "-o", help="Output file"),
     model: str | None = typer.Option(None, "--model", "-m", help="LLM model"),
-):
+) -> None:
     """Generate code from description."""
     api_key = os.getenv("OPENAI_API_KEY")
     if not api_key:
@@ -691,7 +693,7 @@ def gen(
 def analyze(
     path: Path = typer.Argument(..., help="File or directory to analyze"),
     model: str | None = typer.Option(None, "--model", "-m", help="LLM model"),
-):
+) -> None:
     """Analyze code and provide insights."""
     api_key = os.getenv("OPENAI_API_KEY")
     if not api_key:

@@ -31,27 +31,13 @@ jobs:
 
     - name: Install packages
       run: |
-        # Install in dependency order with --no-deps to avoid
-        # PyPI lookup failures for local inter-package deps.
-        # Third-party deps are pulled in by the root ".[dev]" install
-        # and by explicit pip install of each package's extras below.
-
-        # 1) Leaf packages (no local deps)
-        pip install --no-deps -e packages/pig-llm
-        pip install --no-deps -e packages/pig-tui
-
-        # 2) Packages depending on pig-llm
-        pip install --no-deps -e packages/pig-agent-core
-        pip install --no-deps -e packages/pig-web-ui
-
-        # 3) Packages depending on pig-llm + pig-agent-core + pig-tui
-        pip install --no-deps -e packages/pig-coding-agent
-        pip install --no-deps -e packages/pig-messenger
-
-        # Install all third-party dependencies
-        pip install openai anthropic pydantic rich prompt-toolkit \
-          typer fastapi uvicorn jinja2 python-multipart coverage \
-          httpx beautifulsoup4 tzdata cryptography redis
+        # Install local packages in dependency order. Let each package's
+        # metadata provide its complete third-party dependency set so CI and
+        # local type checking cannot silently drift apart.
+        pip install -e packages/pig-llm -e packages/pig-tui
+        pip install -e packages/pig-agent-core -e packages/pig-web-ui
+        pip install -e packages/pig-coding-agent \
+          -e "packages/pig-messenger[redis,encryption,slack,discord,whatsapp,telegram,feishu]"
       shell: bash
 
     - name: Run linting
@@ -63,7 +49,7 @@ jobs:
     - name: Run type checking
       shell: bash
       run: |
-        mypy packages/ || true
+        ./scripts/typecheck.sh
 
     - name: Run tests
       shell: bash

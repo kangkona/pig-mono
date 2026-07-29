@@ -1,14 +1,15 @@
 """Tests for Telegram messenger adapter."""
 
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from pig_messenger.adapters.telegram import TelegramMessengerAdapter
-from pig_messenger.base import MessengerType
+from pig_messenger.base import MessengerType, WebhookRequest
 
 
 @pytest.fixture
-def adapter():
+def adapter() -> Any:
     """Create Telegram adapter."""
     adapter = TelegramMessengerAdapter(bot_token="test_token")
     # Mock the HTTP client
@@ -16,7 +17,7 @@ def adapter():
     return adapter
 
 
-def test_telegram_adapter_capabilities(adapter):
+def test_telegram_adapter_capabilities(adapter: Any) -> None:
     """Test Telegram adapter capabilities."""
     caps = adapter.capabilities
     assert caps.can_edit is True
@@ -27,7 +28,7 @@ def test_telegram_adapter_capabilities(adapter):
 
 
 @pytest.mark.asyncio
-async def test_parse_event_text_message(adapter):
+async def test_parse_event_text_message(adapter: Any) -> None:
     """Test parsing text message."""
     raw_event = {
         "message": {
@@ -58,7 +59,7 @@ async def test_parse_event_text_message(adapter):
 
 
 @pytest.mark.asyncio
-async def test_parse_event_no_message(adapter):
+async def test_parse_event_no_message(adapter: Any) -> None:
     """Test parsing event without message."""
     raw_event = {"update_id": 123}
     message = await adapter.parse_event(raw_event)
@@ -66,7 +67,7 @@ async def test_parse_event_no_message(adapter):
 
 
 @pytest.mark.asyncio
-async def test_parse_event_no_text(adapter):
+async def test_parse_event_no_text(adapter: Any) -> None:
     """Test parsing event without text."""
     raw_event = {
         "message": {
@@ -81,7 +82,7 @@ async def test_parse_event_no_text(adapter):
 
 
 @pytest.mark.asyncio
-async def test_send_message(adapter):
+async def test_send_message(adapter: Any) -> None:
     """Test sending message."""
     mock_response = MagicMock()
     mock_response.json.return_value = {"ok": True, "result": {"message_id": 999}}
@@ -93,7 +94,7 @@ async def test_send_message(adapter):
 
 
 @pytest.mark.asyncio
-async def test_update_message(adapter):
+async def test_update_message(adapter: Any) -> None:
     """Test updating message."""
     mock_response = MagicMock()
     mock_response.json.return_value = {"ok": True, "result": {"message_id": 999}}
@@ -104,7 +105,7 @@ async def test_update_message(adapter):
 
 
 @pytest.mark.asyncio
-async def test_delete_message(adapter):
+async def test_delete_message(adapter: Any) -> None:
     """Test deleting message."""
     mock_response = MagicMock()
     adapter.client.post.return_value = mock_response
@@ -114,14 +115,14 @@ async def test_delete_message(adapter):
 
 
 @pytest.mark.asyncio
-async def test_send_typing(adapter):
+async def test_send_typing(adapter: Any) -> None:
     """Test sending typing indicator."""
     await adapter.send_typing("789")
     adapter.client.post.assert_called_once()
 
 
 @pytest.mark.asyncio
-async def test_send_file(adapter):
+async def test_send_file(adapter: Any) -> None:
     """Test sending file from URL."""
     mock_response = MagicMock()
     mock_response.json.return_value = {"ok": True, "result": {"message_id": 888}}
@@ -132,7 +133,7 @@ async def test_send_file(adapter):
 
 
 @pytest.mark.asyncio
-async def test_send_file_content(adapter):
+async def test_send_file_content(adapter: Any) -> None:
     """Test sending file from content."""
     mock_response = MagicMock()
     mock_response.json.return_value = {"ok": True, "result": {"message_id": 777}}
@@ -143,15 +144,17 @@ async def test_send_file_content(adapter):
 
 
 @pytest.mark.asyncio
-async def test_verify_signature(adapter):
+async def test_verify_signature(adapter: Any) -> None:
     """Test signature verification."""
     signature = "test_signature"
-    result = await adapter.verify_signature(b"request body", signature)
+    result = await adapter.verify_signature(
+        WebhookRequest(body=b"request body", signature=signature)
+    )
     assert isinstance(result, bool)
 
 
 @pytest.mark.asyncio
-async def test_aclose(adapter):
+async def test_aclose(adapter: Any) -> None:
     """Test closing adapter."""
     await adapter.aclose()
     adapter.client.aclose.assert_called_once()

@@ -1,6 +1,7 @@
 """Tests for Agent class."""
 
 import asyncio
+from typing import Any
 from unittest.mock import Mock
 
 import pytest
@@ -10,14 +11,14 @@ from pig_llm import StreamChunk
 
 
 @pytest.fixture
-def mock_llm():
+def mock_llm() -> Any:
     """Create a mock LLM."""
     llm = Mock()
     llm.config = Mock(model="test-model")
     return llm
 
 
-def test_agent_creation(mock_llm):
+def test_agent_creation(mock_llm: Any) -> None:
     """Test creating an agent."""
     agent = Agent(name="TestAgent", llm=mock_llm)
     assert agent.name == "TestAgent"
@@ -25,7 +26,7 @@ def test_agent_creation(mock_llm):
     assert len(agent.history) == 0
 
 
-def test_agent_with_system_prompt(mock_llm):
+def test_agent_with_system_prompt(mock_llm: Any) -> None:
     """Test agent with system prompt."""
     agent = Agent(
         name="TestAgent",
@@ -37,7 +38,7 @@ def test_agent_with_system_prompt(mock_llm):
     assert agent.history[0].content == "You are helpful"
 
 
-def test_agent_add_tool(mock_llm):
+def test_agent_add_tool(mock_llm: Any) -> None:
     """Test adding a tool to agent."""
 
     @tool
@@ -53,7 +54,7 @@ def test_agent_add_tool(mock_llm):
     assert [schema["function"]["name"] for schema in schemas] == ["my_tool"]
 
 
-def test_agent_with_tools(mock_llm):
+def test_agent_with_tools(mock_llm: Any) -> None:
     """Test agent initialized with tools."""
 
     @tool
@@ -68,7 +69,7 @@ def test_agent_with_tools(mock_llm):
     assert len(agent.registry) == 2
 
 
-def test_agent_clear_history(mock_llm):
+def test_agent_clear_history(mock_llm: Any) -> None:
     """Test clearing agent history."""
     agent = Agent(
         llm=mock_llm,
@@ -89,7 +90,7 @@ def test_agent_clear_history(mock_llm):
     assert agent.history[0].role == "system"
 
 
-def test_agent_get_state(mock_llm):
+def test_agent_get_state(mock_llm: Any) -> None:
     """Test getting agent state."""
     agent = Agent(
         name="TestAgent",
@@ -103,7 +104,7 @@ def test_agent_get_state(mock_llm):
     assert state.system_prompt == "System prompt"
 
 
-def test_agent_save_load_state(mock_llm, tmp_path):
+def test_agent_save_load_state(mock_llm: Any, tmp_path: Any) -> None:
     """Test saving and loading agent state."""
     # Create agent
     agent1 = Agent(
@@ -130,21 +131,21 @@ def test_agent_save_load_state(mock_llm, tmp_path):
     assert len(agent2.history) == 2  # system + user
 
 
-def test_agent_max_iterations(mock_llm):
+def test_agent_max_iterations(mock_llm: Any) -> None:
     """Test max iterations parameter."""
     agent = Agent(llm=mock_llm, max_iterations=5)
     assert agent.max_iterations == 5
 
 
 @pytest.mark.asyncio
-async def test_agent_respond_stream_basic():
+async def test_agent_respond_stream_basic() -> None:
     """Test basic streaming response without tool calls."""
     # Create mock LLM with streaming support
     mock_llm = Mock()
     mock_llm.config = Mock(model="test-model")
 
     # Mock streaming response (StreamChunk shape: text deltas as .content)
-    async def mock_stream(*, messages, **kwargs):
+    async def mock_stream(*, messages: Any, **kwargs: Any) -> Any:
         del messages, kwargs
         yield StreamChunk(content="Hello")
         yield StreamChunk(content=" world")
@@ -163,14 +164,14 @@ async def test_agent_respond_stream_basic():
 
 
 @pytest.mark.asyncio
-async def test_agent_respond_non_streaming():
+async def test_agent_respond_non_streaming() -> None:
     """Test non-streaming respond method."""
     # Create mock LLM with streaming support
     mock_llm = Mock()
     mock_llm.config = Mock(model="test-model")
 
     # Mock streaming response (StreamChunk shape)
-    async def mock_stream(*, messages, **kwargs):
+    async def mock_stream(*, messages: Any, **kwargs: Any) -> Any:
         del messages, kwargs
         yield StreamChunk(content="Complete")
         yield StreamChunk(content=" response")
@@ -187,13 +188,13 @@ async def test_agent_respond_non_streaming():
 
 
 @pytest.mark.asyncio
-async def test_agent_respond_with_cancellation():
+async def test_agent_respond_with_cancellation() -> None:
     """Test cancellation support."""
     mock_llm = Mock()
     mock_llm.config = Mock(model="test-model")
 
     # Mock streaming response
-    async def mock_stream(*, messages, **kwargs):
+    async def mock_stream(*, messages: Any, **kwargs: Any) -> Any:
         del messages, kwargs
         chunk = Mock()
         chunk.choices = [Mock()]
@@ -218,14 +219,14 @@ async def test_agent_respond_with_cancellation():
     assert chunks == []
 
 
-def _mock_llm_returning(content):
+def _mock_llm_returning(content: Any) -> Any:
     llm = Mock()
     llm.config = Mock(model="test-model")
     llm.chat.return_value = Mock(content=content, tool_calls=None)
     return llm
 
 
-def test_verbose_log_renders_through_attached_ui_without_duplicate_turns():
+def test_verbose_log_renders_through_attached_ui_without_duplicate_turns() -> None:
     """With a UI attached, turn echoes are suppressed and markup is rendered.
 
     Regression: core Agent._log used a raw print(), so it (a) double-printed
@@ -261,7 +262,7 @@ def test_verbose_log_renders_through_attached_ui_without_duplicate_turns():
     assert "Iteration" in ui_text
 
 
-def test_verbose_log_does_not_parse_arbitrary_content_as_markup():
+def test_verbose_log_does_not_parse_arbitrary_content_as_markup() -> None:
     """Tool output containing '[...]' must render verbatim, never as Rich markup.
 
     Regression: routing _log through the Rich console parsed interpolated
@@ -288,7 +289,7 @@ def test_verbose_log_does_not_parse_arbitrary_content_as_markup():
     assert "\x1b[32m" in out  # green actually applied
 
 
-def test_verbose_log_falls_back_to_print_without_ui():
+def test_verbose_log_falls_back_to_print_without_ui() -> None:
     """Headless library use keeps printing turns + trace (unchanged behavior)."""
     import contextlib
     import io
@@ -305,7 +306,7 @@ def test_verbose_log_falls_back_to_print_without_ui():
     assert "Iteration" in text
 
 
-def test_format_tool_args_truncates_long_values():
+def test_format_tool_args_truncates_long_values() -> None:
     """Long tool-call argument values are previewed + char-counted, not dumped."""
     out = Agent._format_tool_args({"content": "A" * 5000, "path": "index.html"})
     assert "(5000 chars)" in out
@@ -313,6 +314,6 @@ def test_format_tool_args_truncates_long_values():
     assert "path='index.html'" in out
 
 
-def test_format_tool_args_keeps_short_values():
+def test_format_tool_args_keeps_short_values() -> None:
     out = Agent._format_tool_args({"pattern": "foo", "path": "."})
     assert out == "pattern='foo', path='.'"

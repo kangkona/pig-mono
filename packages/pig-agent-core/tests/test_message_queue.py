@@ -3,14 +3,14 @@
 from pig_agent_core.message_queue import MessageQueue, MessageType, QueuedMessage
 
 
-def test_message_queue_creation():
+def test_message_queue_creation() -> None:
     """Test creating message queue."""
     queue = MessageQueue()
     assert len(queue) == 0
     assert not queue
 
 
-def test_queue_add_steering():
+def test_queue_add_steering() -> None:
     """Test adding steering message."""
     queue = MessageQueue()
 
@@ -21,7 +21,7 @@ def test_queue_add_steering():
     assert not queue.has_followup()
 
 
-def test_queue_add_followup():
+def test_queue_add_followup() -> None:
     """Test adding follow-up message."""
     queue = MessageQueue()
 
@@ -32,7 +32,7 @@ def test_queue_add_followup():
     assert not queue.has_steering()
 
 
-def test_queue_get_steering():
+def test_queue_get_steering() -> None:
     """Test getting steering messages."""
     queue = MessageQueue()
 
@@ -52,7 +52,7 @@ def test_queue_get_steering():
     assert queue.has_followup()
 
 
-def test_queue_get_followup():
+def test_queue_get_followup() -> None:
     """Test getting follow-up messages."""
     queue = MessageQueue()
 
@@ -72,7 +72,7 @@ def test_queue_get_followup():
     assert queue.has_followup()
 
 
-def test_followup_queue_remains_fifo_across_multiple_drains():
+def test_followup_queue_remains_fifo_across_multiple_drains() -> None:
     """Follow-up messages should preserve insertion order across repeated drains."""
     queue = MessageQueue()
 
@@ -89,7 +89,7 @@ def test_followup_queue_remains_fifo_across_multiple_drains():
     assert [m.content for m in third] == ["Followup 3"]
 
 
-def test_steering_queue_remains_fifo_across_multiple_drains():
+def test_steering_queue_remains_fifo_across_multiple_drains() -> None:
     """Steering messages should preserve insertion order across repeated drains."""
     queue = MessageQueue()
 
@@ -106,7 +106,7 @@ def test_steering_queue_remains_fifo_across_multiple_drains():
     assert [m.content for m in third] == ["Steering 3"]
 
 
-def test_queue_mode_all():
+def test_queue_mode_all() -> None:
     """Test queue with 'all' mode."""
     queue = MessageQueue()
     queue.steering_mode = "all"
@@ -121,7 +121,7 @@ def test_queue_mode_all():
     assert len(steering) == 3
 
 
-def test_queue_peek():
+def test_queue_peek() -> None:
     """Test peeking at queue."""
     queue = MessageQueue()
 
@@ -130,11 +130,12 @@ def test_queue_peek():
 
     # Peek doesn't remove
     peeked = queue.peek()
+    assert peeked is not None
     assert peeked.content == "First"
     assert len(queue) == 2
 
 
-def test_queue_clear():
+def test_queue_clear() -> None:
     """Test clearing queue."""
     queue = MessageQueue()
 
@@ -149,7 +150,7 @@ def test_queue_clear():
     assert len(queue) == 0
 
 
-def test_queue_status():
+def test_queue_status() -> None:
     """Test queue status string."""
     queue = MessageQueue()
 
@@ -166,7 +167,7 @@ def test_queue_status():
     assert "follow-up" in status
 
 
-def test_queued_message_type():
+def test_queued_message_type() -> None:
     """Test queued message type."""
     msg = QueuedMessage(content="Test", type=MessageType.STEERING)
     assert msg.type == MessageType.STEERING
@@ -175,7 +176,7 @@ def test_queued_message_type():
     assert msg2.type == MessageType.FOLLOWUP  # Default
 
 
-def test_queue_bool():
+def test_queue_bool() -> None:
     """Test queue boolean value."""
     queue = MessageQueue()
 
@@ -187,7 +188,7 @@ def test_queue_bool():
     assert bool(queue) is True
 
 
-def test_queue_len():
+def test_queue_len() -> None:
     """Test queue length."""
     queue = MessageQueue()
 
@@ -203,7 +204,7 @@ def test_queue_len():
     assert len(queue) == 1
 
 
-def test_queue_has_methods():
+def test_queue_has_methods() -> None:
     """Test has_steering and has_followup."""
     queue = MessageQueue()
 

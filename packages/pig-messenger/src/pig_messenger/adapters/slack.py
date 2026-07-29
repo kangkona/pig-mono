@@ -17,6 +17,7 @@ from pig_messenger.base import (
     MessengerCapabilities,
     MessengerType,
     MessengerUser,
+    WebhookRequest,
 )
 
 logger = logging.getLogger(__name__)
@@ -141,7 +142,7 @@ class SlackMessengerAdapter(BaseMessengerAdapter):
         )
 
     async def send_message(
-        self, channel_id: str, text: str, *, thread_id: str | None = None, **kwargs
+        self, channel_id: str, text: str, *, thread_id: str | None = None, **kwargs: Any
     ) -> dict[str, Any]:
         """Send message to Slack.
 
@@ -166,7 +167,7 @@ class SlackMessengerAdapter(BaseMessengerAdapter):
         }
 
     async def update_message(
-        self, channel_id: str, message_id: str, text: str, **kwargs
+        self, channel_id: str, message_id: str, text: str, **kwargs: Any
     ) -> dict[str, Any]:
         """Update message in Slack.
 
@@ -185,9 +186,11 @@ class SlackMessengerAdapter(BaseMessengerAdapter):
             text=text,
             **kwargs,
         )
-        return response.data
+        if not isinstance(response.data, dict):
+            raise TypeError("Slack update response did not contain mapping data")
+        return dict(response.data)
 
-    async def delete_message(self, channel_id: str, message_id: str) -> bool:
+    async def delete_message(self, channel_id: str, message_id: str, **kwargs: Any) -> bool:
         """Delete message in Slack.
 
         Args:
@@ -203,7 +206,9 @@ class SlackMessengerAdapter(BaseMessengerAdapter):
         )
         return True
 
-    async def send_reaction(self, channel_id: str, message_id: str, emoji: str) -> None:
+    async def send_reaction(
+        self, channel_id: str, message_id: str, emoji: str, **kwargs: Any
+    ) -> None:
         """Add reaction to message.
 
         Args:
@@ -224,7 +229,7 @@ class SlackMessengerAdapter(BaseMessengerAdapter):
         *,
         text_fallback: str = "",
         thread_id: str | None = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> dict[str, Any]:
         """Send blocks to Slack.
 
@@ -250,7 +255,9 @@ class SlackMessengerAdapter(BaseMessengerAdapter):
             "message_id": response["ts"],
         }
 
-    async def send_file(self, channel_id: str, url: str, filename: str, **kwargs) -> dict[str, Any]:
+    async def send_file(
+        self, channel_id: str, url: str, filename: str, **kwargs: Any
+    ) -> dict[str, Any]:
         """Send file from URL.
 
         Args:
@@ -271,7 +278,7 @@ class SlackMessengerAdapter(BaseMessengerAdapter):
         content: bytes,
         filename: str,
         content_type: str,
-        **kwargs,
+        **kwargs: Any,
     ) -> dict[str, Any]:
         """Send file from content.
 
@@ -291,9 +298,11 @@ class SlackMessengerAdapter(BaseMessengerAdapter):
             filename=filename,
             **kwargs,
         )
-        return response.data
+        if not isinstance(response.data, dict):
+            raise TypeError("Slack upload response did not contain mapping data")
+        return dict(response.data)
 
-    async def open_dm(self, user_id: str) -> str:
+    async def open_dm(self, user_id: str, **kwargs: Any) -> str:
         """Open DM channel with user.
 
         Args:
@@ -303,9 +312,9 @@ class SlackMessengerAdapter(BaseMessengerAdapter):
             Channel ID
         """
         response = await self.client.conversations_open(users=[user_id])
-        return response["channel"]["id"]
+        return str(response["channel"]["id"])
 
-    async def get_user_tz(self, user_id: str) -> str:
+    async def get_user_tz(self, user_id: str, **kwargs: Any) -> str:
         """Get user timezone.
 
         Args:
@@ -315,23 +324,23 @@ class SlackMessengerAdapter(BaseMessengerAdapter):
             Timezone string
         """
         response = await self.client.users_info(user=user_id)
-        return response["user"].get("tz", "UTC")
+        return str(response["user"].get("tz", "UTC"))
 
-    async def verify_signature(self, request_body: bytes, timestamp: str, signature: str) -> bool:
+    async def verify_signature(self, request: WebhookRequest) -> bool:
         """Verify Slack request signature.
 
         Args:
-            request_body: Raw request body
-            timestamp: X-Slack-Request-Timestamp header
-            signature: X-Slack-Signature header
+            request: Raw request data and Slack signature headers
 
         Returns:
             True if signature is valid
         """
         if not self.signing_secret:
             return True
+        if request.timestamp is None:
+            return False
 
-        sig_basestring = f"v0:{timestamp}:{request_body.decode()}"
+        sig_basestring = f"v0:{request.timestamp}:{request.body.decode()}"
         expected = (
             "v0="
             + hmac.new(
@@ -341,7 +350,7 @@ class SlackMessengerAdapter(BaseMessengerAdapter):
             ).hexdigest()
         )
 
-        return hmac.compare_digest(expected, signature)
+        return hmac.compare_digest(expected, request.signature)
 
     async def aclose(self) -> None:
         """Close Slack client."""

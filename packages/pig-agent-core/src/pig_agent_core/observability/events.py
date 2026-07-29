@@ -5,7 +5,7 @@ Extracted from sophia-pro LiteAgent's observability system.
 
 import hashlib
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from enum import Enum
@@ -149,7 +149,7 @@ def span(
     attrs: dict[str, Any] | None = None,
     span_id: str | None = None,
     parent_span_id: str | None = None,
-):
+) -> Iterator[str]:
     """Context manager for tracing spans.
 
     Emits span_start and span_end events with timing information.

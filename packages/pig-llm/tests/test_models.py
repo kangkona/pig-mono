@@ -4,7 +4,7 @@ import pytest
 from pig_llm.models import Message, Response, StreamChunk, Usage
 
 
-def test_message_creation():
+def test_message_creation() -> None:
     """Test message creation."""
     msg = Message(role="user", content="Hello")
     assert msg.role == "user"
@@ -12,13 +12,14 @@ def test_message_creation():
     assert msg.metadata is None
 
 
-def test_message_with_metadata():
+def test_message_with_metadata() -> None:
     """Test message with metadata."""
     msg = Message(role="assistant", content="Hi", metadata={"model": "gpt-4"})
+    assert msg.metadata is not None
     assert msg.metadata["model"] == "gpt-4"
 
 
-def test_response_creation():
+def test_response_creation() -> None:
     """Test response creation."""
     response = Response(
         content="Hello world",
@@ -27,17 +28,18 @@ def test_response_creation():
     )
     assert response.content == "Hello world"
     assert response.model == "gpt-3.5-turbo"
+    assert response.usage is not None
     assert response.usage["total_tokens"] == 15
 
 
-def test_stream_chunk():
+def test_stream_chunk() -> None:
     """Test stream chunk."""
     chunk = StreamChunk(content="Hello", finish_reason=None)
     assert chunk.content == "Hello"
     assert chunk.finish_reason is None
 
 
-def test_usage_addition():
+def test_usage_addition() -> None:
     """Test usage addition."""
     usage1 = Usage(prompt_tokens=10, completion_tokens=5, total_tokens=15)
     usage2 = Usage(prompt_tokens=20, completion_tokens=10, total_tokens=30)
@@ -48,7 +50,7 @@ def test_usage_addition():
     assert total.total_tokens == 45
 
 
-def test_invalid_message_role():
+def test_invalid_message_role() -> None:
     """Test invalid message role."""
     with pytest.raises(ValueError):
-        Message(role="invalid", content="test")
+        Message.model_validate({"role": "invalid", "content": "test"})

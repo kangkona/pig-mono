@@ -4,6 +4,7 @@ Provides accurate token counting using tiktoken when available,
 with fallback to character-based estimation.
 """
 
+import importlib
 import logging
 from typing import Any
 
@@ -39,7 +40,7 @@ def count_tokens(text: str, model: str | None = None) -> int:
     # Try tiktoken if available
     if model:
         try:
-            import tiktoken
+            tiktoken = importlib.import_module("tiktoken")
 
             # Check cache first
             if model not in _tokenizer_cache:

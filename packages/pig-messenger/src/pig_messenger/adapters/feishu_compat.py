@@ -1,7 +1,9 @@
 """Feishu adapter compatibility wrapper for new messenger architecture."""
 
+import inspect
 import logging
-from typing import Any
+from collections.abc import Callable
+from typing import Any, cast
 
 from pig_messenger.adapters.feishu import FeishuAdapter
 from pig_messenger.base import (
@@ -10,6 +12,7 @@ from pig_messenger.base import (
     MessengerCapabilities,
     MessengerType,
     MessengerUser,
+    WebhookRequest,
 )
 
 logger = logging.getLogger(__name__)
@@ -64,7 +67,10 @@ class FeishuMessengerAdapter(BaseMessengerAdapter):
             IncomingMessage or None
         """
         # Let legacy adapter handle event
-        await self.adapter.handle_event(raw_event)
+        handler = cast(Callable[[dict[str, Any]], Any], self.adapter.handle_event)
+        result = handler(raw_event)
+        if inspect.isawaitable(result):
+            await result
 
         # Extract message from event
         event = raw_event.get("event", {})
@@ -91,7 +97,7 @@ class FeishuMessengerAdapter(BaseMessengerAdapter):
         )
 
     async def send_message(
-        self, channel_id: str, text: str, *, thread_id: str | None = None, **kwargs
+        self, channel_id: str, text: str, *, thread_id: str | None = None, **kwargs: Any
     ) -> dict[str, Any]:
         """Send message to Feishu.
 
@@ -116,7 +122,7 @@ class FeishuMessengerAdapter(BaseMessengerAdapter):
         }
 
     async def update_message(
-        self, channel_id: str, message_id: str, text: str, **kwargs
+        self, channel_id: str, message_id: str, text: str, **kwargs: Any
     ) -> dict[str, Any]:
         """Update message in Feishu.
 
@@ -132,7 +138,7 @@ class FeishuMessengerAdapter(BaseMessengerAdapter):
         # Legacy adapter doesn't have update_message
         raise NotImplementedError("Message editing not implemented in legacy adapter")
 
-    async def delete_message(self, channel_id: str, message_id: str) -> bool:
+    async def delete_message(self, channel_id: str, message_id: str, **kwargs: Any) -> bool:
         """Delete message (not supported).
 
         Args:
@@ -144,12 +150,11 @@ class FeishuMessengerAdapter(BaseMessengerAdapter):
         """
         raise NotImplementedError("Feishu does not support message deletion")
 
-    async def verify_signature(self, request_body: bytes, signature: str) -> bool:
+    async def verify_signature(self, request: WebhookRequest) -> bool:
         """Verify Feishu webhook signature.
 
         Args:
-            request_body: Raw request body
-            signature: Signature header
+            request: Raw request data and Feishu signature header
 
         Returns:
             True if valid

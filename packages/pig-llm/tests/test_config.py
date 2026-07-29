@@ -4,7 +4,7 @@ import pytest
 from pig_llm.config import Config
 
 
-def test_config_defaults():
+def test_config_defaults() -> None:
     """Test default config values."""
     config = Config()
     assert config.provider == "openai"
@@ -14,7 +14,7 @@ def test_config_defaults():
     assert config.max_retries == 3
 
 
-def test_config_custom_values():
+def test_config_custom_values() -> None:
     """Test custom config values."""
     config = Config(
         provider="anthropic",
@@ -28,7 +28,7 @@ def test_config_custom_values():
     assert config.max_tokens == 1000
 
 
-def test_config_temperature_validation():
+def test_config_temperature_validation() -> None:
     """Test temperature validation."""
     with pytest.raises(ValueError):
         Config(temperature=-0.1)
@@ -37,13 +37,13 @@ def test_config_temperature_validation():
         Config(temperature=2.1)
 
 
-def test_config_max_tokens_validation():
+def test_config_max_tokens_validation() -> None:
     """Test max tokens validation."""
     with pytest.raises(ValueError):
         Config(max_tokens=0)
 
 
-def test_config_frozen():
+def test_config_frozen() -> None:
     """Test config is frozen (immutable)."""
     config = Config()
     with pytest.raises(Exception):  # Pydantic ValidationError  # noqa: B017

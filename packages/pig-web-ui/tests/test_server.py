@@ -8,7 +8,7 @@ from pig_web_ui.server import ChatServer
 
 
 @pytest.fixture
-def mock_llm():
+def mock_llm() -> Mock:
     """Create a mock LLM."""
     llm = Mock()
     llm.config = Mock(model="test-model")
@@ -16,7 +16,7 @@ def mock_llm():
     return llm
 
 
-def test_server_creation_with_llm(mock_llm):
+def test_server_creation_with_llm(mock_llm: Mock) -> None:
     """Test creating server with LLM."""
     server = ChatServer(llm=mock_llm, title="Test")
     assert server.title == "Test"
@@ -24,26 +24,28 @@ def test_server_creation_with_llm(mock_llm):
     assert server.port == 8000
 
 
-def test_server_creation_requires_llm_or_agent():
+def test_server_creation_requires_llm_or_agent() -> None:
     """Test server requires either LLM or agent."""
     with pytest.raises(ValueError, match="Must provide either llm or agent"):
         ChatServer()
 
 
-def test_server_creation_with_custom_port(mock_llm):
+def test_server_creation_with_custom_port(mock_llm: Mock) -> None:
     """Test server with custom port."""
     server = ChatServer(llm=mock_llm, port=8080)
     assert server.port == 8080
 
 
-def test_server_creation_with_cors(mock_llm):
+def test_server_creation_with_cors(mock_llm: Mock) -> None:
     """Test server with CORS enabled."""
     server = ChatServer(llm=mock_llm, cors=True)
     # CORS middleware should be added
-    assert any(m.cls.__name__ == "CORSMiddleware" for m in server.app.user_middleware)
+    assert any(
+        getattr(m.cls, "__name__", None) == "CORSMiddleware" for m in server.app.user_middleware
+    )
 
 
-def test_server_routes(mock_llm):
+def test_server_routes(mock_llm: Mock) -> None:
     """Test server has required routes."""
     server = ChatServer(llm=mock_llm)
     client = TestClient(server.app)
@@ -58,7 +60,7 @@ def test_server_routes(mock_llm):
     assert "messages" in response.json()
 
 
-def test_server_clear_history(mock_llm):
+def test_server_clear_history(mock_llm: Mock) -> None:
     """Test clearing history."""
     server = ChatServer(llm=mock_llm)
     client = TestClient(server.app)
@@ -73,7 +75,7 @@ def test_server_clear_history(mock_llm):
     assert len(server.history) == 0
 
 
-def test_server_format_sse(mock_llm):
+def test_server_format_sse(mock_llm: Mock) -> None:
     """Test SSE formatting."""
     from pig_web_ui.models import StreamChunk
 
@@ -86,7 +88,7 @@ def test_server_format_sse(mock_llm):
     assert "Hello" in sse
 
 
-def test_server_with_agent():
+def test_server_with_agent() -> None:
     """Test server with agent."""
     mock_agent = Mock()
     mock_agent.run = Mock(return_value=Mock(content="Agent response"))
@@ -96,7 +98,7 @@ def test_server_with_agent():
     assert server.llm is None
 
 
-def test_server_theme(mock_llm):
+def test_server_theme(mock_llm: Mock) -> None:
     """Test server with custom theme."""
     theme = {"primary_color": "#ff0000"}
     server = ChatServer(llm=mock_llm, theme=theme)

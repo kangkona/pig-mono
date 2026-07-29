@@ -1,11 +1,11 @@
 """Tests for pig-ai package (integration)."""
 
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import pytest
 
 
-def test_package_imports():
+def test_package_imports() -> None:
     """Test package imports."""
     from pig_llm import LLM, Config, Message, Response
 
@@ -16,7 +16,7 @@ def test_package_imports():
 
 
 @patch("pig_llm.providers.openai.OpenAIProvider")
-def test_basic_integration(mock_provider):
+def test_basic_integration(mock_provider: Mock) -> None:
     """Test basic LLM integration."""
     from pig_llm import LLM, Config
 
@@ -28,7 +28,7 @@ def test_basic_integration(mock_provider):
 
 
 @pytest.mark.skip(reason="Requires API key")
-def test_llm_complete_real():
+def test_llm_complete_real() -> None:
     """Test LLM completion with real API (integration test)."""
     import os
 

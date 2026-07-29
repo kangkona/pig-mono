@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import AsyncIterator
 from types import SimpleNamespace
+from typing import Any, NoReturn, cast
 from unittest.mock import Mock, patch
 
 import pytest
@@ -15,16 +17,25 @@ from pig_llm.runtime import (
     ModelCapabilities,
     ModelMetadata,
     ModelRuntime,
+    ProviderFactory,
     ProviderRegistration,
+    RefreshReport,
     create_default_runtime,
 )
 
 
-def _factory(config: Config):
+def test_runtime_module_imports_with_provider_factory_forward_reference() -> None:
+    """The provider factory alias must not require Provider at runtime."""
+    from pig_llm import runtime
+
+    assert runtime.ProviderFactory is not None
+
+
+def _factory(config: Config) -> Any:
     return {"config": config}
 
 
-def test_provider_owned_auth_resolution_precedence_and_overrides():
+def test_provider_owned_auth_resolution_precedence_and_overrides() -> None:
     credentials = InMemoryCredentialStore()
     credentials.set("demo", "stored-key")
     runtime = ModelRuntime(
@@ -59,7 +70,7 @@ def test_provider_owned_auth_resolution_precedence_and_overrides():
     assert runtime.get_auth("demo").api_key == "env-key"
 
 
-def test_model_catalog_supports_registration_filtering_and_capabilities():
+def test_model_catalog_supports_registration_filtering_and_capabilities() -> None:
     runtime = ModelRuntime(models=InMemoryModelStore())
     runtime.register_provider(
         ProviderRegistration(
@@ -96,7 +107,7 @@ def test_model_catalog_supports_registration_filtering_and_capabilities():
     assert capabilities.deferred_tools is True
 
 
-def test_default_runtime_exposes_generated_provider_catalog():
+def test_default_runtime_exposes_generated_provider_catalog() -> None:
     runtime = create_default_runtime()
 
     model = runtime.get_model("openai", "gpt-4o-mini")
@@ -106,7 +117,7 @@ def test_default_runtime_exposes_generated_provider_catalog():
     assert any(item.model_id == "gpt-4o-mini" for item in runtime.get_models("openai"))
 
 
-def test_reregistering_provider_replaces_empty_catalog_without_touching_others():
+def test_reregistering_provider_replaces_empty_catalog_without_touching_others() -> None:
     runtime = ModelRuntime()
     runtime.register_provider(
         ProviderRegistration(
@@ -129,23 +140,23 @@ def test_reregistering_provider_replaces_empty_catalog_without_touching_others()
     assert [model.model_id for model in runtime.get_models("second")] == ["kept"]
 
 
-def test_refresh_deduplicates_in_flight_work_and_reports_provider_errors():
+def test_refresh_deduplicates_in_flight_work_and_reports_provider_errors() -> None:
     calls = 0
 
-    async def refresh_ok(_auth):
+    async def refresh_ok(_auth: AuthResolution) -> list[ModelMetadata]:
         nonlocal calls
         calls += 1
         await asyncio.sleep(0)
         return [ModelMetadata(provider="ok", model_id="fresh")]
 
-    async def refresh_bad(_auth):
+    async def refresh_bad(_auth: AuthResolution) -> NoReturn:
         raise RuntimeError("catalog unavailable")
 
     runtime = ModelRuntime()
     runtime.register_provider(ProviderRegistration("ok", _factory, refresh_models=refresh_ok))
     runtime.register_provider(ProviderRegistration("bad", _factory, refresh_models=refresh_bad))
 
-    async def run():
+    async def run() -> tuple[RefreshReport, RefreshReport, RefreshReport]:
         first, second = await asyncio.gather(
             runtime.refresh_models("ok"),
             runtime.refresh_models("ok"),
@@ -162,7 +173,7 @@ def test_refresh_deduplicates_in_flight_work_and_reports_provider_errors():
     assert runtime.get_model("ok", "fresh") is not None
 
 
-def test_runtime_creates_provider_with_resolved_config():
+def test_runtime_creates_provider_with_resolved_config() -> None:
     runtime = ModelRuntime(environment={"DEMO_KEY": "env-key", "DEMO_ORG": "org-1"})
     runtime.register_provider(
         ProviderRegistration(
@@ -174,19 +185,19 @@ def test_runtime_creates_provider_with_resolved_config():
         )
     )
 
-    provider = runtime.create_provider(Config(provider="demo", model="m"))
+    provider = cast(dict[str, Config], runtime.create_provider(Config(provider="demo", model="m")))
     assert provider["config"].api_key == "env-key"
     assert provider["config"].headers == {"X-Organization": "org-1"}
 
 
-def test_runtime_rejects_missing_required_auth():
+def test_runtime_rejects_missing_required_auth() -> None:
     runtime = ModelRuntime(environment={})
     runtime.register_provider(ProviderRegistration("demo", _factory, requires_api_key=True))
     with pytest.raises(ValueError, match="No API key for provider: demo"):
         runtime.create_provider(Config(provider="demo", model="m"))
 
 
-def test_unknown_openai_compatible_provider_preserves_keyless_legacy_path():
+def test_unknown_openai_compatible_provider_preserves_keyless_legacy_path() -> None:
     runtime = ModelRuntime(environment={})
     config = Config(provider="local", model="m", base_url="http://localhost:11434/v1")
     provider_class = Mock()
@@ -200,7 +211,7 @@ def test_unknown_openai_compatible_provider_preserves_keyless_legacy_path():
     provider_class.assert_called_once_with(config)
 
 
-def test_legacy_llm_constructor_uses_default_runtime_and_lazy_factory():
+def test_legacy_llm_constructor_uses_default_runtime_and_lazy_factory() -> None:
     provider_class = Mock(return_value=Mock())
     with patch(
         "pig_llm.runtime.importlib.import_module",
@@ -211,15 +222,16 @@ def test_legacy_llm_constructor_uses_default_runtime_and_lazy_factory():
     provider_class.assert_called_once_with(llm.config)
 
 
-def test_llm_accepts_an_explicit_runtime():
+def test_llm_accepts_an_explicit_runtime() -> None:
     runtime = ModelRuntime()
     runtime.register_provider(ProviderRegistration("demo", _factory, requires_api_key=False))
 
     llm = LLM(provider="demo", model="m", runtime=runtime)
-    assert llm._provider["config"].provider == "demo"
+    provider = cast(dict[str, Config], llm._provider)
+    assert provider["config"].provider == "demo"
 
 
-def test_llm_profile_clone_rebuilds_provider_with_selected_key():
+def test_llm_profile_clone_rebuilds_provider_with_selected_key() -> None:
     runtime = ModelRuntime()
     runtime.register_provider(ProviderRegistration("demo", _factory, requires_api_key=True))
     llm = LLM(provider="demo", model="m1", api_key="key-one", runtime=runtime)
@@ -229,18 +241,19 @@ def test_llm_profile_clone_rebuilds_provider_with_selected_key():
     assert rotated is not llm
     assert rotated.config.api_key == "key-two"
     assert rotated.config.model == "m2"
-    assert rotated._provider["config"].api_key == "key-two"
+    rotated_provider = cast(dict[str, Config], rotated._provider)
+    assert rotated_provider["config"].api_key == "key-two"
     assert llm.config.api_key == "key-one"
 
 
-def test_llm_chat_stream_uses_provider_public_stream_contract():
+def test_llm_chat_stream_uses_provider_public_stream_contract() -> None:
     calls = []
 
     class StreamingProvider:
         def __init__(self, config: Config) -> None:
             self.config = config
 
-        async def astream(self, **kwargs):
+        async def astream(self, **kwargs: Any) -> AsyncIterator[StreamChunk]:
             calls.append(kwargs)
             yield StreamChunk(content="hello")
             yield StreamChunk(content=" world", finish_reason="stop")
@@ -249,13 +262,13 @@ def test_llm_chat_stream_uses_provider_public_stream_contract():
     runtime.register_provider(
         ProviderRegistration(
             "stream-demo",
-            StreamingProvider,
+            cast(ProviderFactory, StreamingProvider),
             requires_api_key=False,
         )
     )
     llm = LLM(provider="stream-demo", model="stream-model", runtime=runtime)
 
-    async def collect():
+    async def collect() -> list[StreamChunk]:
         return [
             chunk
             async for chunk in llm.achat_stream(

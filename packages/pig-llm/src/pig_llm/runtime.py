@@ -12,10 +12,13 @@ import os
 from abc import ABC, abstractmethod
 from collections.abc import Awaitable, Callable, Iterable, Mapping
 from dataclasses import dataclass, field, replace
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 from ._models_generated import MODELS
 from .config import Config
+
+if TYPE_CHECKING:
+    from .providers._base import Provider
 
 
 @dataclass(frozen=True)
@@ -144,7 +147,7 @@ class InMemoryModelStore(ModelStore):
         self._models.update(replacement)
 
 
-ProviderFactory = Callable[[Config], Any]
+ProviderFactory = Callable[[Config], "Provider"]
 CatalogRefresher = Callable[[AuthResolution], Awaitable[Iterable[ModelMetadata]]]
 AuthResolver = Callable[[Config | None, CredentialStore, Mapping[str, str]], AuthResolution]
 
@@ -268,7 +271,7 @@ class ModelRuntime:
                 result.append(model)
         return result
 
-    def create_provider(self, config: Config) -> Any:
+    def create_provider(self, config: Config) -> Provider:
         """Create a provider SDK client from fully resolved configuration."""
         registration = self._providers.get(config.provider)
         if registration is None:
@@ -338,9 +341,9 @@ class ModelRuntime:
 
 
 def _lazy_factory(module_name: str, class_name: str) -> ProviderFactory:
-    def factory(config: Config) -> Any:
+    def factory(config: Config) -> Provider:
         module = importlib.import_module(f".providers.{module_name}", package="pig_llm")
-        return getattr(module, class_name)(config)
+        return cast("Provider", getattr(module, class_name)(config))
 
     return factory
 

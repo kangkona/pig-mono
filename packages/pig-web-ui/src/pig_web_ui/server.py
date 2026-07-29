@@ -1,16 +1,44 @@
 """Chat server with FastAPI."""
 
 import asyncio
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Iterator
 from pathlib import Path
+from typing import Any, Protocol, runtime_checkable
 
 from fastapi import FastAPI, File, Request, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from .models import ChatMessage, ChatRequest, StreamChunk
+
+
+class ContentResponse(Protocol):
+    """Response shape shared by supported LLM and agent clients."""
+
+    content: str
+
+
+class CompletionClient(Protocol):
+    """Minimum non-streaming interface required by the web server."""
+
+    def complete(self, prompt: str) -> ContentResponse: ...
+
+
+@runtime_checkable
+class StreamingClient(Protocol):
+    """Optional streaming interface detected at runtime."""
+
+    def stream(self, prompt: str) -> Iterator[ContentResponse]: ...
+
+
+class AgentClient(Protocol):
+    """Minimum agent interface required by the web server."""
+
+    def run(self, message: str) -> ContentResponse: ...
+
+    def clear_history(self) -> None: ...
 
 
 class ChatServer:
@@ -18,14 +46,14 @@ class ChatServer:
 
     def __init__(
         self,
-        llm=None,
-        agent=None,
+        llm: CompletionClient | None = None,
+        agent: AgentClient | None = None,
         title: str = "Chat",
         port: int = 8000,
         host: str = "127.0.0.1",
         cors: bool = False,
-        theme: dict | None = None,
-    ):
+        theme: dict[str, str] | None = None,
+    ) -> None:
         """Initialize chat server.
 
         Args:
@@ -75,11 +103,11 @@ class ChatServer:
         # Setup routes
         self._setup_routes()
 
-    def _setup_routes(self):
+    def _setup_routes(self) -> None:
         """Setup API routes."""
 
         @self.app.get("/", response_class=HTMLResponse)
-        async def home(request: Request):
+        async def home(request: Request) -> Response:
             """Serve chat UI."""
             return self.templates.TemplateResponse(
                 request,
@@ -92,7 +120,7 @@ class ChatServer:
             )
 
         @self.app.post("/api/chat")
-        async def chat(request: ChatRequest):
+        async def chat(request: ChatRequest) -> StreamingResponse:
             """Handle chat message with SSE streaming."""
             return StreamingResponse(
                 self._stream_response(request.message),
@@ -100,12 +128,12 @@ class ChatServer:
             )
 
         @self.app.get("/api/history")
-        async def get_history():
+        async def get_history() -> dict[str, object]:
             """Get chat history."""
             return {"messages": [msg.model_dump() for msg in self.history]}
 
         @self.app.delete("/api/history")
-        async def clear_history():
+        async def clear_history() -> dict[str, str]:
             """Clear chat history."""
             self.history.clear()
             if self.agent:
@@ -113,11 +141,13 @@ class ChatServer:
             return {"status": "ok"}
 
         @self.app.post("/api/upload")
-        async def upload_file(file: UploadFile = File(...)):
+        async def upload_file(file: UploadFile = File(...)) -> dict[str, str | int]:
             """Handle file upload."""
             try:
                 content = await file.read()
                 filename = file.filename
+                if filename is None:
+                    raise ValueError("Uploaded file must have a filename")
 
                 # Store uploaded file (simplified - production would store properly)
                 upload_dir = Path(".uploads")
@@ -136,7 +166,7 @@ class ChatServer:
                 return {"status": "error", "error": str(e)}
 
         @self.app.websocket("/ws")
-        async def websocket_endpoint(websocket: WebSocket):
+        async def websocket_endpoint(websocket: WebSocket) -> None:
             """WebSocket endpoint for real-time chat."""
             await websocket.accept()
 
@@ -161,7 +191,7 @@ class ChatServer:
                         content = response.content
                     elif self.llm:
                         # Check if streaming
-                        if hasattr(self.llm, "stream"):
+                        if isinstance(self.llm, StreamingClient):
                             # Stream via WebSocket
                             full_content = ""
                             for chunk in self.llm.stream(message):
@@ -226,7 +256,7 @@ class ChatServer:
                 content = response.content
             elif self.llm:
                 # Use LLM directly - check if streaming is supported
-                if hasattr(self.llm, "stream"):
+                if isinstance(self.llm, StreamingClient):
                     # Stream tokens
                     for chunk in self.llm.stream(message):
                         yield self._format_sse(StreamChunk(type="token", content=chunk.content))
@@ -266,7 +296,7 @@ class ChatServer:
         """
         return f"data: {chunk.model_dump_json()}\n\n"
 
-    def run(self, **kwargs):
+    def run(self, **kwargs: Any) -> None:
         """Run the server.
 
         Args:

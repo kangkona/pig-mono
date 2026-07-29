@@ -1,11 +1,13 @@
 """Tests for context management."""
 
+from typing import Any
+
 import pytest
 from pig_agent_core.context import CachedContext, build_messages, hydrate
 
 
 @pytest.mark.asyncio
-async def test_hydrate_returns_context():
+async def test_hydrate_returns_context() -> None:
     """Test hydrate returns CachedContext."""
     ctx = await hydrate("user123")
 
@@ -15,7 +17,7 @@ async def test_hydrate_returns_context():
 
 
 @pytest.mark.asyncio
-async def test_hydrate_with_different_users():
+async def test_hydrate_with_different_users() -> None:
     """Test hydrate with different user IDs."""
     ctx1 = await hydrate("user1")
     ctx2 = await hydrate("user2")
@@ -24,7 +26,7 @@ async def test_hydrate_with_different_users():
     assert ctx2.user_config["user_id"] == "user2"
 
 
-def test_cached_context_defaults():
+def test_cached_context_defaults() -> None:
     """Test CachedContext default values."""
     ctx = CachedContext()
 
@@ -33,7 +35,7 @@ def test_cached_context_defaults():
     assert ctx.metadata == {}
 
 
-def test_cached_context_with_values():
+def test_cached_context_with_values() -> None:
     """Test CachedContext with custom values."""
     ctx = CachedContext(
         system_prompt="Custom prompt",
@@ -46,10 +48,10 @@ def test_cached_context_with_values():
     assert ctx.metadata == {"meta": "data"}
 
 
-def test_build_messages_with_system_prompt():
+def test_build_messages_with_system_prompt() -> None:
     """Test building messages with system prompt."""
     ctx = CachedContext(system_prompt="You are helpful")
-    history = []
+    history: list[dict[str, Any]] = []
     user_text = "Hello"
 
     messages = build_messages(ctx, history, user_text)
@@ -61,10 +63,10 @@ def test_build_messages_with_system_prompt():
     assert messages[1]["content"] == "Hello"
 
 
-def test_build_messages_without_system_prompt():
+def test_build_messages_without_system_prompt() -> None:
     """Test building messages without system prompt."""
     ctx = CachedContext(system_prompt="")
-    history = []
+    history: list[dict[str, Any]] = []
     user_text = "Hello"
 
     messages = build_messages(ctx, history, user_text)
@@ -74,7 +76,7 @@ def test_build_messages_without_system_prompt():
     assert messages[0]["content"] == "Hello"
 
 
-def test_build_messages_with_history():
+def test_build_messages_with_history() -> None:
     """Test building messages with conversation history."""
     ctx = CachedContext(system_prompt="System")
     history = [
@@ -95,7 +97,7 @@ def test_build_messages_with_history():
     assert messages[-1]["content"] == "Third message"
 
 
-def test_build_messages_preserves_history_order():
+def test_build_messages_preserves_history_order() -> None:
     """Test that message building preserves history order."""
     ctx = CachedContext(system_prompt="System")
     history = [
@@ -115,10 +117,10 @@ def test_build_messages_preserves_history_order():
     assert messages[4]["content"] == "D"
 
 
-def test_build_messages_empty_history():
+def test_build_messages_empty_history() -> None:
     """Test building messages with empty history."""
     ctx = CachedContext(system_prompt="System")
-    history = []
+    history: list[dict[str, Any]] = []
     user_text = "Hello"
 
     messages = build_messages(ctx, history, user_text)
@@ -128,10 +130,10 @@ def test_build_messages_empty_history():
     assert messages[1]["role"] == "user"
 
 
-def test_build_messages_with_tool_messages():
+def test_build_messages_with_tool_messages() -> None:
     """Test building messages with tool messages in history."""
     ctx = CachedContext(system_prompt="System")
-    history = [
+    history: list[dict[str, Any]] = [
         {"role": "user", "content": "Search for X"},
         {"role": "assistant", "content": "", "tool_calls": [{"name": "search"}]},
         {"role": "tool", "content": "Results", "name": "search"},
@@ -148,14 +150,14 @@ def test_build_messages_with_tool_messages():
 
 
 @pytest.mark.asyncio
-async def test_hydrate_is_async():
+async def test_hydrate_is_async() -> None:
     """Test that hydrate is an async function."""
     import inspect
 
     assert inspect.iscoroutinefunction(hydrate)
 
 
-def test_cached_context_is_dataclass():
+def test_cached_context_is_dataclass() -> None:
     """Test that CachedContext is a dataclass."""
     from dataclasses import is_dataclass
 

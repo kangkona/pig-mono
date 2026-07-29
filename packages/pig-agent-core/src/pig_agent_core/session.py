@@ -6,7 +6,7 @@ import uuid
 from collections.abc import Iterable
 from datetime import datetime
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -24,9 +24,9 @@ _UUID_LIKE_ID_RE = re.compile(
 def serialize_compaction_tool_result(result: ToolResult | Any, max_chars: int = 4000) -> str:
     """Serialize tool output for compaction without letting huge outputs dominate."""
     if isinstance(result, ToolResult):
-        return cast(str, result.serialize(max_chars=max_chars))
+        return result.serialize(max_chars=max_chars)
 
-    return cast(str, ToolResult(ok=True, data=result).serialize(max_chars=max_chars))
+    return ToolResult(ok=True, data=result).serialize(max_chars=max_chars)
 
 
 class SessionEntry(BaseModel):

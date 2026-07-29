@@ -1,10 +1,14 @@
 """Mistral AI provider implementation."""
 
 from collections.abc import AsyncIterator, Iterator
+from importlib import import_module
+from typing import Any
 
-from mistralai.async_client import MistralAsyncClient
-from mistralai.client import MistralClient
-from mistralai.models.chat_completion import ChatMessage
+try:
+    ChatMessage: Any = import_module("mistralai.models.chat_completion").ChatMessage
+except ImportError:
+    # mistralai 1.x accepts the same role/content mapping but removed ChatMessage.
+    ChatMessage = dict
 
 from ..config import Config
 from ..models import Message, Response, StreamChunk
@@ -17,10 +21,30 @@ class MistralProvider(Provider):
     def __init__(self, config: Config):
         """Initialize Mistral provider."""
         self.config = config
-        self.client = MistralClient(api_key=config.api_key)
-        self.async_client = MistralAsyncClient(api_key=config.api_key)
+        mistral_module = import_module("mistralai")
+        client_module = import_module("mistralai.client")
+        modern_client = getattr(mistral_module, "Mistral", None) or getattr(
+            client_module, "Mistral", None
+        )
+        if modern_client is not None:
+            self.client: Any = modern_client(api_key=config.api_key)
+            self.async_client: Any = self.client
+            self._uses_modern_client = True
+        else:
+            legacy_client = vars(client_module)["MistralClient"]
+            legacy_async_client = vars(import_module("mistralai.async_client"))[
+                "MistralAsyncClient"
+            ]
+            self.client = legacy_client(api_key=config.api_key)
+            self.async_client = legacy_async_client(api_key=config.api_key)
+            self._uses_modern_client = False
 
-    def _convert_messages(self, messages: list[Message]) -> list[ChatMessage]:
+    @staticmethod
+    def _stream_payload(event: Any) -> Any:
+        """Unwrap the event envelope introduced by mistralai 1.x."""
+        return getattr(event, "data", event)
+
+    def _convert_messages(self, messages: list[Message]) -> list[Any]:
         """Convert internal messages to Mistral format."""
         return [ChatMessage(role=msg.role, content=msg.content) for msg in messages]
 
@@ -30,16 +54,20 @@ class MistralProvider(Provider):
         model: str,
         temperature: float = 0.7,
         max_tokens: int | None = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> Response:
         """Generate a completion."""
-        response = self.client.chat(
-            model=model,
-            messages=self._convert_messages(messages),
-            temperature=temperature,
-            max_tokens=max_tokens,
+        request = {
+            "model": model,
+            "messages": self._convert_messages(messages),
+            "temperature": temperature,
+            "max_tokens": max_tokens,
             **kwargs,
-        )
+        }
+        if self._uses_modern_client:
+            response = self.client.chat.complete(**request)
+        else:
+            response = self.client.chat(**request)
 
         choice = response.choices[0]
         usage = {
@@ -62,18 +90,23 @@ class MistralProvider(Provider):
         model: str,
         temperature: float = 0.7,
         max_tokens: int | None = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> Iterator[StreamChunk]:
         """Stream a completion."""
-        stream = self.client.chat_stream(
-            model=model,
-            messages=self._convert_messages(messages),
-            temperature=temperature,
-            max_tokens=max_tokens,
+        request = {
+            "model": model,
+            "messages": self._convert_messages(messages),
+            "temperature": temperature,
+            "max_tokens": max_tokens,
             **kwargs,
-        )
+        }
+        if self._uses_modern_client:
+            stream = self.client.chat.stream(**request)
+        else:
+            stream = self.client.chat_stream(**request)
 
-        for chunk in stream:
+        for event in stream:
+            chunk = self._stream_payload(event)
             choice = chunk.choices[0]
             if choice.delta.content:
                 yield StreamChunk(
@@ -87,16 +120,20 @@ class MistralProvider(Provider):
         model: str,
         temperature: float = 0.7,
         max_tokens: int | None = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> Response:
         """Async generate a completion."""
-        response = await self.async_client.chat(
-            model=model,
-            messages=self._convert_messages(messages),
-            temperature=temperature,
-            max_tokens=max_tokens,
+        request = {
+            "model": model,
+            "messages": self._convert_messages(messages),
+            "temperature": temperature,
+            "max_tokens": max_tokens,
             **kwargs,
-        )
+        }
+        if self._uses_modern_client:
+            response = await self.async_client.chat.complete_async(**request)
+        else:
+            response = await self.async_client.chat(**request)
 
         choice = response.choices[0]
         usage = {
@@ -119,19 +156,24 @@ class MistralProvider(Provider):
         model: str,
         temperature: float = 0.7,
         max_tokens: int | None = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> AsyncIterator[StreamChunk]:
         """Async stream a completion."""
-        stream = await self.async_client.chat_stream(
-            model=model,
-            messages=self._convert_messages(messages),
-            temperature=temperature,
-            max_tokens=max_tokens,
+        request = {
+            "model": model,
+            "messages": self._convert_messages(messages),
+            "temperature": temperature,
+            "max_tokens": max_tokens,
             **kwargs,
-        )
+        }
+        if self._uses_modern_client:
+            stream = await self.async_client.chat.stream_async(**request)
+        else:
+            stream = await self.async_client.chat_stream(**request)
 
         usage = None
-        async for chunk in stream:
+        async for event in stream:
+            chunk = self._stream_payload(event)
             choice = chunk.choices[0]
             if choice.delta.content:
                 yield StreamChunk(

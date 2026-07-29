@@ -7,6 +7,7 @@ client -> provider path against fake SDK clients (no network).
 """
 
 from types import SimpleNamespace
+from typing import Any
 from unittest.mock import Mock, patch
 
 import pytest
@@ -40,7 +41,7 @@ def _openai_response() -> SimpleNamespace:
     )
 
 
-def _anthropic_llm(create: Mock, enable_web_search: bool, **extra) -> LLM:
+def _anthropic_llm(create: Mock, enable_web_search: bool, **extra: Any) -> LLM:
     pytest.importorskip("anthropic")
     client = SimpleNamespace(messages=SimpleNamespace(create=create))
     with (
@@ -56,7 +57,7 @@ def _anthropic_llm(create: Mock, enable_web_search: bool, **extra) -> LLM:
         )
 
 
-def test_anthropic_enable_web_search_injects_native_tool():
+def test_anthropic_enable_web_search_injects_native_tool() -> None:
     create = Mock(return_value=_anthropic_response())
     llm = _anthropic_llm(create, enable_web_search=True)
 
@@ -75,7 +76,7 @@ def test_anthropic_enable_web_search_injects_native_tool():
     assert "web_search_max_uses" not in create.call_args.kwargs
 
 
-def test_anthropic_web_search_custom_max_uses():
+def test_anthropic_web_search_custom_max_uses() -> None:
     create = Mock(return_value=_anthropic_response())
     llm = _anthropic_llm(create, enable_web_search=True, web_search_max_uses=3)
 
@@ -85,7 +86,7 @@ def test_anthropic_web_search_custom_max_uses():
     assert {"type": "web_search_20250305", "name": "web_search", "max_uses": 3} in sent_tools
 
 
-def test_anthropic_web_search_disabled_no_native_tool():
+def test_anthropic_web_search_disabled_no_native_tool() -> None:
     create = Mock(return_value=_anthropic_response())
     llm = _anthropic_llm(create, enable_web_search=False)
 
@@ -95,7 +96,7 @@ def test_anthropic_web_search_disabled_no_native_tool():
     assert "tools" not in create.call_args.kwargs
 
 
-def test_non_anthropic_provider_never_receives_web_search():
+def test_non_anthropic_provider_never_receives_web_search() -> None:
     """A non-Anthropic provider must not receive the native tool or control flags."""
     pytest.importorskip("openai")
     create = Mock(return_value=_openai_response())
@@ -115,7 +116,7 @@ def test_non_anthropic_provider_never_receives_web_search():
     assert NATIVE not in (sent.get("tools") or [])
 
 
-def test_server_tool_result_blocks_are_not_extracted_as_tool_calls():
+def test_server_tool_result_blocks_are_not_extracted_as_tool_calls() -> None:
     """Server-executed web search returns server_tool_use/web_search_tool_result
     blocks (not tool_use); these must never surface as locally-dispatched calls."""
     pytest.importorskip("anthropic")
