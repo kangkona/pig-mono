@@ -7,7 +7,7 @@ from unittest.mock import Mock
 import pytest
 from pig_agent_core import Agent, tool
 from pig_agent_core.models import AgentState
-from pig_llm import StreamChunk
+from pig_llm import StreamChunk, TurnOutcome
 
 
 @pytest.fixture
@@ -185,6 +185,40 @@ async def test_agent_respond_non_streaming() -> None:
 
     assert response == "Complete response"
     assert len(agent.history) == 2  # user + assistant
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("finish_reason", "expected"),
+    [
+        ("stop", TurnOutcome.COMPLETED),
+        ("length", TurnOutcome.LENGTH),
+        ("content_filter", TurnOutcome.CONTENT_FILTER),
+        ("vendor_reason", TurnOutcome.UNKNOWN),
+        (None, TurnOutcome.INCOMPLETE),
+    ],
+)
+async def test_agent_records_stream_terminal_outcome(
+    finish_reason: str | None,
+    expected: TurnOutcome,
+) -> None:
+    mock_llm = Mock()
+    mock_llm.config = Mock(model="test-model", max_retries=0)
+
+    async def mock_stream(*, messages: Any, **kwargs: Any) -> Any:
+        del messages, kwargs
+        yield StreamChunk(content="partial")
+        if finish_reason is not None:
+            yield StreamChunk(content="", finish_reason=finish_reason)
+
+    mock_llm.achat_stream = mock_stream
+    events: list[Any] = []
+    agent = Agent(llm=mock_llm, event_callback=events.append)
+
+    assert await agent.respond("hello") == "partial"
+    assert agent.last_turn_outcome is expected
+    terminal = [event for event in events if event.type.value == "agent_end"][-1]
+    assert terminal.data["success"] is (expected is TurnOutcome.COMPLETED)
 
 
 @pytest.mark.asyncio

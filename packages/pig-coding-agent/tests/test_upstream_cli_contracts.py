@@ -13,6 +13,7 @@ from pig_agent_core import ExtensionManager
 from pig_coding_agent import AgentTurnResult, permissions
 from pig_coding_agent.cli import JsonLineWriter, main, run_rpc_mode
 from pig_coding_agent.permissions import PermissionPolicy
+from pig_llm import TurnOutcome
 
 CLI_EXIT_EXCEPTIONS = (typer.Exit, click.exceptions.Exit, SystemExit)
 
@@ -704,6 +705,107 @@ def test_rpc_bash_can_exclude_output_from_context(monkeypatch: Any) -> None:
     assert response["error"] is None
     assert response["result"]["excludedFromContext"] is True
     assert response["result"]["output"] == "[Output excluded from model context]"
+
+
+def test_rpc_complete_exposes_provider_neutral_turn_outcome(monkeypatch: Any) -> None:
+    requests = iter(
+        [json.dumps({"id": 1, "method": "complete", "params": {"message": "hi"}}) + "\n", ""]
+    )
+    out = io.StringIO()
+    agent = Mock()
+    agent.extension_manager = None
+    agent.agent.llm.config.model = "test-model"
+    agent.run_once_result.return_value = AgentTurnResult(
+        content="partial",
+        outcome=TurnOutcome.LENGTH,
+        raw_finish_reason="MAX_TOKENS",
+    )
+
+    monkeypatch.setattr("sys.stdin.readline", lambda: next(requests))
+    monkeypatch.setattr("sys.stdout", out)
+
+    run_rpc_mode(agent)
+
+    response = json.loads(out.getvalue().splitlines()[0])["result"]
+    assert response["completed"] is False
+    assert response["outcome"] == "length"
+    assert response["finishReason"] == "MAX_TOKENS"
+
+
+def test_rpc_stream_does_not_report_truncated_output_as_done(monkeypatch: Any) -> None:
+    requests = iter(
+        [json.dumps({"id": 1, "method": "stream", "params": {"message": "hi"}}) + "\n", ""]
+    )
+    out = io.StringIO()
+    agent = Mock()
+    agent.extension_manager = None
+    agent.session = None
+    agent.permission_policy = PermissionPolicy.allow_all()
+
+    async def respond_stream(message: str, cancel: Any) -> Any:
+        del message, cancel
+        yield "partial"
+        agent.agent.last_turn_outcome = TurnOutcome.LENGTH
+        agent.agent.last_finish_reason = "length"
+
+    agent.agent.respond_stream = respond_stream
+
+    monkeypatch.setattr("sys.stdin.readline", lambda: next(requests))
+    monkeypatch.setattr("sys.stdout", out)
+
+    run_rpc_mode(agent)
+
+    response = next(
+        json.loads(line)["result"]
+        for line in out.getvalue().splitlines()
+        if json.loads(line).get("id") == 1
+    )
+    assert response == {
+        "done": False,
+        "outcome": "length",
+        "finishReason": "length",
+        "permissionDenials": [],
+    }
+
+
+def test_rpc_stream_emits_and_returns_permission_denials(monkeypatch: Any) -> None:
+    requests = iter(
+        [json.dumps({"id": 1, "method": "stream", "params": {"message": "hi"}}) + "\n", ""]
+    )
+    out = io.StringIO()
+    agent = Mock()
+    agent.extension_manager = None
+    agent.session = None
+    agent.permission_policy = PermissionPolicy.unattended()
+    agent.agent.last_turn_outcome = None
+    agent.agent.last_finish_reason = None
+
+    async def respond_stream(message: str, cancel: Any) -> Any:
+        del message, cancel
+        agent.permission_policy.check("run_command", "touch blocked")
+        agent.agent.last_turn_outcome = TurnOutcome.COMPLETED
+        agent.agent.last_finish_reason = "stop"
+        yield "permission refused"
+
+    agent.agent.respond_stream = respond_stream
+
+    monkeypatch.setattr("sys.stdin.readline", lambda: next(requests))
+    monkeypatch.setattr("sys.stdout", out)
+
+    run_rpc_mode(agent)
+
+    messages = [json.loads(line) for line in out.getvalue().splitlines()]
+    denial = next(message for message in messages if message.get("event") == "permission_denied")
+    expected = {
+        "code": "tool_permission_denied",
+        "message": "Permission denied: side-effectful tools are disabled in unattended mode",
+        "action": "run_command",
+        "target": "touch blocked",
+    }
+    assert denial["data"] == expected
+    response = next(message["result"] for message in messages if message.get("id") == 1)
+    assert response["permissionDenials"] == [expected]
+    assert response["done"] is True
 
 
 def test_rpc_bash_without_explicit_policy_fails_closed(monkeypatch: Any) -> None:

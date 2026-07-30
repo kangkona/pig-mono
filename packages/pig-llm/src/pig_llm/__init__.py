@@ -3,7 +3,14 @@
 from .client import LLM
 from .config import Config
 from .model_info import get_model_info
-from .models import Message, Response, StreamChunk
+from .models import (
+    Message,
+    Response,
+    StreamChunk,
+    TurnOutcome,
+    normalize_finish_reason,
+    resolve_turn_outcome,
+)
 from .providers import Provider
 from .runtime import (
     AuthResolution,
@@ -28,6 +35,9 @@ __all__ = [
     "Message",
     "Response",
     "StreamChunk",
+    "TurnOutcome",
+    "normalize_finish_reason",
+    "resolve_turn_outcome",
     "Provider",
     "get_model_info",
     "AuthResolution",

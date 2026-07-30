@@ -72,6 +72,13 @@ class UsageLedger:
                 if isinstance(value, int | float):
                     bucket[str(key)] = max(0, int(value))
 
+    def restore(self, snapshot: dict[str, Any]) -> None:
+        """Restore a prior snapshot while preserving this ledger's identity."""
+        self._by_kind = {kind.value: _empty_bucket() for kind in UsageKind}
+        self._llm_calls = 0
+        self._tool_calls = 0
+        self._restore(snapshot)
+
     def record_llm(
         self,
         *,

@@ -83,13 +83,27 @@ class JSONOutputMode:
         """
         self.emit_event("token", {"content": content})
 
-    def done(self, final_content: str | None = None) -> None:
+    def done(
+        self,
+        final_content: str | None = None,
+        *,
+        outcome: str | None = None,
+        finish_reason: str | None = None,
+    ) -> None:
         """Emit completion event.
 
         Args:
             final_content: Final response content
+            outcome: Provider-neutral terminal outcome
+            finish_reason: Raw provider finish reason
         """
-        self.emit_event("done", {"content": final_content} if final_content else {})
+        data: dict[str, Any] = {"content": final_content} if final_content else {}
+        if outcome is not None:
+            data["outcome"] = outcome
+            data["completed"] = outcome == "completed"
+        if finish_reason is not None:
+            data["finishReason"] = finish_reason
+        self.emit_event("done", data)
 
     def error(self, error: str, **metadata: Any) -> None:
         """Emit an error event.

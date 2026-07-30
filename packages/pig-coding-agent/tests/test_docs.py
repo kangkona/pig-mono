@@ -60,6 +60,10 @@ def test_parity_matrix_exists_and_is_self_contained() -> None:
     assert "tool_permission_denied" in matrix
     assert "plain CLI routes emit stable text and exit 2" in matrix
     assert "`prompt_result()` exposes structured permission denials" in matrix
+    assert "| Compaction | Supported contract |" in matrix
+    assert "Semantic summarization is branch-local" in matrix
+    assert "Canonical assistant `tool_calls`" in matrix
+    assert "semantic branch summarization parity is still not complete" not in matrix
 
 
 def test_package_exports_runtime_entrypoints() -> None:

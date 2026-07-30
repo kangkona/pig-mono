@@ -296,14 +296,43 @@ class GoogleProvider(Provider):
             model=model, contents=contents, config=config
         )
 
+        tool_calls: list[dict[str, Any]] = []
+        usage: dict[str, int] | None = None
+        finish_reason: str | None = None
         for chunk in response_stream:
-            if chunk.candidates and chunk.candidates[0].content.parts:
-                for part in chunk.candidates[0].content.parts:
+            if chunk.candidates:
+                candidate = chunk.candidates[0]
+                raw_finish_reason = getattr(candidate, "finish_reason", None)
+                if raw_finish_reason is not None:
+                    finish_reason = str(raw_finish_reason)
+                content = getattr(candidate, "content", None)
+                parts = getattr(content, "parts", None) or []
+                for part in parts:
                     if hasattr(part, "text") and part.text:
                         yield StreamChunk(
                             content=part.text,
                             finish_reason=None,
                         )
+                    fc = getattr(part, "function_call", None)
+                    if fc is not None:
+                        tool_calls.append(self._tool_call_dict(part, fc))
+            chunk_usage = getattr(chunk, "usage_metadata", None)
+            if chunk_usage is not None:
+                cached = getattr(chunk_usage, "cached_content_token_count", None)
+                usage = {
+                    "input_tokens": int(getattr(chunk_usage, "prompt_token_count", 0) or 0),
+                    "output_tokens": int(getattr(chunk_usage, "candidates_token_count", 0) or 0),
+                    "cached_tokens": int(cached or 0),
+                    "total_tokens": int(getattr(chunk_usage, "total_token_count", 0) or 0),
+                }
+
+        if tool_calls or usage or finish_reason is not None:
+            yield StreamChunk(
+                content="",
+                finish_reason=finish_reason,
+                tool_calls=tool_calls or None,
+                usage=usage,
+            )
 
     async def acomplete(
         self,
@@ -408,9 +437,16 @@ class GoogleProvider(Provider):
 
         tool_calls: list[dict[str, Any]] = []
         usage: dict[str, int] | None = None
+        finish_reason: str | None = None
         async for chunk in response_stream:
-            if chunk.candidates and chunk.candidates[0].content.parts:
-                for part in chunk.candidates[0].content.parts:
+            if chunk.candidates:
+                candidate = chunk.candidates[0]
+                raw_finish_reason = getattr(candidate, "finish_reason", None)
+                if raw_finish_reason is not None:
+                    finish_reason = str(raw_finish_reason)
+                content = getattr(candidate, "content", None)
+                parts = getattr(content, "parts", None) or []
+                for part in parts:
                     if getattr(part, "text", None):
                         yield StreamChunk(content=part.text, finish_reason=None)
                     fc = getattr(part, "function_call", None)
@@ -429,5 +465,10 @@ class GoogleProvider(Provider):
 
         # Emit assembled tool calls and/or usage on a trailing chunk, matching
         # the OpenAI-compatible streaming contract the agent loop consumes.
-        if tool_calls or usage:
-            yield StreamChunk(content="", tool_calls=tool_calls or None, usage=usage)
+        if tool_calls or usage or finish_reason is not None:
+            yield StreamChunk(
+                content="",
+                finish_reason=finish_reason,
+                tool_calls=tool_calls or None,
+                usage=usage,
+            )

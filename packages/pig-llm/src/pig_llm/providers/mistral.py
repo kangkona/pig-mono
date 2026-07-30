@@ -105,14 +105,27 @@ class MistralProvider(Provider):
         else:
             stream = self.client.chat_stream(**request)
 
+        usage = None
+        finish_reason = None
         for event in stream:
             chunk = self._stream_payload(event)
             choice = chunk.choices[0]
+            if choice.finish_reason:
+                finish_reason = str(choice.finish_reason)
             if choice.delta.content:
                 yield StreamChunk(
                     content=choice.delta.content,
                     finish_reason=choice.finish_reason,
                 )
+            chunk_usage = getattr(chunk, "usage", None)
+            if chunk_usage:
+                usage = {
+                    "input_tokens": int(getattr(chunk_usage, "prompt_tokens", 0) or 0),
+                    "output_tokens": int(getattr(chunk_usage, "completion_tokens", 0) or 0),
+                    "total_tokens": int(getattr(chunk_usage, "total_tokens", 0) or 0),
+                }
+        if usage or finish_reason is not None:
+            yield StreamChunk(content="", finish_reason=finish_reason, usage=usage)
 
     async def acomplete(
         self,
@@ -172,9 +185,12 @@ class MistralProvider(Provider):
             stream = await self.async_client.chat_stream(**request)
 
         usage = None
+        finish_reason = None
         async for event in stream:
             chunk = self._stream_payload(event)
             choice = chunk.choices[0]
+            if choice.finish_reason:
+                finish_reason = str(choice.finish_reason)
             if choice.delta.content:
                 yield StreamChunk(
                     content=choice.delta.content,
@@ -187,5 +203,5 @@ class MistralProvider(Provider):
                     "output_tokens": int(getattr(chunk_usage, "completion_tokens", 0) or 0),
                     "total_tokens": int(getattr(chunk_usage, "total_tokens", 0) or 0),
                 }
-        if usage:
-            yield StreamChunk(content="", usage=usage)
+        if usage or finish_reason is not None:
+            yield StreamChunk(content="", finish_reason=finish_reason, usage=usage)

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import inspect
 from dataclasses import dataclass, replace
 from datetime import datetime
 from pathlib import Path
@@ -26,6 +25,7 @@ from .results import (
     SettingActionResult,
     TreeActionResult,
 )
+from .turn_lifecycle import ActiveTurnTransitionError
 
 if TYPE_CHECKING:
     from .agent import CodingAgent
@@ -312,25 +312,35 @@ class AppActions:
         return None
 
     def label_tree(self, entry_id_or_prefix: str, label: str) -> TreeActionResult:
-        if not self.owner.session:
-            return self.owner.result_factory.tree(ok=False, error="No session loaded")
+        try:
+            with self.owner.turn_lifecycle.transition("label the session tree"):
+                if not self.owner.session:
+                    return self.owner.result_factory.tree(ok=False, error="No session loaded")
 
-        entry_id = self.resolve_entry_id(entry_id_or_prefix.strip())
-        if entry_id is None:
-            return self.owner.result_factory.tree(
-                ok=False,
-                error=f"Session entry not found or ambiguous: {entry_id_or_prefix.strip()}",
-            )
+                entry_id = self.resolve_entry_id(entry_id_or_prefix.strip())
+                if entry_id is None:
+                    return self.owner.result_factory.tree(
+                        ok=False,
+                        error=(
+                            f"Session entry not found or ambiguous: {entry_id_or_prefix.strip()}"
+                        ),
+                    )
 
-        normalized_label = label.strip()
-        if not normalized_label:
-            return self.owner.result_factory.tree(ok=False, error="Tree label cannot be empty")
+                normalized_label = label.strip()
+                if not normalized_label:
+                    return self.owner.result_factory.tree(
+                        ok=False, error="Tree label cannot be empty"
+                    )
 
-        entry = self.owner.session.tree.entries[entry_id]
-        entry.metadata["label"] = normalized_label
-        self.owner.session.updated_at = datetime.utcnow()
-        self.owner.session.save()
-        return self.owner.result_factory.tree(ok=True, entry_id=entry_id, label=normalized_label)
+                entry = self.owner.session.tree.entries[entry_id]
+                entry.metadata["label"] = normalized_label
+                self.owner.session.updated_at = datetime.utcnow()
+                self.owner.session.save()
+                return self.owner.result_factory.tree(
+                    ok=True, entry_id=entry_id, label=normalized_label
+                )
+        except ActiveTurnTransitionError as exc:
+            return self.owner.result_factory.tree(ok=False, error=str(exc))
 
     def rebuild_history_from_session(self) -> None:
         system = None
@@ -360,210 +370,255 @@ class AppActions:
                 self.owner.agent.usage = self.owner.session.usage_ledger
 
     def switch_tree(self, entry_id_or_prefix: str) -> TreeActionResult:
-        if not self.owner.session:
-            return self.owner.result_factory.tree(ok=False, error="No session loaded")
+        try:
+            with self.owner.turn_lifecycle.transition("switch session tree branches"):
+                if not self.owner.session:
+                    return self.owner.result_factory.tree(ok=False, error="No session loaded")
 
-        entry_id = self.resolve_entry_id(entry_id_or_prefix)
-        if entry_id is None:
-            return self.owner.result_factory.tree(
-                ok=False,
-                error=f"Session entry not found or ambiguous: {entry_id_or_prefix}",
-            )
+                entry_id = self.resolve_entry_id(entry_id_or_prefix)
+                if entry_id is None:
+                    return self.owner.result_factory.tree(
+                        ok=False,
+                        error=(f"Session entry not found or ambiguous: {entry_id_or_prefix}"),
+                    )
 
-        previous_session_file = str(self.owner.session.save()) if self.owner.session else None
-        if self.owner.extension_manager:
-            self.owner.extension_manager.emit_event(
-                "session_shutdown",
-                {
-                    "reason": "tree",
-                    "targetSessionFile": previous_session_file,
-                    "targetEntryId": entry_id,
-                },
-            )
-            self.owner.extension_manager.extensions.clear()
-            self.owner.extension_manager.api._commands.clear()
-            self.owner.extension_manager.api._event_handlers.clear()
+                previous_session_file = str(self.owner.session.save())
+                if self.owner.extension_manager:
+                    self.owner.extension_manager.emit_event(
+                        "session_shutdown",
+                        {
+                            "reason": "tree",
+                            "targetSessionFile": previous_session_file,
+                            "targetEntryId": entry_id,
+                        },
+                    )
+                    self.owner.extension_manager.extensions.clear()
+                    self.owner.extension_manager.api._commands.clear()
+                    self.owner.extension_manager.api._event_handlers.clear()
 
-        self.owner.session.branch_to(entry_id)
-        self.owner.agent.session = self.owner.session
-        if hasattr(self.owner.session, "usage_ledger"):
-            self.owner.agent.usage = self.owner.session.usage_ledger
-        self.rebuild_history_from_session()
+                self.owner.session.branch_to(entry_id)
+                self.owner.agent.session = self.owner.session
+                if hasattr(self.owner.session, "usage_ledger"):
+                    self.owner.agent.usage = self.owner.session.usage_ledger
+                self.rebuild_history_from_session()
 
-        if self.owner.extension_manager:
-            self.owner._load_extensions()
-            self.owner.extension_manager.emit_event(
-                "session_start",
-                {
-                    "reason": "tree",
-                    "previousSessionFile": previous_session_file,
-                    "entryId": entry_id,
-                },
-            )
+                if self.owner.extension_manager:
+                    self.owner._load_extensions()
+                    self.owner.extension_manager.emit_event(
+                        "session_start",
+                        {
+                            "reason": "tree",
+                            "previousSessionFile": previous_session_file,
+                            "entryId": entry_id,
+                        },
+                    )
 
-        return self.owner.result_factory.tree(ok=True, entry_id=entry_id)
+                return self.owner.result_factory.tree(ok=True, entry_id=entry_id)
+        except ActiveTurnTransitionError as exc:
+            return self.owner.result_factory.tree(ok=False, error=str(exc))
 
     def switch_to_session(self, new_session: Session, reason: str) -> None:
-        previous_session_file = str(self.owner.session.save()) if self.owner.session else None
-        if self.owner.extension_manager:
-            self.owner.extension_manager.cleanup(
-                reason=reason,
-                target_session_file=previous_session_file,
-            )
-        self.owner.session = new_session
-        self.owner.agent.session = self.owner.session
-        if hasattr(self.owner.session, "usage_ledger"):
-            self.owner.agent.usage = self.owner.session.usage_ledger
-        self.rebuild_history_from_session()
-        if self.owner.extension_manager:
-            self.owner._load_extensions()
-            self.owner.extension_manager.emit_event(
-                "session_start",
-                {"reason": reason, "previousSessionFile": previous_session_file},
-            )
+        with self.owner.turn_lifecycle.transition("switch sessions"):
+            previous_session_file = str(self.owner.session.save()) if self.owner.session else None
+            if self.owner.extension_manager:
+                self.owner.extension_manager.cleanup(
+                    reason=reason,
+                    target_session_file=previous_session_file,
+                )
+            self.owner.session = new_session
+            self.owner.agent.session = self.owner.session
+            if hasattr(self.owner.session, "usage_ledger"):
+                self.owner.agent.usage = self.owner.session.usage_ledger
+            self.rebuild_history_from_session()
+            if self.owner.extension_manager:
+                self.owner._load_extensions()
+                self.owner.extension_manager.emit_event(
+                    "session_start",
+                    {"reason": reason, "previousSessionFile": previous_session_file},
+                )
 
     def fork_tree_entry(
         self,
         entry_id_or_prefix: str,
         fork_name: str | None = None,
     ) -> SessionActionResult:
-        if not self.owner.session:
-            return self.owner.result_factory.session(ok=False, error="No session loaded")
+        try:
+            with self.owner.turn_lifecycle.transition("fork the session tree"):
+                if not self.owner.session:
+                    return self.owner.result_factory.session(ok=False, error="No session loaded")
 
-        entry_id = self.resolve_entry_id(entry_id_or_prefix.strip())
-        if entry_id is None:
-            return self.owner.result_factory.session(
-                ok=False,
-                error=f"Session entry not found or ambiguous: {entry_id_or_prefix.strip()}",
-            )
+                entry_id = self.resolve_entry_id(entry_id_or_prefix.strip())
+                if entry_id is None:
+                    return self.owner.result_factory.session(
+                        ok=False,
+                        error=(
+                            f"Session entry not found or ambiguous: {entry_id_or_prefix.strip()}"
+                        ),
+                    )
 
-        name = fork_name or f"{self.owner.session.name}-fork"
-        previous_session_file = self.owner.session.save()
-        fork = self.owner.session.fork(entry_id, name)
-        save_path = fork.save()
-        if self.owner.extension_manager:
-            self.owner.extension_manager.cleanup(
-                reason="fork",
-                target_session_file=str(previous_session_file),
-            )
+                name = fork_name or f"{self.owner.session.name}-fork"
+                previous_session_file = self.owner.session.save()
+                fork = self.owner.session.fork(entry_id, name)
+                save_path = fork.save()
+                if self.owner.extension_manager:
+                    self.owner.extension_manager.cleanup(
+                        reason="fork",
+                        target_session_file=str(previous_session_file),
+                    )
 
-        self.owner.session = fork
-        self.owner.agent.session = self.owner.session
-        self.rebuild_history_from_session()
+                self.owner.session = fork
+                self.owner.agent.session = self.owner.session
+                self.rebuild_history_from_session()
 
-        if self.owner.extension_manager:
-            self.owner._load_extensions()
-            self.owner.extension_manager.emit_event(
-                "session_start",
-                {"reason": "fork", "previousSessionFile": str(previous_session_file)},
-            )
+                if self.owner.extension_manager:
+                    self.owner._load_extensions()
+                    self.owner.extension_manager.emit_event(
+                        "session_start",
+                        {"reason": "fork", "previousSessionFile": str(previous_session_file)},
+                    )
 
-        return self.owner.result_factory.session(
-            ok=True,
-            name=name,
-            entries=len(fork.tree.entries),
-            save_path=str(save_path),
-            session_id=fork.id,
-        )
+                return self.owner.result_factory.session(
+                    ok=True,
+                    name=name,
+                    entries=len(fork.tree.entries),
+                    save_path=str(save_path),
+                    session_id=fork.id,
+                )
+        except ActiveTurnTransitionError as exc:
+            return self.owner.result_factory.session(ok=False, error=str(exc))
 
     def fork_session(self, fork_name: str | None) -> SessionActionResult:
-        if not self.owner.session:
-            return self.owner.result_factory.session(ok=False, error="No session loaded")
+        try:
+            with self.owner.turn_lifecycle.transition("fork the current session"):
+                if not self.owner.session:
+                    return self.owner.result_factory.session(ok=False, error="No session loaded")
 
-        conversation = self.owner.session.get_current_conversation()
-        if not conversation:
-            return self.owner.result_factory.session(ok=False, error="No messages to fork")
-        return self.fork_tree_entry(conversation[-1].id, fork_name)
+                conversation = self.owner.session.get_current_conversation()
+                if not conversation:
+                    return self.owner.result_factory.session(ok=False, error="No messages to fork")
+                return self.fork_tree_entry(conversation[-1].id, fork_name)
+        except ActiveTurnTransitionError as exc:
+            return self.owner.result_factory.session(ok=False, error=str(exc))
 
     def new_session(self) -> SessionActionResult:
-        new_session = Session(
-            name="coding-session",
-            workspace=str(self.owner.workspace),
-            auto_save=True,
-            session_dir=self.owner.sessions_dir,
-        )
-        self.switch_to_session(new_session, reason="new")
-        return self.owner.result_factory.session(
-            ok=True,
-            session_id=new_session.id,
-            name=new_session.name,
-        )
+        try:
+            with self.owner.turn_lifecycle.transition("create a new session"):
+                new_session = Session(
+                    name="coding-session",
+                    workspace=str(self.owner.workspace),
+                    auto_save=True,
+                    session_dir=self.owner.sessions_dir,
+                )
+                self.switch_to_session(new_session, reason="new")
+                return self.owner.result_factory.session(
+                    ok=True,
+                    session_id=new_session.id,
+                    name=new_session.name,
+                )
+        except ActiveTurnTransitionError as exc:
+            return self.owner.result_factory.session(ok=False, error=str(exc))
 
     def resume_session(self, name_or_id: str | None) -> SessionActionResult:
-        if not name_or_id:
-            return self.owner.result_factory.session(ok=False, error="Missing session selector")
-        session_mgr = SessionManager(self.owner.workspace, session_dir=self.owner.sessions_dir)
-        path = session_mgr.find_session(name_or_id)
-        if not path or not path.exists():
-            return self.owner.result_factory.session(
-                ok=False, error=f"Session not found: {name_or_id}"
-            )
         try:
-            loaded = Session.load(path)
-        except Exception as e:
-            return self.owner.result_factory.session(ok=False, error=f"Failed to load session: {e}")
-        self.switch_to_session(loaded, reason="resume")
-        return self.owner.result_factory.session(
-            ok=True,
-            name=loaded.name,
-            session_id=loaded.id,
-            messages_restored=len(self.owner.agent.history),
-        )
+            with self.owner.turn_lifecycle.transition("resume a session"):
+                if not name_or_id:
+                    return self.owner.result_factory.session(
+                        ok=False, error="Missing session selector"
+                    )
+                session_mgr = SessionManager(
+                    self.owner.workspace, session_dir=self.owner.sessions_dir
+                )
+                path = session_mgr.find_session(name_or_id)
+                if not path or not path.exists():
+                    return self.owner.result_factory.session(
+                        ok=False, error=f"Session not found: {name_or_id}"
+                    )
+                try:
+                    loaded = Session.load(path)
+                except Exception as exc:
+                    return self.owner.result_factory.session(
+                        ok=False, error=f"Failed to load session: {exc}"
+                    )
+                self.switch_to_session(loaded, reason="resume")
+                return self.owner.result_factory.session(
+                    ok=True,
+                    name=loaded.name,
+                    session_id=loaded.id,
+                    messages_restored=len(self.owner.agent.history),
+                )
+        except ActiveTurnTransitionError as exc:
+            return self.owner.result_factory.session(ok=False, error=str(exc))
 
     def clone_session(self) -> SessionActionResult:
-        if not self.owner.session:
-            return self.owner.result_factory.session(ok=False, error="No session loaded")
-        conversation = self.owner.session.get_current_conversation()
-        if not conversation:
-            return self.owner.result_factory.session(ok=False, error="No messages to clone")
-        clone = self.owner.session.fork(conversation[-1].id, f"{self.owner.session.name}-clone")
-        save_path = clone.save()
-        self.switch_to_session(clone, reason="fork")
-        return self.owner.result_factory.session(
-            ok=True,
-            name=clone.name,
-            session_id=clone.id,
-            save_path=str(save_path),
-        )
+        try:
+            with self.owner.turn_lifecycle.transition("clone the current session"):
+                if not self.owner.session:
+                    return self.owner.result_factory.session(ok=False, error="No session loaded")
+                conversation = self.owner.session.get_current_conversation()
+                if not conversation:
+                    return self.owner.result_factory.session(ok=False, error="No messages to clone")
+                clone = self.owner.session.fork(
+                    conversation[-1].id, f"{self.owner.session.name}-clone"
+                )
+                save_path = clone.save()
+                self.switch_to_session(clone, reason="fork")
+                return self.owner.result_factory.session(
+                    ok=True,
+                    name=clone.name,
+                    session_id=clone.id,
+                    save_path=str(save_path),
+                )
+        except ActiveTurnTransitionError as exc:
+            return self.owner.result_factory.session(ok=False, error=str(exc))
 
     def name_session(self, name: str | None) -> SessionActionResult:
-        if not self.owner.session:
-            return self.owner.result_factory.session(ok=False, error="No session loaded")
-        if not name:
-            return self.owner.result_factory.session(
-                ok=False,
-                error="Missing name",
-                current_name=self.owner.session.name,
-            )
-        self.owner.session.name = name
-        self.owner.session.save()
-        return self.owner.result_factory.session(ok=True, name=name)
+        try:
+            with self.owner.turn_lifecycle.transition("name the current session"):
+                if not self.owner.session:
+                    return self.owner.result_factory.session(ok=False, error="No session loaded")
+                if not name:
+                    return self.owner.result_factory.session(
+                        ok=False,
+                        error="Missing name",
+                        current_name=self.owner.session.name,
+                    )
+                self.owner.session.name = name
+                self.owner.session.save()
+                return self.owner.result_factory.session(ok=True, name=name)
+        except ActiveTurnTransitionError as exc:
+            return self.owner.result_factory.session(ok=False, error=str(exc))
 
     def import_session(self, file_path: str | None) -> SessionActionResult:
-        if not file_path:
-            return self.owner.result_factory.session(
-                ok=False, error="Usage: /import <path-to-session.jsonl>"
-            )
-        path = Path(file_path).expanduser()
-        if not path.exists():
-            return self.owner.result_factory.session(ok=False, error=f"File not found: {path}")
         try:
-            loaded = Session.load(path)
-        except Exception as e:
-            return self.owner.result_factory.session(
-                ok=False, error=f"Failed to import session: {e}"
-            )
-        loaded.session_dir = self.owner.sessions_dir
-        loaded._save_path = None
-        save_path = loaded.save()
-        self.switch_to_session(loaded, reason="resume")
-        return self.owner.result_factory.session(
-            ok=True,
-            name=loaded.name,
-            session_id=loaded.id,
-            save_path=str(save_path),
-            messages_restored=len(self.owner.agent.history),
-        )
+            with self.owner.turn_lifecycle.transition("import a session"):
+                if not file_path:
+                    return self.owner.result_factory.session(
+                        ok=False, error="Usage: /import <path-to-session.jsonl>"
+                    )
+                path = Path(file_path).expanduser()
+                if not path.exists():
+                    return self.owner.result_factory.session(
+                        ok=False, error=f"File not found: {path}"
+                    )
+                try:
+                    loaded = Session.load(path)
+                except Exception as exc:
+                    return self.owner.result_factory.session(
+                        ok=False, error=f"Failed to import session: {exc}"
+                    )
+                loaded.session_dir = self.owner.sessions_dir
+                loaded._save_path = None
+                save_path = loaded.save()
+                self.switch_to_session(loaded, reason="resume")
+                return self.owner.result_factory.session(
+                    ok=True,
+                    name=loaded.name,
+                    session_id=loaded.id,
+                    save_path=str(save_path),
+                    messages_restored=len(self.owner.agent.history),
+                )
+        except ActiveTurnTransitionError as exc:
+            return self.owner.result_factory.session(ok=False, error=str(exc))
 
     def set_setting(self, key: str, raw_value: str) -> SettingActionResult:
         """Validate and persist one runtime-backed project setting."""
@@ -630,33 +685,47 @@ class AppActions:
         reason: str = "manual",
         before_tokens: int | None = None,
     ) -> CompactActionResult:
-        if not self.owner.session:
-            return self.owner.result_factory.compact(ok=False, error="No session loaded")
+        try:
+            with self.owner.turn_lifecycle.transition("compact the current session"):
+                if not self.owner.session:
+                    return self.owner.result_factory.compact(ok=False, error="No session loaded")
 
-        before = len(self.owner.session.tree.entries)
-        previous_checkpoint = getattr(self.owner.session, "last_compaction_checkpoint", None)
-        previous_checkpoint_id = previous_checkpoint.id if previous_checkpoint else None
-        compact_params = inspect.signature(self.owner.session.compact).parameters
-        if "reason" in compact_params:
-            compacted = self.owner.session.compact(
-                instructions,
-                reason=reason,
-                usage={"before_tokens": before_tokens, "after_tokens": None},
-            )
-        else:
-            compacted = self.owner.session.compact(instructions)
-        checkpoint = getattr(self.owner.session, "last_compaction_checkpoint", None)
-        checkpoint_id = (
-            checkpoint.id if checkpoint and checkpoint.id != previous_checkpoint_id else None
-        )
-        return self.owner.result_factory.compact(
-            ok=True,
-            before=before,
-            after=len(compacted),
-            instructions=instructions,
-            reason=reason,
-            checkpoint_id=checkpoint_id,
-        )
+                before = len(self.owner.session.tree.entries)
+                previous_checkpoint = getattr(
+                    self.owner.session, "last_compaction_checkpoint", None
+                )
+                previous_checkpoint_id = previous_checkpoint.id if previous_checkpoint else None
+                try:
+                    compacted = self.owner.agent.compact_session(
+                        instructions,
+                        reason=reason,
+                        before_tokens=before_tokens,
+                    )
+                except Exception as exc:
+                    return self.owner.result_factory.compact(
+                        ok=False,
+                        error=f"Compaction failed: {exc}",
+                        before=before,
+                        after=before,
+                        instructions=instructions,
+                        reason=reason,
+                    )
+                checkpoint = getattr(self.owner.session, "last_compaction_checkpoint", None)
+                checkpoint_id = (
+                    checkpoint.id
+                    if checkpoint and checkpoint.id != previous_checkpoint_id
+                    else None
+                )
+                return self.owner.result_factory.compact(
+                    ok=True,
+                    before=before,
+                    after=len(compacted),
+                    instructions=instructions,
+                    reason=reason,
+                    checkpoint_id=checkpoint_id,
+                )
+        except ActiveTurnTransitionError as exc:
+            return self.owner.result_factory.compact(ok=False, error=str(exc))
 
     def export_session(self, filename: str | None) -> ExportActionResult:
         if not self.owner.session:

@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import importlib
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Iterator
 from types import SimpleNamespace
 from typing import Any, cast
 
@@ -38,6 +38,7 @@ class _FakeStream:
         async def gen() -> AsyncIterator[SimpleNamespace]:
             yield SimpleNamespace(
                 id="c1",
+                citations=["https://example.com/source"],
                 choices=[
                     SimpleNamespace(
                         delta=SimpleNamespace(content="ok", tool_calls=None),
@@ -71,6 +72,44 @@ class _CapturingCreate:
         return _FakeStream()
 
 
+class _FakeSyncStream:
+    """Sync equivalent of the provider stream envelope."""
+
+    def __iter__(self) -> Iterator[SimpleNamespace]:
+        yield SimpleNamespace(
+            id="c1",
+            citations=["https://example.com/source"],
+            choices=[
+                SimpleNamespace(
+                    delta=SimpleNamespace(content="ok", tool_calls=None),
+                    finish_reason="stop",
+                )
+            ],
+            usage=None,
+        )
+        yield SimpleNamespace(
+            id="c1",
+            choices=[],
+            usage=SimpleNamespace(
+                prompt_tokens=10,
+                completion_tokens=2,
+                total_tokens=12,
+                prompt_tokens_details=SimpleNamespace(cached_tokens=4),
+            ),
+        )
+
+
+class _CapturingSyncCreate:
+    """Fake sync chat.completions.create that records kwargs."""
+
+    def __init__(self) -> None:
+        self.kwargs: dict[str, Any] = {}
+
+    def __call__(self, **kwargs: Any) -> _FakeSyncStream:
+        self.kwargs = kwargs
+        return _FakeSyncStream()
+
+
 def _make_provider(
     spec: tuple[str, str, str], **config_overrides: Any
 ) -> tuple[Any, _CapturingCreate]:
@@ -97,6 +136,22 @@ def _drive(provider: Any, model: str, **kwargs: Any) -> list[StreamChunk]:
         return chunks
 
     return asyncio.run(run())
+
+
+def _drive_sync(
+    spec: tuple[str, str, str], model: str, **kwargs: Any
+) -> tuple[list[StreamChunk], _CapturingSyncCreate]:
+    cls = _load_provider(*spec)
+    provider = object.__new__(cls)
+    provider.config = Config(provider="x", api_key="test")
+    capture = _CapturingSyncCreate()
+    provider.client = SimpleNamespace(
+        chat=SimpleNamespace(completions=SimpleNamespace(create=capture))
+    )
+    provider.async_client = provider.client
+    return list(
+        provider.stream([Message(role="user", content="hi")], model=model, **kwargs)
+    ), capture
 
 
 # (provider module, class name, required SDK module, model). The class is
@@ -133,6 +188,31 @@ def test_astream_requests_usage_and_streams(spec: tuple[str, str, str], model: s
     assert text == "ok"
     usages = [c.usage for c in chunks if c.usage]
     assert usages and usages[-1]["cached_tokens"] == 4
+    assert chunks[-1].finish_reason == "stop"
+    if spec[0] == "perplexity":
+        assert chunks[0].metadata is not None
+        assert chunks[0].metadata["citations"] == ["https://example.com/source"]
+
+
+@pytest.mark.parametrize("spec,model", PROVIDERS, ids=[s[1] for s, _ in PROVIDERS])
+def test_stream_preserves_terminal_reason_usage_and_citations(
+    spec: tuple[str, str, str], model: str
+) -> None:
+    """Every compatible sync provider surfaces the complete terminal envelope."""
+    chunks, capture = _drive_sync(spec, model, max_tokens=128)
+
+    assert capture.kwargs.get("stream_options") == {"include_usage": True}
+    assert "".join(chunk.content for chunk in chunks) == "ok"
+    assert chunks[-1].finish_reason == "stop"
+    assert chunks[-1].usage == {
+        "input_tokens": 10,
+        "output_tokens": 2,
+        "cached_tokens": 4,
+        "total_tokens": 12,
+    }
+    if spec[0] == "perplexity":
+        assert chunks[0].metadata is not None
+        assert chunks[0].metadata["citations"] == ["https://example.com/source"]
 
 
 @pytest.mark.parametrize("spec,model", PROVIDERS, ids=[s[1] for s, _ in PROVIDERS])

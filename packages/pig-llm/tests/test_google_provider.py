@@ -133,6 +133,52 @@ def test_google_provider_normalizes_explicit_developer_role_to_system_instructio
     assert call_kwargs["contents"][0].role == "user"
 
 
+def test_google_stream_preserves_terminal_reason_and_usage() -> None:
+    provider = _provider_with_client(Mock(), AsyncMock())
+    provider.client.models.generate_content_stream = Mock(
+        return_value=[
+            SimpleNamespace(
+                candidates=[
+                    SimpleNamespace(
+                        content=SimpleNamespace(
+                            parts=[SimpleNamespace(text="ok", function_call=None)]
+                        ),
+                        finish_reason=None,
+                    )
+                ],
+                usage_metadata=None,
+            ),
+            SimpleNamespace(
+                candidates=[
+                    SimpleNamespace(
+                        content=SimpleNamespace(parts=[]),
+                        finish_reason="STOP",
+                    )
+                ],
+                usage_metadata=SimpleNamespace(
+                    prompt_token_count=12,
+                    candidates_token_count=3,
+                    total_token_count=15,
+                    cached_content_token_count=2,
+                ),
+            ),
+        ]
+    )
+
+    chunks = list(
+        provider.stream([Message(role="user", content="hello")], model="gemini-2.5-flash")
+    )
+
+    assert "".join(chunk.content for chunk in chunks) == "ok"
+    assert chunks[-1].finish_reason == "STOP"
+    assert chunks[-1].usage == {
+        "input_tokens": 12,
+        "output_tokens": 3,
+        "cached_tokens": 2,
+        "total_tokens": 15,
+    }
+
+
 @pytest.mark.asyncio
 async def test_google_astream_emits_tool_calls_and_usage() -> None:
     """Native Google streaming surfaces function_call tool calls + usage (Phase B)."""
@@ -146,7 +192,8 @@ async def test_google_astream_emits_tool_calls_and_usage() -> None:
                         SimpleNamespace(
                             content=SimpleNamespace(
                                 parts=[SimpleNamespace(text="checking ", function_call=None)]
-                            )
+                            ),
+                            finish_reason=None,
                         )
                     ],
                     usage_metadata=None,
@@ -164,7 +211,8 @@ async def test_google_astream_emits_tool_calls_and_usage() -> None:
                                         ),
                                     )
                                 ]
-                            )
+                            ),
+                            finish_reason="STOP",
                         )
                     ],
                     usage_metadata=SimpleNamespace(
@@ -202,6 +250,7 @@ async def test_google_astream_emits_tool_calls_and_usage() -> None:
         "cached_tokens": 40,
         "total_tokens": 138,
     }
+    assert chunks[-1].finish_reason == "STOP"
 
 
 def test_google_tool_result_carries_function_name() -> None:

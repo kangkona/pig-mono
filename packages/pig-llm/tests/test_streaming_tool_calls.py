@@ -5,6 +5,7 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
+from pig_llm import TurnOutcome
 from pig_llm.compat import _OpenAIToolCallAccumulator, astream_openai_tool_aware
 
 
@@ -141,6 +142,8 @@ async def test_astream_captures_trailing_usage_chunk() -> None:
     assert usages == [
         {"input_tokens": 120, "output_tokens": 45, "cached_tokens": 0, "total_tokens": 165}
     ]
+    assert chunks[-1].finish_reason == "stop"
+    assert chunks[-1].outcome is TurnOutcome.COMPLETED
 
 
 @pytest.mark.asyncio

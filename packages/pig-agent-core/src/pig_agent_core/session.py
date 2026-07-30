@@ -1,7 +1,10 @@
 """Session management with tree structure and JSONL storage."""
 
+import copy
 import json
+import os
 import re
+import tempfile
 import uuid
 from collections.abc import Iterable
 from datetime import datetime
@@ -512,26 +515,45 @@ class Session:
             after_tokens=after_tokens,
         )
         compacted_root.metadata["compaction_checkpoint"] = checkpoint.to_dict()
-        # Preserve the original tree as historical branches. The compacted
-        # current path is detached, so no sibling can inherit this branch's
-        # summary or tool payloads.
-        self.tree.entries.update({entry.id: entry for entry in compacted_path})
-        self.tree.root_id = compacted_root.id
-        self.tree.current_id = after_current_id
+        entries_before = dict(self.tree.entries)
+        root_before = self.tree.root_id
+        current_before = self.tree.current_id
+        usage_before = self.usage_ledger.snapshot()
+        metadata_before = copy.deepcopy(self.metadata)
+        updated_at_before = self.updated_at
+        save_path_before = self._save_path
+        try:
+            # Preserve the original tree as historical branches. The compacted
+            # current path is detached, so no sibling can inherit this branch's
+            # summary or tool payloads.
+            self.tree.entries.update({entry.id: entry for entry in compacted_path})
+            self.tree.root_id = compacted_root.id
+            self.tree.current_id = after_current_id
 
-        self.usage_ledger.record_compaction(
-            reason=reason,
-            before_tokens=checkpoint.before_tokens,
-            after_tokens=checkpoint.after_tokens,
-            metadata={"checkpoint_id": checkpoint.id},
-        )
-        self.metadata["usage"] = self.usage_ledger.snapshot()
-        self.metadata["last_compaction_checkpoint"] = checkpoint.to_dict()
+            self.usage_ledger.record_compaction(
+                reason=reason,
+                before_tokens=checkpoint.before_tokens,
+                after_tokens=checkpoint.after_tokens,
+                metadata={"checkpoint_id": checkpoint.id},
+            )
+            self.metadata["usage"] = self.usage_ledger.snapshot()
+            self.metadata["last_compaction_checkpoint"] = checkpoint.to_dict()
 
-        self.updated_at = datetime.utcnow()
+            self.updated_at = datetime.utcnow()
 
-        if self.auto_save:
-            self.save()
+            if self.auto_save:
+                self.save()
+        except Exception:
+            self.tree.entries.clear()
+            self.tree.entries.update(entries_before)
+            self.tree.root_id = root_before
+            self.tree.current_id = current_before
+            self.usage_ledger.restore(usage_before)
+            self.metadata.clear()
+            self.metadata.update(metadata_before)
+            self.updated_at = updated_at_before
+            self._save_path = save_path_before
+            raise
 
         # Return compacted path
         return self.get_current_conversation()
@@ -599,11 +621,33 @@ class Session:
             "metadata": metadata,
         }
 
-        # Write header + tree tail without duplicating the tree in metadata.
-        with open(path, "w") as f:
-            f.write(json.dumps(data) + "\n")
-            for entry in self.tree.entries.values():
-                f.write(entry.model_dump_json() + "\n")
+        # Write to a sibling temporary file, flush it, then atomically replace
+        # the destination. A failed serialization or disk write therefore
+        # cannot truncate the last durable session snapshot.
+        previous_mode = path.stat().st_mode & 0o7777 if path.exists() else None
+        temp_path: Path | None = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode="w",
+                encoding="utf-8",
+                dir=path.parent,
+                prefix=f".{path.name}.",
+                suffix=".tmp",
+                delete=False,
+            ) as temp_file:
+                temp_path = Path(temp_file.name)
+                if previous_mode is not None:
+                    os.chmod(temp_path, previous_mode)
+                temp_file.write(json.dumps(data) + "\n")
+                for entry in self.tree.entries.values():
+                    temp_file.write(entry.model_dump_json() + "\n")
+                temp_file.flush()
+                os.fsync(temp_file.fileno())
+            os.replace(temp_path, path)
+        except Exception:
+            if temp_path is not None:
+                temp_path.unlink(missing_ok=True)
+            raise
 
         self._save_path = path.resolve()
         return path

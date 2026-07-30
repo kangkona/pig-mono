@@ -135,7 +135,8 @@ def test_stream_stops_consuming_after_terminal_finish_reason() -> None:
 
     chunks = list(provider.stream(_messages(), model="gpt-5.2"))
 
-    assert [chunk.content for chunk in chunks] == ["ok"]
+    assert [chunk.content for chunk in chunks if chunk.content] == ["ok"]
+    assert chunks[-1].finish_reason == "stop"
 
 
 def test_stream_skips_usage_only_chunks_without_choices() -> None:
@@ -152,7 +153,8 @@ def test_stream_skips_usage_only_chunks_without_choices() -> None:
 
     chunks = list(provider.stream(_messages(), model="gpt-5.2"))
 
-    assert [chunk.content for chunk in chunks] == ["ok"]
+    assert [chunk.content for chunk in chunks if chunk.content] == ["ok"]
+    assert chunks[-1].finish_reason == "stop"
 
 
 def test_complete_merges_session_id_and_custom_headers() -> None:
@@ -1185,7 +1187,8 @@ async def test_astream_stops_consuming_after_terminal_finish_reason() -> None:
 
     chunks = [chunk async for chunk in provider.astream(_messages(), model="gpt-5.2")]
 
-    assert [chunk.content for chunk in chunks] == ["ok"]
+    assert [chunk.content for chunk in chunks if chunk.content] == ["ok"]
+    assert chunks[-1].finish_reason == "stop"
 
 
 @pytest.mark.asyncio
@@ -1203,7 +1206,8 @@ async def test_astream_skips_usage_only_chunks_without_choices() -> None:
 
     chunks = [chunk async for chunk in provider.astream(_messages(), model="gpt-5.2")]
 
-    assert [chunk.content for chunk in chunks] == ["ok"]
+    assert [chunk.content for chunk in chunks if chunk.content] == ["ok"]
+    assert chunks[-1].finish_reason == "stop"
 
 
 @pytest.mark.asyncio

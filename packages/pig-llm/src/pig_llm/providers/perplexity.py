@@ -7,14 +7,13 @@ import openai
 
 from ..compat import (
     OPENAI_COMPAT,
-    _OpenAIToolCallAccumulator,
-    _stream_usage_to_dict,
     apply_prompt_cache,
     apply_request_headers,
     apply_thinking_level,
+    astream_openai_tool_aware,
     build_token_limit_param,
-    iter_openai_stream_choices,
     normalize_messages,
+    stream_openai_tool_aware,
 )
 from ..config import Config
 from ..models import Message, Response, StreamChunk
@@ -167,18 +166,7 @@ class PerplexityProvider(Provider):
             **kwargs,
         )
 
-        for chunk, choice in iter_openai_stream_choices(stream):
-            if choice.delta.content:
-                metadata = {"id": chunk.id}
-                # Include citations if available
-                if hasattr(chunk, "citations"):
-                    metadata["citations"] = chunk.citations
-
-                yield StreamChunk(
-                    content=choice.delta.content,
-                    finish_reason=choice.finish_reason,
-                    metadata=metadata,
-                )
+        yield from stream_openai_tool_aware(stream)
 
     async def acomplete(
         self,
@@ -261,28 +249,5 @@ class PerplexityProvider(Provider):
             **kwargs,
         )
 
-        accumulator = _OpenAIToolCallAccumulator()
-        usage = None
-        async for chunk in stream:
-            chunk_usage = _stream_usage_to_dict(getattr(chunk, "usage", None))
-            if chunk_usage:
-                usage = chunk_usage
-            choices = getattr(chunk, "choices", None) or []
-            if not choices:
-                continue
-            choice = choices[0]
-            if choice.delta.content:
-                metadata = {"id": chunk.id}
-                # Include citations if available
-                if hasattr(chunk, "citations"):
-                    metadata["citations"] = chunk.citations
-
-                yield StreamChunk(
-                    content=choice.delta.content,
-                    finish_reason=choice.finish_reason,
-                    metadata=metadata,
-                )
-            accumulator.add(choice)
-        tool_calls = accumulator.finish()
-        if tool_calls or usage:
-            yield StreamChunk(content="", tool_calls=tool_calls, usage=usage)
+        async for chunk in astream_openai_tool_aware(stream):
+            yield chunk

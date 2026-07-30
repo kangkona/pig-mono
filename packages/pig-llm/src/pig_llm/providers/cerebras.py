@@ -13,8 +13,8 @@ from ..compat import (
     astream_openai_tool_aware,
     build_token_limit_param,
     extract_openai_usage,
-    iter_openai_stream_choices,
     normalize_messages,
+    stream_openai_tool_aware,
 )
 from ..config import Config
 from ..models import Message, Response, StreamChunk
@@ -158,13 +158,7 @@ class CerebrasProvider(Provider):
             **kwargs,
         )
 
-        for chunk, choice in iter_openai_stream_choices(stream):
-            if choice.delta.content:
-                yield StreamChunk(
-                    content=choice.delta.content,
-                    finish_reason=choice.finish_reason,
-                    metadata={"id": chunk.id},
-                )
+        yield from stream_openai_tool_aware(stream)
 
     async def acomplete(
         self,

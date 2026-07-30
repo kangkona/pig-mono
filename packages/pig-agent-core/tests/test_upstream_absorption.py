@@ -11,7 +11,7 @@ import pytest
 from pig_agent_core.agent import Agent as CoreAgent
 from pig_agent_core.session import Session, SessionTree, serialize_compaction_tool_result
 from pig_agent_core.tools import ToolResult
-from pig_llm import LLM, StreamChunk
+from pig_llm import LLM, Response, StreamChunk, TurnOutcome
 
 
 class Agent(CoreAgent):
@@ -219,6 +219,63 @@ def test_session_compact_save_preserves_history_and_authoritative_current_root(
     ]
 
 
+def test_tool_round_persists_provider_envelope_through_compaction_and_reload(
+    tmp_path: Any,
+) -> None:
+    session = Session(name="tool-round", workspace=str(tmp_path), auto_save=False)
+    for index in range(8):
+        session.add_message("user" if index % 2 == 0 else "assistant", f"prior {index}")
+    session.add_message("user", "discover a tool")
+
+    class FakeLLM:
+        config = SimpleNamespace(model="fake", max_retries=0)
+
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def chat(self, messages: Any, tools: Any = None) -> Response:
+            del messages, tools
+            self.calls += 1
+            if self.calls == 1:
+                return Response(
+                    content="",
+                    model="fake",
+                    finish_reason="tool_calls",
+                    tool_calls=[
+                        {
+                            "id": "call-discover",
+                            "type": "function",
+                            "function": {"name": "discover", "arguments": "{}"},
+                        }
+                    ],
+                )
+            return Response(content="done", model="fake", finish_reason="stop")
+
+    def discover() -> ToolResult:
+        return ToolResult(ok=True, data="loaded", added_tool_names=["late_tool"])
+
+    agent = Agent(llm=FakeLLM(), session=session, verbose=False)
+    agent.usage = session.usage_ledger
+    agent.registry.register(
+        "discover",
+        discover,
+        {"type": "function", "function": {"name": "discover"}},
+    )
+
+    assert agent.run("discover a tool").content == "done"
+    compacted = session.compact()
+    save_path = session.save()
+    loaded = Session.load(save_path)
+
+    tool_entry = next(entry for entry in compacted if entry.role == "tool")
+    assistant_entry = loaded.tree.entries[tool_entry.parent_id or ""]
+    assert assistant_entry.role == "assistant"
+    assert assistant_entry.metadata["tool_calls"][0]["id"] == "call-discover"
+    loaded_tool = loaded.tree.entries[tool_entry.id]
+    assert loaded_tool.metadata["tool_call_id"] == "call-discover"
+    assert "late_tool" in loaded.available_tool_names_at()
+
+
 def test_agent_before_tool_call_abort_skips_sibling_tools() -> None:
     executed: list[str] = []
 
@@ -277,6 +334,123 @@ def test_agent_before_tool_call_abort_skips_sibling_tools() -> None:
     assert "blocked" in tool_messages[0].content
 
 
+def test_agent_never_executes_truncated_sync_tool_call() -> None:
+    executed: list[str] = []
+    tool_calls = [
+        {
+            "id": "call-1",
+            "type": "function",
+            "function": {"name": "side_effect", "arguments": "{}"},
+        }
+    ]
+
+    class FakeLLM:
+        config = SimpleNamespace(model="fake", max_retries=0)
+
+        def chat(self, messages: Any, tools: Any = None) -> Response:
+            del messages, tools
+            return Response(
+                content="partial",
+                model="fake",
+                finish_reason="length",
+                tool_calls=tool_calls,
+            )
+
+    def side_effect() -> str:
+        executed.append("ran")
+        return "unsafe"
+
+    agent = Agent(llm=FakeLLM(), verbose=False)
+    agent.registry.register(
+        "side_effect",
+        side_effect,
+        {"type": "function", "function": {"name": "side_effect"}},
+    )
+
+    response = agent.run("go")
+
+    assert response.content == "partial"
+    assert executed == []
+    assert agent.last_turn_outcome is TurnOutcome.LENGTH
+    assert all(message.role != "tool" for message in agent.history)
+
+
+@pytest.mark.asyncio
+async def test_agent_never_executes_truncated_streamed_tool_call() -> None:
+    executed: list[str] = []
+    tool_calls = [
+        {
+            "id": "call-1",
+            "type": "function",
+            "function": {"name": "side_effect", "arguments": "{}"},
+        }
+    ]
+
+    class FakeLLM:
+        config = SimpleNamespace(model="fake", max_retries=0)
+
+        async def achat_stream(self, messages: Any, tools: Any = None) -> Any:
+            del messages, tools
+            yield StreamChunk(content="partial", finish_reason="length")
+            yield StreamChunk(content="", tool_calls=tool_calls)
+
+    def side_effect() -> str:
+        executed.append("ran")
+        return "unsafe"
+
+    agent = Agent(llm=FakeLLM(), verbose=False)
+    agent.registry.register(
+        "side_effect",
+        side_effect,
+        {"type": "function", "function": {"name": "side_effect"}},
+    )
+
+    chunks = [chunk async for chunk in agent.respond_stream("go")]
+
+    assert chunks == ["partial"]
+    assert executed == []
+    assert agent.last_turn_outcome is TurnOutcome.LENGTH
+    assert all(message.role != "tool" for message in agent.history)
+
+
+@pytest.mark.asyncio
+async def test_agent_arun_never_executes_tool_call_after_adverse_terminal_chunk() -> None:
+    executed: list[str] = []
+    tool_calls = [
+        {
+            "id": "call-1",
+            "type": "function",
+            "function": {"name": "side_effect", "arguments": "{}"},
+        }
+    ]
+
+    class FakeLLM:
+        config = SimpleNamespace(model="fake", max_retries=0)
+
+        async def achat_stream(self, messages: Any, tools: Any = None) -> Any:
+            del messages, tools
+            yield StreamChunk(content="partial", finish_reason="content_filter")
+            yield StreamChunk(content="", tool_calls=tool_calls)
+
+    def side_effect() -> str:
+        executed.append("ran")
+        return "unsafe"
+
+    agent = Agent(llm=FakeLLM(), verbose=False)
+    agent.registry.register(
+        "side_effect",
+        side_effect,
+        {"type": "function", "function": {"name": "side_effect"}},
+    )
+
+    response = await agent.arun("go")
+
+    assert response.content == "partial"
+    assert executed == []
+    assert agent.last_turn_outcome is TurnOutcome.CONTENT_FILTER
+    assert all(message.role != "tool" for message in agent.history)
+
+
 def test_agent_after_tool_call_exception_becomes_error_tool_result() -> None:
     class FakeLLM:
         config = SimpleNamespace(model="fake")
@@ -324,6 +498,7 @@ async def test_arun_before_tool_call_abort_skips_sibling_tools() -> None:
             self.content = content
             self.tool_calls = tool_calls
             self.usage: dict[str, Any] = {}
+            self.finish_reason = "tool_calls" if tool_calls else ("stop" if content else None)
 
     class FakeLLM:
         config = SimpleNamespace(model="fake")
@@ -387,6 +562,7 @@ async def test_arun_after_tool_call_exception_becomes_error_tool_result() -> Non
             self.content = content
             self.tool_calls = tool_calls
             self.usage: dict[str, Any] = {}
+            self.finish_reason = "tool_calls" if tool_calls else ("stop" if content else None)
 
     class FakeLLM:
         config = SimpleNamespace(model="fake")
@@ -437,6 +613,7 @@ async def test_arun_awaits_async_tool_handlers_from_registry() -> None:
             self.content = content
             self.tool_calls = tool_calls
             self.usage: dict[str, Any] = {}
+            self.finish_reason = "tool_calls" if tool_calls else ("stop" if content else None)
 
     class FakeLLM:
         config = SimpleNamespace(model="fake")
@@ -486,6 +663,7 @@ async def test_arun_executes_parallel_safe_async_tools_concurrently() -> None:
             self.content = content
             self.tool_calls = tool_calls
             self.usage: dict[str, Any] = {}
+            self.finish_reason = "tool_calls" if tool_calls else ("stop" if content else None)
 
     class FakeLLM:
         config = SimpleNamespace(model="fake")
@@ -600,7 +778,7 @@ def test_terminate_tool_result_still_emits_agent_end_and_drains_followup() -> No
                         }
                     ],
                 )
-            return SimpleNamespace(content=f"reply:{latest}", tool_calls=None)
+            return SimpleNamespace(content=f"reply:{latest}", tool_calls=None, finish_reason="stop")
 
     agent_ref: dict[str, Agent] = {}
     queued = {"done": False}
@@ -642,7 +820,7 @@ def test_agent_followup_queue_processes_all_messages_in_fifo_order() -> None:
         def chat(self, messages: Any, tools: Any = None) -> Any:
             latest = messages[-1].content
             self.messages.append(latest)
-            return SimpleNamespace(content=f"reply:{latest}", tool_calls=None)
+            return SimpleNamespace(content=f"reply:{latest}", tool_calls=None, finish_reason="stop")
 
     agent = Agent(llm=FakeLLM(), tools=[], verbose=False)
     agent.message_queue.add_followup("follow-1")
@@ -664,7 +842,7 @@ def test_agent_followup_all_mode_processes_entire_batch() -> None:
         def chat(self, messages: Any, tools: Any = None) -> Any:
             latest = messages[-1].content
             self.messages.append(latest)
-            return SimpleNamespace(content=f"reply:{latest}", tool_calls=None)
+            return SimpleNamespace(content=f"reply:{latest}", tool_calls=None, finish_reason="stop")
 
     agent = Agent(llm=FakeLLM(), tools=[], verbose=False)
     agent.message_queue.followup_mode = "all"
@@ -687,7 +865,7 @@ def test_agent_end_callback_can_queue_followup_before_run_returns() -> None:
         def chat(self, messages: Any, tools: Any = None) -> Any:
             latest = messages[-1].content
             self.messages.append(latest)
-            return SimpleNamespace(content=f"reply:{latest}", tool_calls=None)
+            return SimpleNamespace(content=f"reply:{latest}", tool_calls=None, finish_reason="stop")
 
     agent_ref: dict[str, Agent] = {}
 
@@ -742,7 +920,7 @@ async def test_respond_stream_emits_agent_end_success_event() -> None:
         def achat_stream(self, messages: Any, tools: Any = None) -> Any:
             async def stream() -> Any:
                 yield StreamChunk(content="hello")
-                yield StreamChunk(content=" world")
+                yield StreamChunk(content=" world", finish_reason="stop")
 
             return stream()
 
@@ -776,7 +954,7 @@ async def test_respond_stream_success_drains_followup_queued_from_agent_end() ->
             self.messages.append(latest)
 
             async def stream() -> Any:
-                yield StreamChunk(content=f"reply:{latest}")
+                yield StreamChunk(content=f"reply:{latest}", finish_reason="stop")
 
             return stream()
 
@@ -1308,7 +1486,12 @@ async def test_respond_stream_executes_parallel_safe_async_tools_concurrently() 
 
 def _StreamChunk(*, content: str = "", tool_calls: Any = None) -> StreamChunk:
     """Build a StreamChunk fake (text and/or assembled tool calls)."""
-    return StreamChunk(content=content, tool_calls=tool_calls)
+    finish_reason = "tool_calls" if tool_calls else ("stop" if content else None)
+    return StreamChunk(
+        content=content,
+        tool_calls=tool_calls,
+        finish_reason=finish_reason,
+    )
 
 
 def _ToolDelta(index: int, *, call_id: Any = None, name: Any = None, arguments: Any = "{}") -> dict:
@@ -1563,6 +1746,7 @@ async def test_arun_cancel_mid_stream_aborts_and_preserves_partial() -> None:
             self.content = content
             self.tool_calls = tool_calls
             self.usage: dict[str, Any] = {}
+            self.finish_reason = None
 
     class FakeLLM:
         config = SimpleNamespace(model="fake")

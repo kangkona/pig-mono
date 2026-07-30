@@ -414,7 +414,14 @@ def test_anthropic_normalizes_explicit_developer_role_to_system_prompt() -> None
 
 def test_anthropic_opus_47_stream_omits_temperature_param() -> None:
     stream_ctx = Mock()
-    stream_ctx.__enter__ = Mock(return_value=SimpleNamespace(text_stream=[]))
+    stream_ctx.__enter__ = Mock(
+        return_value=SimpleNamespace(
+            text_stream=[],
+            get_final_message=Mock(
+                return_value=SimpleNamespace(content=[], stop_reason="end_turn", usage=None)
+            ),
+        )
+    )
     stream_ctx.__exit__ = Mock(return_value=False)
     client = SimpleNamespace(messages=SimpleNamespace(stream=Mock(return_value=stream_ctx)))
     async_client = SimpleNamespace(messages=SimpleNamespace(create=AsyncMock()))

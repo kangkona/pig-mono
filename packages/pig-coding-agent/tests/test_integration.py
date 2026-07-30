@@ -7,6 +7,7 @@ from unittest.mock import Mock, patch
 import pytest
 from pig_agent_core import ExtensionManager
 from pig_coding_agent.agent import CodingAgent
+from pig_llm import Response
 from pig_tui import (
     EditorSession,
     SelectionEditorSession,
@@ -24,6 +25,12 @@ def mock_llm() -> Any:
     """Create a mock LLM."""
     llm = Mock()
     llm.config = Mock(model="test-model", provider="openai")
+    llm.chat.return_value = Response(
+        content="Durable semantic summary",
+        model="test-model",
+        usage={"input_tokens": 10, "output_tokens": 3},
+        finish_reason="stop",
+    )
     return llm
 
 
@@ -1141,6 +1148,31 @@ def test_run_turn_running_messages_are_visible_and_routed_by_prefix(
     followup = [m.content for m in agent.agent.message_queue.queue if m.type.value == "followup"]
     assert steering == ["steer now", "plain running message"]
     assert followup == ["follow later"]
+
+
+def test_run_turn_reports_non_completed_terminal_outcome(
+    mock_llm: Any, temp_workspace: Any
+) -> None:
+    import asyncio
+
+    from pig_llm import TurnOutcome
+    from pig_tui import TurnResult
+
+    agent = _agent(mock_llm, temp_workspace)
+    runtime = Mock()
+
+    async def stream_turn(*, stream: Any, on_steering: Any, cancel_event: Any = None) -> Any:
+        del stream, on_steering, cancel_event
+        agent.agent.last_turn_outcome = TurnOutcome.LENGTH
+        return TurnResult(content="partial", aborted=False)
+
+    runtime.stream_turn = Mock(side_effect=stream_turn)
+    agent.interaction_runtime._build_terminal_runtime = Mock(return_value=runtime)
+    agent.ui = Mock()
+
+    asyncio.run(agent._run_turn("continue"))
+
+    agent.ui.system.assert_any_call("[turn ended: length]")
 
 
 def _agent(mock_llm: Any, ws: Any, **kw: Any) -> Any:

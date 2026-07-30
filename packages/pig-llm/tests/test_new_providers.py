@@ -1752,6 +1752,78 @@ async def test_mistral_astream_emits_usage() -> None:
     assert usages[-1] == {"input_tokens": 50, "output_tokens": 8, "total_tokens": 58}
 
 
+def test_mistral_stream_preserves_terminal_reason_and_usage() -> None:
+    pytest.importorskip("mistralai.models.chat_completion")
+    from pig_llm.providers.mistral import MistralProvider
+
+    stream = iter(
+        [
+            SimpleNamespace(
+                choices=[SimpleNamespace(delta=SimpleNamespace(content="ok"), finish_reason=None)],
+                usage=None,
+            ),
+            SimpleNamespace(
+                choices=[
+                    SimpleNamespace(
+                        delta=SimpleNamespace(content=None),
+                        finish_reason="stop",
+                    )
+                ],
+                usage=SimpleNamespace(prompt_tokens=9, completion_tokens=2, total_tokens=11),
+            ),
+        ]
+    )
+    provider = MistralProvider.__new__(MistralProvider)
+    provider.config = Config(provider="mistral", api_key="t")
+    provider.client = SimpleNamespace(chat_stream=Mock(return_value=stream))
+    provider._uses_modern_client = False
+
+    chunks = list(provider.stream([Message(role="user", content="hi")], model="mistral-small"))
+
+    assert "".join(chunk.content for chunk in chunks) == "ok"
+    assert chunks[-1].finish_reason == "stop"
+    assert chunks[-1].usage == {"input_tokens": 9, "output_tokens": 2, "total_tokens": 11}
+
+
+def test_anthropic_stream_preserves_terminal_reason_and_usage() -> None:
+    pytest.importorskip("anthropic")
+    from pig_llm.providers.anthropic import AnthropicProvider
+
+    final = SimpleNamespace(
+        content=[],
+        stop_reason="end_turn",
+        usage=SimpleNamespace(input_tokens=14, output_tokens=4),
+    )
+
+    class MessageStream:
+        text_stream = iter(["ok"])
+
+        def __enter__(self) -> "MessageStream":
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            del args
+
+        def get_final_message(self) -> SimpleNamespace:
+            return final
+
+    provider = AnthropicProvider.__new__(AnthropicProvider)
+    provider.config = Config(provider="anthropic", api_key="t")
+    provider.client = SimpleNamespace(
+        messages=SimpleNamespace(stream=Mock(return_value=MessageStream()))
+    )
+
+    chunks = list(provider.stream([Message(role="user", content="hi")], model="claude-sonnet-4"))
+
+    assert "".join(chunk.content for chunk in chunks) == "ok"
+    assert chunks[-1].finish_reason == "end_turn"
+    assert chunks[-1].usage == {
+        "input_tokens": 14,
+        "output_tokens": 4,
+        "total_tokens": 18,
+    }
+
+
 def test_mistral_provider_imports_and_constructs_with_current_sdk() -> None:
     """The adapter follows the current SDK export instead of removed client modules."""
     from pig_llm.providers.mistral import MistralProvider

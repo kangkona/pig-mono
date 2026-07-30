@@ -10,7 +10,7 @@ from pig_agent_core.tools import Tool
 from pig_coding_agent import permissions
 from pig_coding_agent.agent import CodingAgent, SessionExitRequested
 from pig_coding_agent.permissions import PermissionPolicy
-from pig_llm import Response
+from pig_llm import Response, TurnOutcome
 
 
 @pytest.fixture
@@ -18,6 +18,12 @@ def mock_llm() -> Any:
     """Create a mock LLM."""
     llm = Mock()
     llm.config = Mock(model="test-model")
+    llm.chat.return_value = Response(
+        content="Durable semantic summary",
+        model="test-model",
+        usage={"input_tokens": 10, "output_tokens": 3},
+        finish_reason="stop",
+    )
     return llm
 
 
@@ -201,6 +207,51 @@ def test_coding_agent_run_once(mock_llm: Any, temp_workspace: Any) -> None:
             "user",
             "assistant",
         ]
+
+
+def test_coding_agent_run_once_result_exposes_terminal_outcome(
+    mock_llm: Any, temp_workspace: Any
+) -> None:
+    """Embedding callers must distinguish truncated output from completion."""
+    with patch("pig_coding_agent.agent.Agent") as mock_agent_class:
+        mock_agent_instance = Mock()
+        mock_agent_instance.run.return_value = Response(
+            content="Partial response",
+            model="test-model",
+            finish_reason="MAX_TOKENS",
+        )
+        mock_agent_instance.last_turn_outcome = TurnOutcome.LENGTH
+        mock_agent_instance.last_finish_reason = "MAX_TOKENS"
+        mock_agent_class.return_value = mock_agent_instance
+
+        agent = CodingAgent(llm=mock_llm, workspace=str(temp_workspace))
+        result = agent.run_once_result("Continue")
+
+    assert result.content == "Partial response"
+    assert result.outcome is TurnOutcome.LENGTH
+    assert result.raw_finish_reason == "MAX_TOKENS"
+    assert result.completed is False
+
+
+def test_coding_agent_run_once_result_fails_closed_without_fresh_outcome_evidence(
+    mock_llm: Any, temp_workspace: Any
+) -> None:
+    with patch("pig_coding_agent.agent.Agent") as mock_agent_class:
+        mock_agent_instance = Mock()
+        mock_agent_instance.run.return_value = Response(
+            content="Unproven response",
+            model="test-model",
+        )
+        mock_agent_instance.last_turn_outcome = TurnOutcome.COMPLETED
+        mock_agent_instance.last_finish_reason = "stale-stop"
+        mock_agent_class.return_value = mock_agent_instance
+
+        agent = CodingAgent(llm=mock_llm, workspace=str(temp_workspace))
+        result = agent.run_once_result("Continue")
+
+    assert result.outcome is TurnOutcome.INCOMPLETE
+    assert result.raw_finish_reason is None
+    assert result.completed is False
 
 
 def test_coding_agent_run_once_persists_transcript_and_usage(

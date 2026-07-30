@@ -19,7 +19,7 @@ from pig_agent_core import (
     assert_valid_session_id,
 )
 from pig_agent_core.tools import Tool, ToolResult
-from pig_llm import LLM, Message
+from pig_llm import LLM, Message, TurnOutcome
 
 from .app_actions import AppActions
 from .billing import CostTracker, CostTrackerBillingHook
@@ -42,6 +42,7 @@ from .project_trust import (
 from .resilience import create_profile_manager_from_env, get_profile_status
 from .results import ResultFactory
 from .tools import FileTools, build_coding_tools
+from .turn_lifecycle import ActiveTurnLifecycle
 
 
 class SessionExitRequested(Exception):
@@ -50,15 +51,22 @@ class SessionExitRequested(Exception):
 
 @dataclass(frozen=True)
 class AgentTurnResult:
-    """One completed turn plus any permission denials observed during it."""
+    """One terminal turn plus its machine-readable outcome and denials."""
 
     content: str
     permission_denials: tuple[dict[str, str], ...] = ()
+    outcome: TurnOutcome = TurnOutcome.COMPLETED
+    raw_finish_reason: str | None = None
 
     @property
     def denied(self) -> bool:
         """Return whether a side-effectful tool was denied during the turn."""
         return bool(self.permission_denials)
+
+    @property
+    def completed(self) -> bool:
+        """Return whether the model reached a natural terminal completion."""
+        return self.outcome is TurnOutcome.COMPLETED
 
 
 class _TrustedContextManager(ContextManager):
@@ -184,6 +192,7 @@ class CodingAgent:
             project_trusted=self.project_trusted,
         )
         self.result_factory = ResultFactory()
+        self.turn_lifecycle = ActiveTurnLifecycle()
         self.app_actions = AppActions(self)
         self.interaction_catalog = InteractionCatalog(self)
         if session_dir is None and os.environ.get("PIG_CODING_AGENT_SESSION_DIR") is None:
@@ -629,13 +638,36 @@ You can:
         return self.run_once_result(message).content
 
     def run_once_result(self, message: str) -> AgentTurnResult:
-        """Run one turn and preserve permission denials across the model boundary."""
-        self.permission_policy.consume_denials()
-        if self.session:
-            self.session.add_message("user", message)
-        response = self.agent.run(message)
-        denials = tuple(self.permission_policy.consume_denials())
-        content = format_permission_denial(denials[0]) if denials else response.content
-        if self.session:
-            self.session.add_message("assistant", content)
-        return AgentTurnResult(content=content, permission_denials=denials)
+        """Run one turn and preserve its outcome and permission denials."""
+        token = self.turn_lifecycle.begin()
+        try:
+            self.permission_policy.consume_denials()
+            self.agent.last_turn_outcome = None
+            self.agent.last_finish_reason = None
+            if self.session:
+                self.session.add_message("user", message)
+            response = self.agent.run(message)
+            denials = tuple(self.permission_policy.consume_denials())
+            content = format_permission_denial(denials[0]) if denials else response.content
+            if self.session:
+                self.session.add_message("assistant", content)
+            outcome = getattr(self.agent, "last_turn_outcome", None)
+            if not isinstance(outcome, TurnOutcome):
+                response_outcome = getattr(response, "outcome", None)
+                outcome = (
+                    response_outcome
+                    if isinstance(response_outcome, TurnOutcome)
+                    else TurnOutcome.INCOMPLETE
+                )
+            raw_finish_reason = getattr(self.agent, "last_finish_reason", None)
+            if not isinstance(raw_finish_reason, str):
+                candidate = getattr(response, "raw_finish_reason", None)
+                raw_finish_reason = candidate if isinstance(candidate, str) else None
+            return AgentTurnResult(
+                content=content,
+                permission_denials=denials,
+                outcome=outcome,
+                raw_finish_reason=raw_finish_reason,
+            )
+        finally:
+            self.turn_lifecycle.end(token)

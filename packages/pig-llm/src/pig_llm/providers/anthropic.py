@@ -231,6 +231,26 @@ class AnthropicProvider(Provider):
         ) as stream:
             for text in stream.text_stream:
                 yield StreamChunk(content=text, finish_reason=None)
+            final = stream.get_final_message()
+            tool_calls = self._extract_tool_calls(final.content)
+            final_usage = getattr(final, "usage", None)
+            usage = None
+            if final_usage is not None:
+                input_tokens = int(getattr(final_usage, "input_tokens", 0) or 0)
+                output_tokens = int(getattr(final_usage, "output_tokens", 0) or 0)
+                usage = {
+                    "input_tokens": input_tokens,
+                    "output_tokens": output_tokens,
+                    "total_tokens": input_tokens + output_tokens,
+                }
+            stop_reason = getattr(final, "stop_reason", None)
+            if tool_calls or usage or stop_reason is not None:
+                yield StreamChunk(
+                    content="",
+                    finish_reason=str(stop_reason) if stop_reason is not None else None,
+                    tool_calls=tool_calls,
+                    usage=usage,
+                )
 
     async def acomplete(
         self,
@@ -331,5 +351,11 @@ class AnthropicProvider(Provider):
                     "total_tokens": int(getattr(u, "input_tokens", 0) or 0)
                     + int(getattr(u, "output_tokens", 0) or 0),
                 }
-            if tool_calls or usage:
-                yield StreamChunk(content="", tool_calls=tool_calls, usage=usage)
+            stop_reason = getattr(final, "stop_reason", None)
+            if tool_calls or usage or stop_reason is not None:
+                yield StreamChunk(
+                    content="",
+                    finish_reason=str(stop_reason) if stop_reason is not None else None,
+                    tool_calls=tool_calls,
+                    usage=usage,
+                )

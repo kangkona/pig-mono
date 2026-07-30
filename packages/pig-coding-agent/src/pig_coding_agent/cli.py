@@ -1,5 +1,6 @@
 """CLI entry point for py-coding-agent."""
 
+import asyncio
 import json
 import os
 import signal
@@ -12,7 +13,7 @@ from typing import Any, TextIO, TypeVar
 
 import typer
 from pig_agent_core import assert_valid_session_id
-from pig_llm import LLM
+from pig_llm import LLM, TurnOutcome
 from rich.console import Console
 
 from .agent import CodingAgent
@@ -503,7 +504,11 @@ def run_json_mode(agent: CodingAgent) -> None:
                         for denial in result.permission_denials:
                             json_out.emit_event("permission_denied", denial)
                         json_out.message("assistant", result.content)
-                        json_out.done(result.content)
+                        json_out.done(
+                            result.content,
+                            outcome=result.outcome.value,
+                            finish_reason=result.raw_finish_reason,
+                        )
 
                     except json.JSONDecodeError as e:
                         json_out.error(f"Invalid JSON: {e}")
@@ -530,7 +535,11 @@ def run_json_mode(agent: CodingAgent) -> None:
                     for denial in result.permission_denials:
                         json_out.emit_event("permission_denied", denial)
                     json_out.message("assistant", result.content)
-                    json_out.done(result.content)
+                    json_out.done(
+                        result.content,
+                        outcome=result.outcome.value,
+                        finish_reason=result.raw_finish_reason,
+                    )
 
                 except KeyboardInterrupt:
                     emit_shutdown("interrupt")
@@ -587,6 +596,9 @@ def run_rpc_mode(agent: CodingAgent) -> None:
                 "content": result.content,
                 "model": agent.agent.llm.config.model,
                 "permissionDenials": list(result.permission_denials),
+                "completed": result.completed,
+                "outcome": result.outcome.value,
+                "finishReason": result.raw_finish_reason,
             }
 
         elif method == "stream":
@@ -594,11 +606,53 @@ def run_rpc_mode(agent: CodingAgent) -> None:
             if not message:
                 raise ValueError("Missing 'message' parameter")
 
-            # Stream tokens as events
-            for chunk in agent.agent.llm.stream(message):
-                rpc.send_event("token", {"content": chunk.content})
+            async def stream_agent_turn() -> tuple[
+                TurnOutcome, str | None, tuple[dict[str, str], ...]
+            ]:
+                cancel = asyncio.Event()
+                token = agent.turn_lifecycle.begin(cancel)
+                agent.permission_policy.consume_denials()
+                agent.agent.last_turn_outcome = None
+                agent.agent.last_finish_reason = None
+                content_parts: list[str] = []
+                assistant_persisted = False
+                outcome = TurnOutcome.INCOMPLETE
+                finish_reason: str | None = None
+                try:
+                    if agent.session:
+                        agent.session.add_message("user", message)
+                    async for content in agent.agent.respond_stream(message, cancel=cancel):
+                        content_parts.append(content)
+                        rpc.send_event("token", {"content": content})
+                    if agent.session and content_parts:
+                        agent.session.add_message("assistant", "".join(content_parts))
+                        assistant_persisted = True
+                    candidate_outcome = agent.agent.last_turn_outcome
+                    if isinstance(candidate_outcome, TurnOutcome):
+                        outcome = candidate_outcome
+                    candidate_finish_reason = agent.agent.last_finish_reason
+                    if isinstance(candidate_finish_reason, str):
+                        finish_reason = candidate_finish_reason
+                finally:
+                    try:
+                        denials = tuple(agent.permission_policy.consume_denials())
+                        for denial in denials:
+                            rpc.send_event("permission_denied", denial)
+                        if agent.session and content_parts and not assistant_persisted:
+                            agent.session.add_message("assistant", "".join(content_parts))
+                    finally:
+                        agent.turn_lifecycle.end(token)
+                return outcome, finish_reason, denials
 
-            return {"done": True}
+            terminal_outcome, raw_finish_reason, permission_denials = asyncio.run(
+                stream_agent_turn()
+            )
+            return {
+                "done": terminal_outcome is TurnOutcome.COMPLETED,
+                "outcome": terminal_outcome.value,
+                "finishReason": raw_finish_reason,
+                "permissionDenials": list(permission_denials),
+            }
 
         elif method == "bash":
             command = params.get("command")

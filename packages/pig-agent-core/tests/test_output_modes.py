@@ -91,6 +91,20 @@ def test_json_done() -> None:
     assert data["content"] == "Final content"
 
 
+def test_json_done_can_distinguish_terminal_failure_from_completion() -> None:
+    output = StringIO()
+    json_mode = JSONOutputMode(output)
+
+    json_mode.done("Partial", outcome="length", finish_reason="MAX_TOKENS")
+
+    data = json.loads(output.getvalue())
+    assert data["type"] == "done"
+    assert data["content"] == "Partial"
+    assert data["completed"] is False
+    assert data["outcome"] == "length"
+    assert data["finishReason"] == "MAX_TOKENS"
+
+
 def test_json_error() -> None:
     """Test error event."""
     output = StringIO()

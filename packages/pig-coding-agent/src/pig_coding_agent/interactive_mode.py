@@ -6,6 +6,7 @@ import asyncio
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from pig_llm import TurnOutcome
 from pig_tui import ShellLoopSession
 
 if TYPE_CHECKING:
@@ -190,21 +191,30 @@ class InteractiveMode:
         )
         try:
             assert self.interaction_runtime.views is not None
-            self.interaction_runtime.views.report_compact_result(
-                owner.app_actions.compact_session(
-                    None,
-                    reason="threshold",
-                    before_tokens=ctx,
-                )
+            result = owner.app_actions.compact_session(
+                None,
+                reason="threshold",
+                before_tokens=ctx,
             )
+            self.interaction_runtime.views.report_compact_result(result)
+            if not result.ok:
+                return
             owner.app_actions.rebuild_history_from_session()
             owner.agent.last_llm_usage = None
         except Exception as e:
             self.interaction_runtime.show_error(f"Auto-compaction failed: {e}")
 
     async def run_turn(self, user_input: str, cancel: asyncio.Event | None = None) -> None:
-        owner = self.agent_owner
         cancel = cancel or asyncio.Event()
+        token = self.agent_owner.turn_lifecycle.begin(cancel)
+        try:
+            await self._run_registered_turn(user_input, cancel)
+        finally:
+            self.agent_owner.turn_lifecycle.end(token)
+
+    async def _run_registered_turn(self, user_input: str, cancel: asyncio.Event) -> None:
+        """Run and persist one turn while its lifecycle token remains active."""
+        owner = self.agent_owner
 
         if owner.session:
             owner.session.add_message("user", user_input)
@@ -231,8 +241,11 @@ class InteractiveMode:
             cancel_event=cancel,
         )
 
-        if result.aborted:
+        outcome = owner.agent.last_turn_outcome
+        if result.aborted or outcome is TurnOutcome.ABORTED:
             self.interaction_runtime.show_system("[aborted]")
+        elif isinstance(outcome, TurnOutcome) and outcome is not TurnOutcome.COMPLETED:
+            self.interaction_runtime.show_system(f"[turn ended: {outcome.value}]")
 
         if owner.session and result.content:
             owner.session.add_message("assistant", result.content)

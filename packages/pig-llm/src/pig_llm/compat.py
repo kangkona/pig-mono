@@ -923,6 +923,51 @@ def _stream_usage_to_dict(usage: Any) -> dict[str, int] | None:
     }
 
 
+def _openai_stream_metadata(chunk: Any) -> dict[str, Any]:
+    """Preserve common envelope metadata from OpenAI-compatible streams."""
+    metadata: dict[str, Any] = {"id": getattr(chunk, "id", None)}
+    citations = getattr(chunk, "citations", None)
+    if citations is not None:
+        metadata["citations"] = citations
+    return metadata
+
+
+def stream_openai_tool_aware(stream: Iterator[Any]) -> Iterator[StreamChunk]:
+    """Sync OpenAI-compatible stream with terminal outcome, tools, and usage."""
+    accumulator = _OpenAIToolCallAccumulator()
+    usage: dict[str, int] | None = None
+    terminated = False
+    terminal_finish_reason: str | None = None
+    for chunk in stream:
+        chunk_usage = _stream_usage_to_dict(getattr(chunk, "usage", None))
+        if chunk_usage:
+            usage = chunk_usage
+        choices = getattr(chunk, "choices", None) or []
+        if not choices or terminated:
+            continue
+        choice = choices[0]
+        delta = getattr(choice, "delta", None)
+        content = getattr(delta, "content", None) if delta is not None else None
+        if content:
+            yield StreamChunk(
+                content=content,
+                finish_reason=getattr(choice, "finish_reason", None),
+                metadata=_openai_stream_metadata(chunk),
+            )
+        accumulator.add(choice)
+        if getattr(choice, "finish_reason", None):
+            terminal_finish_reason = str(choice.finish_reason)
+            terminated = True
+    tool_calls = accumulator.finish()
+    if tool_calls or usage or terminal_finish_reason is not None:
+        yield StreamChunk(
+            content="",
+            finish_reason=terminal_finish_reason,
+            tool_calls=tool_calls,
+            usage=usage,
+        )
+
+
 async def astream_openai_tool_aware(stream: AsyncIterator[Any]) -> AsyncIterator[StreamChunk]:
     """Stream OpenAI-compatible chunks as StreamChunks, carrying tool calls + usage.
 
@@ -934,6 +979,7 @@ async def astream_openai_tool_aware(stream: AsyncIterator[Any]) -> AsyncIterator
     accumulator = _OpenAIToolCallAccumulator()
     usage: dict[str, int] | None = None
     terminated = False
+    terminal_finish_reason: str | None = None
     async for chunk in stream:
         chunk_usage = _stream_usage_to_dict(getattr(chunk, "usage", None))
         if chunk_usage:
@@ -952,14 +998,20 @@ async def astream_openai_tool_aware(stream: AsyncIterator[Any]) -> AsyncIterator
             yield StreamChunk(
                 content=content,
                 finish_reason=getattr(choice, "finish_reason", None),
-                metadata={"id": getattr(chunk, "id", None)},
+                metadata=_openai_stream_metadata(chunk),
             )
         accumulator.add(choice)
         if getattr(choice, "finish_reason", None):
+            terminal_finish_reason = str(choice.finish_reason)
             terminated = True
     tool_calls = accumulator.finish()
-    if tool_calls or usage:
-        yield StreamChunk(content="", tool_calls=tool_calls, usage=usage)
+    if tool_calls or usage or terminal_finish_reason is not None:
+        yield StreamChunk(
+            content="",
+            finish_reason=terminal_finish_reason,
+            tool_calls=tool_calls,
+            usage=usage,
+        )
 
 
 def extract_openai_usage(response: Any) -> dict[str, int]:
