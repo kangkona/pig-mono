@@ -10,6 +10,11 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 
+def _supports_secure_dir_fds() -> bool:
+    """Return whether the platform supports descriptor-relative file writes."""
+    return os.name != "nt"
+
+
 class AgentConfig(BaseModel):
     """Configuration for coding agent."""
 
@@ -101,7 +106,7 @@ class ConfigManager:
         # Load global config
         if self.global_config.exists():
             try:
-                data = json.loads(self.global_config.read_text())
+                data = json.loads(self.global_config.read_text(encoding="utf-8"))
                 config = AgentConfig(**data)
             except Exception as e:
                 print(f"Warning: Failed to load global config: {e}")
@@ -109,7 +114,7 @@ class ConfigManager:
         # Load and merge project config
         if self.project_trusted and self.project_config.exists():
             try:
-                data = json.loads(self.project_config.read_text())
+                data = json.loads(self.project_config.read_text(encoding="utf-8"))
                 # Merge with existing config
                 config = AgentConfig(**{**config.model_dump(), **data})
             except Exception as e:
@@ -150,7 +155,7 @@ class ConfigManager:
         content = config.model_dump_json(indent=2)
         if global_config:
             path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(content)
+            path.write_text(content, encoding="utf-8")
         else:
             self._write_project_config(content)
         if not global_config and not self.project_trusted:
@@ -203,7 +208,7 @@ class ConfigManager:
             # Subsequent edits merge only the values this process authored.
             data = dict(self._untrusted_project_values)
         elif path.exists():
-            loaded = json.loads(path.read_text())
+            loaded = json.loads(path.read_text(encoding="utf-8"))
             if not isinstance(loaded, dict):
                 raise ValueError(f"Config file must contain a JSON object: {path}")
             data = loaded
@@ -212,7 +217,7 @@ class ConfigManager:
         content = json.dumps(data, indent=2)
         if global_config:
             path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(content)
+            path.write_text(content, encoding="utf-8")
         else:
             self._write_project_config(content)
         if not global_config and not self.project_trusted:
@@ -241,6 +246,10 @@ class ConfigManager:
 
     def _write_project_config(self, content: str) -> None:
         """Atomically write config through no-follow directory descriptors."""
+        if not _supports_secure_dir_fds():
+            self._write_project_config_portable(content)
+            return
+
         self._validate_project_config_destination()
         nofollow = getattr(os, "O_NOFOLLOW", 0)
         directory = getattr(os, "O_DIRECTORY", 0)
@@ -305,3 +314,40 @@ class ConfigManager:
             if agents_fd is not None:
                 os.close(agents_fd)
             os.close(workspace_fd)
+
+    def _write_project_config_portable(self, content: str) -> None:
+        """Atomically write config on platforms without directory descriptors."""
+        self._validate_project_config_destination()
+        agents_dir = self.workspace / ".agents"
+        try:
+            agents_dir.mkdir(mode=0o700, exist_ok=True)
+        except OSError as exc:
+            raise PermissionError("Refusing unsafe project config parent") from exc
+        self._validate_project_config_destination()
+
+        temporary = agents_dir / (f".config.json.{os.getpid()}.{secrets.token_hex(8)}.tmp")
+        temporary_exists = True
+        temporary_fd = -1
+        try:
+            flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+            temporary_fd = os.open(temporary, flags, 0o600)
+            owned_fd = temporary_fd
+            temporary_fd = -1
+            with os.fdopen(owned_fd, "w", encoding="utf-8") as handle:
+                handle.write(content)
+                handle.flush()
+                os.fsync(handle.fileno())
+
+            # Revalidate after creating the temporary file. Replacing a final
+            # symlink swaps the entry itself rather than following its target.
+            self._validate_project_config_destination()
+            os.replace(temporary, self.project_config)
+            temporary_exists = False
+        finally:
+            if temporary_fd >= 0:
+                os.close(temporary_fd)
+            if temporary_exists:
+                try:
+                    temporary.unlink()
+                except FileNotFoundError:
+                    pass

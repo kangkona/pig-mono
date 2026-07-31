@@ -8,7 +8,7 @@ PACKAGE_ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_readme_does_not_advertise_unimplemented_cli_commands_or_tools() -> None:
-    readme = (PACKAGE_ROOT / "README.md").read_text()
+    readme = (PACKAGE_ROOT / "README.md").read_text(encoding="utf-8")
 
     forbidden_snippets = [
         "pig refactor",
@@ -37,7 +37,7 @@ def test_readme_does_not_advertise_unimplemented_cli_commands_or_tools() -> None
 
 def test_parity_matrix_exists_and_is_self_contained() -> None:
     matrix_path = PACKAGE_ROOT / "docs" / "pi-parity-matrix.md"
-    matrix = matrix_path.read_text()
+    matrix = matrix_path.read_text(encoding="utf-8")
 
     assert "does not require a local pi-mono checkout" in matrix
     for capability in [

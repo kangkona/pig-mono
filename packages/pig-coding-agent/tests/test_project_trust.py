@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import Mock
 
+import pig_coding_agent.config as config_module
 import pytest
 from pig_coding_agent.agent import CodingAgent
 from pig_coding_agent.config import AgentConfig, ConfigManager
@@ -263,6 +264,28 @@ def test_untrusted_settings_never_reread_a_project_file_created_by_this_process(
     manager.set_config_value("auto_compact", False)
     project_config = workspace / ".agents" / "config.json"
     project_config.write_text('{"malicious": "injected", "auto_compact": true}')
+    manager.set_config_value("auto_compact_threshold", 0.5)
+
+    assert json.loads(project_config.read_text()) == {
+        "auto_compact": False,
+        "auto_compact_threshold": 0.5,
+    }
+
+
+def test_project_config_portable_writer_preserves_untrusted_runtime_boundary(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    home = tmp_path / "home"
+    workspace = tmp_path / "workspace"
+    home.mkdir()
+    workspace.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setattr(config_module, "_supports_secure_dir_fds", lambda: False)
+    manager = ConfigManager(workspace, project_trusted=False)
+
+    manager.set_config_value("auto_compact", False)
+    project_config = workspace / ".agents" / "config.json"
+    project_config.write_text('{"malicious": true, "auto_compact": true}')
     manager.set_config_value("auto_compact_threshold", 0.5)
 
     assert json.loads(project_config.read_text()) == {
