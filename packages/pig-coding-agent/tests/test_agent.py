@@ -522,9 +522,9 @@ def test_tree_browser_view_data_can_filter_children(mock_llm: Any, temp_workspac
     assert browser["state"].summary_state.visible_count == 2
     assert browser["state"].summary_state.total_count == 3
     assert browser["state"].summary_state.current_path_length == 2
-    assert (
-        browser["state"].summary_state.current_entry_short_id == agent.session.tree.current_id[:8]
-    )
+    current_entry_id = agent.session.tree.current_id
+    assert current_entry_id is not None
+    assert browser["state"].summary_state.current_entry_short_id == current_entry_id[:8]
     detail_state = browser["options"][0].detail_state
     assert detail_state is not None
     assert detail_state.role == "assistant"
