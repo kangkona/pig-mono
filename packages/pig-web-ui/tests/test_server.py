@@ -3,8 +3,8 @@
 from unittest.mock import Mock
 
 import pytest
-from fastapi.testclient import TestClient
 from pig_web_ui.server import ChatServer
+from starlette.testclient import TestClient
 
 
 @pytest.fixture

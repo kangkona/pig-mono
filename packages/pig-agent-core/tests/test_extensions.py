@@ -172,6 +172,30 @@ def test_extension_manager_cleanup_emits_session_shutdown_event() -> None:
     assert calls == [{"reason": "normal"}]
 
 
+def test_extension_manager_cleanup_includes_target_entry_id_when_provided() -> None:
+    agent = Mock()
+    manager = ExtensionManager(agent)
+    calls = []
+
+    @manager.api.on("session_shutdown")
+    def on_shutdown(event: Any, ctx: Any) -> Any:
+        calls.append(event)
+
+    manager.cleanup(
+        reason="tree",
+        target_session_file="/tmp/session.jsonl",
+        target_entry_id="entry-123",
+    )
+
+    assert calls == [
+        {
+            "reason": "tree",
+            "targetSessionFile": "/tmp/session.jsonl",
+            "targetEntryId": "entry-123",
+        }
+    ]
+
+
 def test_extension_manager_load_extension(mock_agent: Any, tmp_path: Any) -> None:
     """Test loading extension from file."""
     manager = ExtensionManager(mock_agent)

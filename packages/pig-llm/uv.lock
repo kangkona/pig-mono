@@ -1055,7 +1055,7 @@ wheels = [
 
 [[package]]
 name = "pig-llm"
-version = "0.0.2"
+version = "0.1.1"
 source = { editable = "." }
 dependencies = [
     { name = "anthropic" },

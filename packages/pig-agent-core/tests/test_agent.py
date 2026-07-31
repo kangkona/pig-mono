@@ -296,7 +296,9 @@ def test_verbose_log_renders_through_attached_ui_without_duplicate_turns() -> No
     assert "Iteration" in ui_text
 
 
-def test_verbose_log_does_not_parse_arbitrary_content_as_markup() -> None:
+def test_verbose_log_does_not_parse_arbitrary_content_as_markup(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Tool output containing '[...]' must render verbatim, never as Rich markup.
 
     Regression: routing _log through the Rich console parsed interpolated
@@ -307,8 +309,15 @@ def test_verbose_log_does_not_parse_arbitrary_content_as_markup() -> None:
 
     from rich.console import Console
 
+    monkeypatch.delenv("NO_COLOR", raising=False)
     ui = Mock()
-    ui.console = Console(file=io.StringIO(), force_terminal=True, width=100)
+    ui.console = Console(
+        file=io.StringIO(),
+        force_terminal=True,
+        color_system="standard",
+        no_color=False,
+        width=100,
+    )
 
     agent = Agent(llm=_mock_llm_returning("hi"), verbose=True)
     agent.ui = ui

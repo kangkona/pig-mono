@@ -1357,6 +1357,7 @@ class Agent:
 
             # Record this LLM round's usage (for the context indicator + billing).
             self._record_llm_usage(content_parts, streamed_usage)
+            await asyncio.sleep(0)
 
             # Aborted mid-stream: the partial text already streamed; record it so the
             # session reflects it, then stop cleanly (no dangling tool message).

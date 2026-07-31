@@ -255,7 +255,12 @@ class ExtensionManager:
 
         return extensions
 
-    def cleanup(self, reason: str = "normal", target_session_file: str | None = None) -> None:
+    def cleanup(
+        self,
+        reason: str = "normal",
+        target_session_file: str | None = None,
+        target_entry_id: str | None = None,
+    ) -> None:
         """Tear down loaded extensions for shutdown paths.
 
         Current extensions are plain Python modules without an explicit unload
@@ -265,6 +270,8 @@ class ExtensionManager:
         event = {"reason": reason}
         if target_session_file is not None:
             event["targetSessionFile"] = target_session_file
+        if target_entry_id is not None:
+            event["targetEntryId"] = target_entry_id
         self.emit_event("session_shutdown", event)
         self.extensions.clear()
         self.api._commands.clear()

@@ -23,14 +23,16 @@ def test_cli_imports() -> None:
     assert console is not None
 
 
-@patch("pig_web_ui.cli.LLM")
+@patch("pig_web_ui.cli._load_llm_class")
 @patch("pig_web_ui.cli.ChatServer")
-def test_main_with_defaults(mock_server_class: Mock, mock_llm_class: Mock, mock_env: None) -> None:
+def test_main_with_defaults(
+    mock_server_class: Mock, mock_load_llm_class: Mock, mock_env: None
+) -> None:
     """Test main with default settings."""
     # Setup mocks
     mock_llm = Mock()
     mock_llm.config = Mock(model="gpt-3.5-turbo")
-    mock_llm_class.return_value = mock_llm
+    mock_load_llm_class.return_value = Mock(return_value=mock_llm)
 
     mock_server = Mock()
     mock_server.run = Mock()
@@ -40,8 +42,10 @@ def test_main_with_defaults(mock_server_class: Mock, mock_llm_class: Mock, mock_
         main()
 
         # Verify LLM created
-        mock_llm_class.assert_called_once()
-        call_args = mock_llm_class.call_args
+        llm_class = mock_load_llm_class.return_value
+        mock_load_llm_class.assert_called_once_with()
+        llm_class.assert_called_once()
+        call_args = llm_class.call_args
         assert call_args.kwargs["provider"] == "openai"
         assert call_args.kwargs["api_key"] == "test-key"
 
@@ -50,15 +54,15 @@ def test_main_with_defaults(mock_server_class: Mock, mock_llm_class: Mock, mock_
         mock_server.run.assert_called_once()
 
 
-@patch("pig_web_ui.cli.LLM")
+@patch("pig_web_ui.cli._load_llm_class")
 @patch("pig_web_ui.cli.ChatServer")
 def test_main_with_custom_model(
-    mock_server_class: Mock, mock_llm_class: Mock, mock_env: None
+    mock_server_class: Mock, mock_load_llm_class: Mock, mock_env: None
 ) -> None:
     """Test main with custom model."""
     mock_llm = Mock()
     mock_llm.config = Mock(model="gpt-4")
-    mock_llm_class.return_value = mock_llm
+    mock_load_llm_class.return_value = Mock(return_value=mock_llm)
 
     mock_server = Mock()
     mock_server_class.return_value = mock_server
@@ -67,18 +71,18 @@ def test_main_with_custom_model(
         main(model="gpt-4")
 
         # Verify model was set
-        call_args = mock_llm_class.call_args
+        call_args = mock_load_llm_class.return_value.call_args
         assert call_args.kwargs["model"] == "gpt-4"
 
 
-@patch("pig_web_ui.cli.LLM")
+@patch("pig_web_ui.cli._load_llm_class")
 @patch("pig_web_ui.cli.ChatServer")
 def test_main_with_custom_port(
-    mock_server_class: Mock, mock_llm_class: Mock, mock_env: None
+    mock_server_class: Mock, mock_load_llm_class: Mock, mock_env: None
 ) -> None:
     """Test main with custom port."""
     mock_llm = Mock()
-    mock_llm_class.return_value = mock_llm
+    mock_load_llm_class.return_value = Mock(return_value=mock_llm)
 
     mock_server = Mock()
     mock_server_class.return_value = mock_server
@@ -91,12 +95,12 @@ def test_main_with_custom_port(
         assert call_args.kwargs["port"] == 8080
 
 
-@patch("pig_web_ui.cli.LLM")
+@patch("pig_web_ui.cli._load_llm_class")
 @patch("pig_web_ui.cli.ChatServer")
-def test_main_with_cors(mock_server_class: Mock, mock_llm_class: Mock, mock_env: None) -> None:
+def test_main_with_cors(mock_server_class: Mock, mock_load_llm_class: Mock, mock_env: None) -> None:
     """Test main with CORS enabled."""
     mock_llm = Mock()
-    mock_llm_class.return_value = mock_llm
+    mock_load_llm_class.return_value = Mock(return_value=mock_llm)
 
     mock_server = Mock()
     mock_server_class.return_value = mock_server
@@ -109,14 +113,14 @@ def test_main_with_cors(mock_server_class: Mock, mock_llm_class: Mock, mock_env:
         assert call_args.kwargs["cors"] is True
 
 
-@patch("pig_web_ui.cli.LLM")
+@patch("pig_web_ui.cli._load_llm_class")
 @patch("pig_web_ui.cli.ChatServer")
 def test_main_with_custom_title(
-    mock_server_class: Mock, mock_llm_class: Mock, mock_env: None
+    mock_server_class: Mock, mock_load_llm_class: Mock, mock_env: None
 ) -> None:
     """Test main with custom title."""
     mock_llm = Mock()
-    mock_llm_class.return_value = mock_llm
+    mock_load_llm_class.return_value = Mock(return_value=mock_llm)
 
     mock_server = Mock()
     mock_server_class.return_value = mock_server
@@ -137,13 +141,13 @@ def test_main_without_api_key() -> None:
                 main()
 
 
-@patch("pig_web_ui.cli.LLM")
+@patch("pig_web_ui.cli._load_llm_class")
 @patch("pig_web_ui.cli.ChatServer")
-def test_main_with_different_provider(mock_server_class: Mock, mock_llm_class: Mock) -> None:
+def test_main_with_different_provider(mock_server_class: Mock, mock_load_llm_class: Mock) -> None:
     """Test main with different provider."""
     with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "test-key"}):
         mock_llm = Mock()
-        mock_llm_class.return_value = mock_llm
+        mock_load_llm_class.return_value = Mock(return_value=mock_llm)
 
         mock_server = Mock()
         mock_server_class.return_value = mock_server
@@ -152,18 +156,18 @@ def test_main_with_different_provider(mock_server_class: Mock, mock_llm_class: M
             main(provider="anthropic")
 
             # Verify correct provider
-            call_args = mock_llm_class.call_args
+            call_args = mock_load_llm_class.return_value.call_args
             assert call_args.kwargs["provider"] == "anthropic"
 
 
-@patch("pig_web_ui.cli.LLM")
+@patch("pig_web_ui.cli._load_llm_class")
 @patch("pig_web_ui.cli.ChatServer")
 def test_main_keyboard_interrupt(
-    mock_server_class: Mock, mock_llm_class: Mock, mock_env: None
+    mock_server_class: Mock, mock_load_llm_class: Mock, mock_env: None
 ) -> None:
     """Test main handles keyboard interrupt."""
     mock_llm = Mock()
-    mock_llm_class.return_value = mock_llm
+    mock_load_llm_class.return_value = Mock(return_value=mock_llm)
 
     mock_server = Mock()
     mock_server.run = Mock(side_effect=KeyboardInterrupt)
@@ -176,11 +180,23 @@ def test_main_keyboard_interrupt(
         mock_console.print.assert_called()
 
 
-@patch("pig_web_ui.cli.LLM")
-def test_main_llm_creation_error(mock_llm_class: Mock, mock_env: None) -> None:
+@patch("pig_web_ui.cli._load_llm_class")
+def test_main_llm_creation_error(mock_load_llm_class: Mock, mock_env: None) -> None:
     """Test main handles LLM creation error."""
-    mock_llm_class.side_effect = Exception("API error")
+    mock_load_llm_class.return_value = Mock(side_effect=RuntimeError("API error"))
 
     with pytest.raises(SystemExit):
-        with patch("pig_web_ui.cli.console"):
+        with patch("pig_web_ui.cli.console") as mock_console:
             main()
+
+    mock_console.print.assert_called_once_with("[red]Error creating LLM: API error[/red]")
+
+
+@patch("pig_web_ui.cli._load_llm_class", side_effect=RuntimeError("install pig-llm"))
+def test_main_llm_import_error(mock_load_llm_class: Mock, mock_env: None) -> None:
+    with pytest.raises(SystemExit):
+        with patch("pig_web_ui.cli.console") as mock_console:
+            main()
+
+    mock_load_llm_class.assert_called_once_with()
+    mock_console.print.assert_called_once_with("[red]Error: install pig-llm[/red]")

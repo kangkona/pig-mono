@@ -384,17 +384,11 @@ class AppActions:
 
                 previous_session_file = str(self.owner.session.save())
                 if self.owner.extension_manager:
-                    self.owner.extension_manager.emit_event(
-                        "session_shutdown",
-                        {
-                            "reason": "tree",
-                            "targetSessionFile": previous_session_file,
-                            "targetEntryId": entry_id,
-                        },
+                    self.owner.extension_manager.cleanup(
+                        reason="tree",
+                        target_session_file=previous_session_file,
+                        target_entry_id=entry_id,
                     )
-                    self.owner.extension_manager.extensions.clear()
-                    self.owner.extension_manager.api._commands.clear()
-                    self.owner.extension_manager.api._event_handlers.clear()
 
                 self.owner.session.branch_to(entry_id)
                 self.owner.agent.session = self.owner.session

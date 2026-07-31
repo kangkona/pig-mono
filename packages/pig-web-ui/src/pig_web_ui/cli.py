@@ -1,7 +1,13 @@
 """CLI entry point for py-web-ui."""
 
+from __future__ import annotations
+
 import os
 import sys
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from pig_llm import LLM
 
 try:
     import typer
@@ -11,16 +17,17 @@ except ImportError:
     print("Run: pip install py-web-ui")
     sys.exit(1)
 
-try:
-    from pig_llm import LLM
-except ImportError:
-    print("Error: py-ai not installed")
-    print("Run: pip install py-ai")
-    sys.exit(1)
-
 from .server import ChatServer
 
 console = Console()
+
+
+def _load_llm_class() -> type[LLM]:
+    try:
+        from pig_llm import LLM
+    except ImportError as exc:
+        raise RuntimeError("pig_llm is not installed. Run: pip install pig-llm") from exc
+    return LLM
 
 
 def main(
@@ -50,7 +57,13 @@ def main(
 
     # Create LLM
     try:
-        llm = LLM(
+        llm_class = _load_llm_class()
+    except RuntimeError as e:
+        console.print(f"[red]Error: {e}[/red]")
+        sys.exit(1)
+
+    try:
+        llm = llm_class(
             provider=provider,
             api_key=api_key,
             model=model or ("gpt-3.5-turbo" if provider == "openai" else None),

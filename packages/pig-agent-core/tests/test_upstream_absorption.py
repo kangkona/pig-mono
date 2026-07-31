@@ -1809,6 +1809,46 @@ async def test_master_loop_steering_during_final_answer_is_consumed() -> None:
 
 
 @pytest.mark.asyncio
+async def test_master_loop_steering_queued_at_stream_tail_is_consumed() -> None:
+    """Steering queued at the very end of a streamed answer still drives another round."""
+
+    class FakeLLM:
+        config = SimpleNamespace(model="fake")
+
+        def __init__(self) -> None:
+            self.calls = 0
+            self.seen: list[list[str]] = []
+
+        def achat_stream(self, messages: Any, tools: Any = None) -> Any:
+            self.calls += 1
+            self.seen.append([m.content for m in messages])
+            calls = self.calls
+
+            async def stream() -> Any:
+                if calls == 1:
+                    yield _StreamChunk(content="answer-1")
+                    asyncio.get_running_loop().call_soon(
+                        agent.message_queue.add_steering,
+                        "actually do X late",
+                    )
+                else:
+                    yield _StreamChunk(content="answer-2")
+
+            return stream()
+
+    llm = FakeLLM()
+    agent = Agent(llm=llm, tools=[], verbose=False)
+
+    chunks = []
+    async for chunk in agent.respond_stream("go"):
+        chunks.append(chunk)
+
+    assert llm.calls == 2
+    assert any("actually do X late" in m for m in llm.seen[1])
+    assert "".join(chunks) == "answer-1answer-2"
+
+
+@pytest.mark.asyncio
 async def test_master_loop_records_billing_for_llm_and_tool_calls() -> None:
     """The streaming path reports LLM rounds + tool calls to the billing hook."""
 
