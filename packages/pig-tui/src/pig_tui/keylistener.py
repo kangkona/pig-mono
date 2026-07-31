@@ -34,6 +34,18 @@ class _WindowsConsole(Protocol):
     def getwch(self) -> str: ...
 
 
+class _UnixTermios(Protocol):
+    TCSADRAIN: int
+
+    def tcgetattr(self, fd: int) -> list[Any]: ...
+
+    def tcsetattr(self, fd: int, when: int, attributes: list[Any]) -> None: ...
+
+
+class _UnixTTY(Protocol):
+    def setcbreak(self, fd: int) -> None: ...
+
+
 def _longest_common_prefix(items: list[str]) -> str:
     if not items:
         return ""
@@ -124,8 +136,8 @@ class LiveInputListener:
 
     def _start_unix(self) -> bool:
         try:
-            import termios
-            import tty
+            termios = cast(_UnixTermios, importlib.import_module("termios"))
+            tty = cast(_UnixTTY, importlib.import_module("tty"))
 
             self._fd = sys.stdin.fileno()
             self._old_termios = termios.tcgetattr(self._fd)
@@ -148,7 +160,7 @@ class LiveInputListener:
     def _restore(self) -> None:
         if self._old_termios is not None and self._fd is not None:
             try:
-                import termios
+                termios = cast(_UnixTermios, importlib.import_module("termios"))
 
                 termios.tcsetattr(self._fd, termios.TCSADRAIN, self._old_termios)
             except Exception:
