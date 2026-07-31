@@ -36,23 +36,22 @@ pip install pig-messenger[all]         # 所有适配器
 from pig_messenger import MessengerManager, MessengerRegistry, MessengerType
 from pig_messenger.adapters.telegram import TelegramMessengerAdapter
 
+
 # 注册适配器
 @MessengerRegistry.register(MessengerType.TELEGRAM)
 class MyTelegramAdapter(TelegramMessengerAdapter):
     pass
 
+
 # 创建管理器
 def agent_factory(message, thread):
     return f"回声: {message.text}"
 
+
 manager = MessengerManager(agent_factory=agent_factory)
 
 # 处理事件
-await manager.handle_event(
-    MessengerType.TELEGRAM,
-    raw_event,
-    adapter=adapter
-)
+await manager.handle_event(MessengerType.TELEGRAM, raw_event, adapter=adapter)
 ```
 
 ## 架构
@@ -104,10 +103,7 @@ TELEGRAM_BOT_TOKEN=your_bot_token
 ```python
 from pig_messenger.adapters.slack import SlackMessengerAdapter, SlackConfig
 
-config = SlackConfig(
-    bot_token="xoxb-...",
-    signing_secret="..."
-)
+config = SlackConfig(bot_token="xoxb-...", signing_secret="...")
 adapter = SlackMessengerAdapter(config=config)
 ```
 
@@ -116,10 +112,7 @@ adapter = SlackMessengerAdapter(config=config)
 ```python
 from pig_messenger.adapters.feishu import FeishuAdapter
 
-adapter = FeishuAdapter(
-    app_id="cli_xxx",
-    app_secret="xxx"
-)
+adapter = FeishuAdapter(app_id="cli_xxx", app_secret="xxx")
 ```
 
 ## 分布式状态管理
@@ -129,16 +122,13 @@ from pig_messenger import MessengerState
 import redis.asyncio as redis
 
 # 创建 Redis 连接
-redis_client = redis.Redis(host='localhost', port=6379)
+redis_client = redis.Redis(host="localhost", port=6379)
 
 # 初始化状态管理
 state = MessengerState(redis_client=redis_client)
 
 # 在管理器中使用
-manager = MessengerManager(
-    agent_factory=agent_factory,
-    state=state
-)
+manager = MessengerManager(agent_factory=agent_factory, state=state)
 ```
 
 ## 高级特性
@@ -160,28 +150,16 @@ async def streaming_agent(message, thread):
 
 ```python
 # 从 URL 上传
-await thread.post_file(
-    url="https://example.com/file.pdf",
-    filename="document.pdf"
-)
+await thread.post_file(url="https://example.com/file.pdf", filename="document.pdf")
 
 # 从内容上传
-await thread.post_file_content(
-    content=file_bytes,
-    filename="image.png",
-    content_type="image/png"
-)
+await thread.post_file_content(content=file_bytes, filename="image.png", content_type="image/png")
 ```
 
 ### 结构化消息（Slack Block Kit）
 
 ```python
-blocks = [
-    {
-        "type": "section",
-        "text": {"type": "mrkdwn", "text": "*你好世界*"}
-    }
-]
+blocks = [{"type": "section", "text": {"type": "mrkdwn", "text": "*你好世界*"}}]
 await thread.post_blocks(blocks, text_fallback="你好世界")
 ```
 

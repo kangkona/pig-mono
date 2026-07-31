@@ -21,32 +21,26 @@ weather_tool = {
             "properties": {
                 "location": {
                     "type": "string",
-                    "description": "The city and state, e.g. San Francisco, CA"
+                    "description": "The city and state, e.g. San Francisco, CA",
                 },
-                "unit": {
-                    "type": "string",
-                    "enum": ["celsius", "fahrenheit"]
-                }
+                "unit": {"type": "string", "enum": ["celsius", "fahrenheit"]},
             },
-            "required": ["location"]
-        }
-    }
+            "required": ["location"],
+        },
+    },
 }
 
 # Initialize LLM
 llm = LLM(provider="openai", api_key="your-api-key")
 
 # Make a request with tools
-response = llm.complete(
-    "What's the weather in San Francisco?",
-    tools=[weather_tool]
-)
+response = llm.complete("What's the weather in San Francisco?", tools=[weather_tool])
 
 # Check if the model wants to use a tool
 if response.tool_calls:
     for tool_call in response.tool_calls:
-        function_name = tool_call['function']['name']
-        arguments = json.loads(tool_call['function']['arguments'])
+        function_name = tool_call["function"]["name"]
+        arguments = json.loads(tool_call["function"]["arguments"])
 
         print(f"Tool: {function_name}")
         print(f"Arguments: {arguments}")
@@ -98,11 +92,7 @@ response = llm.complete("What's the weather?", tools=[weather_tool])
 ### 4. Custom OpenAI-Compatible Provider
 
 ```python
-llm = LLM(
-    provider="my-custom-llm",
-    api_key="...",
-    base_url="https://api.custom.com/v1"
-)
+llm = LLM(provider="my-custom-llm", api_key="...", base_url="https://api.custom.com/v1")
 response = llm.complete("What's the weather?", tools=[weather_tool])
 ```
 
@@ -112,12 +102,12 @@ All providers return tool calls in a unified format:
 
 ```python
 {
-    "id": "call_abc123",           # Unique identifier
-    "type": "function",            # Always "function"
+    "id": "call_abc123",  # Unique identifier
+    "type": "function",  # Always "function"
     "function": {
-        "name": "get_weather",     # Function name
-        "arguments": "{...}"       # JSON string of arguments
-    }
+        "name": "get_weather",  # Function name
+        "arguments": "{...}",  # JSON string of arguments
+    },
 }
 ```
 

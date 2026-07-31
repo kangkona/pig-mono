@@ -37,7 +37,7 @@ agent = Agent(
     llm=LLM(provider="openai"),
     system_prompt="You are a helpful assistant.",
     max_rounds=10,  # Maximum conversation rounds
-    verbose=True,   # Enable logging
+    verbose=True,  # Enable logging
 )
 
 # Run agent (async)
@@ -137,6 +137,7 @@ async def handle_search(
     # Perform search...
     return ToolResult(ok=True, data=results)
 
+
 # Register tool
 registry.register(
     name="search",
@@ -148,9 +149,7 @@ registry.register(
             "description": "Search for information",
             "parameters": {
                 "type": "object",
-                "properties": {
-                    "query": {"type": "string", "description": "Search query"}
-                },
+                "properties": {"query": {"type": "string", "description": "Search query"}},
                 "required": ["query"],
             },
         },
@@ -223,6 +222,7 @@ def compress_messages(messages: list[Message]) -> list[Message]:
         return messages
     return [messages[0]] + messages[-9:]
 
+
 agent = Agent(
     name="Agent",
     llm=llm,
@@ -237,12 +237,14 @@ agent = Agent(
 ```python
 from pig_agent_core.observability.events import AgentEvent, AgentEventType
 
+
 def event_callback(event: AgentEvent):
     """Handle agent events."""
     if event.type == AgentEventType.TOOL_START:
         print(f"Tool started: {event.data.get('tool_name')}")
     elif event.type == AgentEventType.TOOL_END:
         print(f"Tool finished: {event.data.get('result')}")
+
 
 agent = Agent(
     name="ObservableAgent",
@@ -264,6 +266,7 @@ Customize conversation history storage:
 ```python
 from pig_agent_core import MemoryProvider, Message
 
+
 class RedisMemoryProvider:
     """Store conversation history in Redis."""
 
@@ -282,13 +285,13 @@ class RedisMemoryProvider:
         messages = await self.get_messages(session_id)
         messages.append(message)
         await self.redis.set(
-            f"session:{session_id}",
-            json.dumps([msg.model_dump() for msg in messages])
+            f"session:{session_id}", json.dumps([msg.model_dump() for msg in messages])
         )
 
     async def clear_messages(self, session_id: str) -> None:
         """Clear session history."""
         await self.redis.delete(f"session:{session_id}")
+
 
 # Use custom memory provider
 agent = Agent(
@@ -303,6 +306,7 @@ Dynamically build system prompts with context:
 
 ```python
 from pig_agent_core import SystemPromptBuilder
+
 
 class BrandedPromptBuilder:
     """Build prompts with brand context."""
@@ -320,6 +324,7 @@ Guidelines: {brand.guidelines}
 Target Audience: {brand.audience}
 """
 
+
 agent = Agent(
     llm=llm,
     system_prompt="You are a helpful assistant.",
@@ -333,6 +338,7 @@ Track LLM and tool usage for cost monitoring:
 
 ```python
 from pig_agent_core import BillingHook
+
 
 class CostTracker:
     """Track costs per user."""
@@ -355,8 +361,8 @@ class CostTracker:
         """Track LLM call costs."""
         if model in self.pricing:
             cost = (
-                input_tokens / 1000 * self.pricing[model]["input"] +
-                output_tokens / 1000 * self.pricing[model]["output"]
+                input_tokens / 1000 * self.pricing[model]["input"]
+                + output_tokens / 1000 * self.pricing[model]["output"]
             )
             user_id = user_id or "default"
             self.costs[user_id] = self.costs.get(user_id, 0) + cost
@@ -377,6 +383,7 @@ class CostTracker:
             return {"user_id": user_id, "total_cost": self.costs.get(user_id, 0)}
         return {"total_cost": sum(self.costs.values()), "by_user": self.costs}
 
+
 tracker = CostTracker()
 agent = Agent(
     llm=llm,
@@ -395,6 +402,7 @@ Load user/brand context dynamically:
 ```python
 from pig_agent_core import ContextLoader
 
+
 class DatabaseContextLoader:
     """Load context from database."""
 
@@ -410,6 +418,7 @@ class DatabaseContextLoader:
             "recent_topics": user["recent_topics"],
             "language": user["language"],
         }
+
 
 # Context is loaded and injected into system prompt
 agent = Agent(
@@ -442,12 +451,14 @@ agent = Agent(
     ),
 )
 
+
 # Or provide custom compression
 def custom_compress(messages: list[Message]) -> list[Message]:
     """Keep only system prompt and last 5 messages."""
     if len(messages) <= 6:
         return messages
     return [messages[0]] + messages[-5:]
+
 
 agent = Agent(llm=llm, compress_fn=custom_compress)
 ```
@@ -597,9 +608,11 @@ class ProfileManager:
 ```python
 from pig_agent_core import Agent, tool
 
+
 @tool(description="Get weather")
 def get_weather(location: str) -> str:
     return f"Weather in {location}"
+
 
 agent = Agent(tools=[get_weather])
 ```
@@ -610,9 +623,11 @@ from pig_agent_core import Agent
 from pig_agent_core.tools.base import ToolResult
 from pig_agent_core.tools.registry import ToolRegistry
 
+
 async def handle_weather(args, user_id=None, meta=None, cancel=None):
     location = args.get("location", "")
     return ToolResult(ok=True, data=f"Weather in {location}")
+
 
 registry = ToolRegistry()
 registry.register(
@@ -681,13 +696,16 @@ profile_manager = ProfileManager.from_env(
     fallback_models=["gpt-3.5-turbo"],
 )
 
+
 # Setup observability
 def log_events(event: AgentEvent):
     print(f"[{event.type}] {event.data}")
 
+
 # Setup context compression
 def compress(messages):
     return [messages[0]] + messages[-9:] if len(messages) > 10 else messages
+
 
 # Create agent
 agent = Agent(
@@ -701,11 +719,13 @@ agent = Agent(
     verbose=True,
 )
 
+
 # Run agent
 async def main():
     async for chunk in agent.respond_stream("Help me plan a project"):
         if chunk.type == "text":
             print(chunk.content, end="", flush=True)
+
 
 asyncio.run(main())
 ```
