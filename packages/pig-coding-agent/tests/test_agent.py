@@ -1,6 +1,9 @@
 """Tests for CodingAgent."""
 
+import asyncio
 import json
+import time
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import Mock, patch
 
@@ -123,6 +126,82 @@ def test_coding_agent_interactive_permission_policy_uses_runtime_confirmation(
     assert allowed is True
     assert reason is None
     terminal_runtime.confirm.assert_called_once_with("Allow write_file on demo.txt?", default=False)
+
+
+def test_write_confirmation_time_is_outside_tool_execution_timeout(
+    mock_llm: Any, temp_workspace: Any
+) -> None:
+    decisions: list[tuple[str, str]] = []
+
+    def confirm(request: Any) -> bool:
+        decisions.append((request.action, request.target))
+        time.sleep(0.05)
+        return True
+
+    agent = CodingAgent(
+        llm=mock_llm,
+        workspace=str(temp_workspace),
+        verbose=False,
+        permission_policy=PermissionPolicy.confirm_all(confirm),
+    )
+    agent.agent.registry._timeouts["write_file"] = 0.01
+    tool_call = SimpleNamespace(
+        function=SimpleNamespace(
+            name="write_file",
+            arguments=json.dumps({"path": "slow-confirm.txt", "content": "ok"}),
+        )
+    )
+
+    result = asyncio.run(agent.agent.registry.execute(tool_call, "default", {}))
+
+    target = temp_workspace / "slow-confirm.txt"
+    assert result.ok is True
+    assert target.read_text() == "ok"
+    assert decisions == [("write_file", str(target.resolve()))]
+
+
+def test_permission_denial_terminates_turn_without_model_retry(
+    temp_workspace: Any,
+) -> None:
+    class _AlwaysWriteLLM:
+        def __init__(self) -> None:
+            self.config = SimpleNamespace(model="test-model", max_retries=0)
+            self.calls = 0
+
+        def chat(self, messages: Any, tools: Any = None) -> Any:
+            del messages, tools
+            self.calls += 1
+            return SimpleNamespace(
+                content="",
+                tool_calls=[
+                    {
+                        "id": f"call-{self.calls}",
+                        "function": {
+                            "name": "write_file",
+                            "arguments": json.dumps(
+                                {"path": "blocked.txt", "content": "must not write"}
+                            ),
+                        },
+                    }
+                ],
+            )
+
+    llm = _AlwaysWriteLLM()
+    agent = CodingAgent(
+        llm=llm,  # type: ignore[arg-type]
+        workspace=str(temp_workspace),
+        verbose=False,
+        permission_policy=PermissionPolicy.deny_all("cancelled by user"),
+    )
+    agent.agent.max_iterations = 3
+
+    result = agent.run_once_result("write the file")
+
+    assert llm.calls == 1
+    assert result.outcome is TurnOutcome.INCOMPLETE
+    assert result.raw_finish_reason == "permission_denied"
+    assert len(result.permission_denials) == 1
+    assert not (temp_workspace / "blocked.txt").exists()
 
 
 @pytest.mark.parametrize("tool_name", ["write_file", "edit_file", "run_command"])

@@ -4,7 +4,7 @@ import inspect
 import os
 from collections.abc import Callable
 from dataclasses import dataclass
-from functools import wraps
+from functools import partial, wraps
 from pathlib import Path
 from typing import Any
 
@@ -234,7 +234,9 @@ class CodingAgent:
         # registered in bulk on the agent's registry once it exists below).
         coding_schemas, coding_handlers = build_coding_tools(
             str(self.workspace),
-            permission_policy=self.permission_policy,
+            # Registry preflights below own authorization so human response
+            # time is excluded from the actual tool execution budget.
+            permission_policy=PermissionPolicy.allow_all(),
         )
 
         # Initialize context manager (needed by _get_system_prompt)
@@ -271,6 +273,15 @@ class CodingAgent:
         # excluded for this agent instance. (Web search is handled natively by
         # the model provider when enabled, not as a locally-dispatched tool.)
         self.agent.registry.register_package(coding_schemas, coding_handlers, is_core=True)
+        for tool_name in SIDE_EFFECTFUL_TOOL_NAMES & set(coding_handlers):
+            self.agent.registry.set_preflight(
+                tool_name,
+                partial(
+                    self._authorize_side_effect,
+                    tool_name,
+                    resolve_path=True,
+                ),
+            )
         for name in self.excluded_tools:
             self.agent.registry.unregister(name)
 
@@ -466,24 +477,12 @@ class CodingAgent:
         original = tool.func
 
         def authorize(arguments: dict[str, Any]) -> ToolResult | None:
-            target_key = "command" if tool.name == "run_command" else "path"
-            target_value = arguments.get(target_key, arguments.get("target"))
-            if target_value is None and arguments:
-                target_value = next(iter(arguments.values()))
-            target = str(target_value if target_value is not None else tool.name)
-            return self.permission_policy.authorize(
-                tool.name,
-                target,
-                arguments=dict(arguments),
-            )
+            return self._authorize_side_effect(tool.name, arguments)
 
         if inspect.iscoroutinefunction(original):
 
             @wraps(original)
             async def guarded_async(**kwargs: Any) -> Any:
-                denial = authorize(kwargs)
-                if denial is not None:
-                    return denial
                 return await original(**kwargs)
 
             guarded = guarded_async
@@ -492,12 +491,11 @@ class CodingAgent:
 
             @wraps(original)
             def guarded_sync(**kwargs: Any) -> Any:
-                denial = authorize(kwargs)
-                if denial is not None:
-                    return denial
                 return original(**kwargs)
 
             guarded = guarded_sync
+
+        vars(guarded)["__tool_preflight__"] = authorize
 
         tool_kwargs: dict[str, Any] = {
             "name": tool.name,
@@ -509,6 +507,31 @@ class CodingAgent:
             if field in supported:
                 tool_kwargs[field] = getattr(tool, field, False if field == "deferred" else None)
         return Tool(guarded, **tool_kwargs)
+
+    def _authorize_side_effect(
+        self,
+        action: str,
+        arguments: dict[str, Any],
+        *,
+        resolve_path: bool = False,
+    ) -> ToolResult | None:
+        """Apply the shared permission policy before a tool budget starts."""
+        target_key = "command" if action == "run_command" else "path"
+        target_value = arguments.get(target_key, arguments.get("target"))
+        if target_value is None and arguments:
+            target_value = next(iter(arguments.values()))
+        if resolve_path and action in {"write_file", "edit_file"} and target_value is not None:
+            target_path = Path(str(target_value))
+            if not target_path.is_absolute():
+                target_path = self.workspace / target_path
+            target = str(target_path.resolve())
+        else:
+            target = str(target_value if target_value is not None else action)
+        return self.permission_policy.authorize(
+            action,
+            target,
+            arguments=dict(arguments),
+        )
 
     @property
     def ui(self) -> InteractionUI:

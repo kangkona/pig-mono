@@ -53,6 +53,7 @@ class ToolRegistry:
                 duration statistics. Defaults to None (no metrics).
         """
         self._handlers: dict[str, Callable] = {}
+        self._preflights: dict[str, Callable[[dict[str, Any]], Any]] = {}
         self._schemas: dict[str, dict] = {}
         self._core_tools: set[str] = set()
         self._discovered: set[str] = set()
@@ -74,6 +75,7 @@ class ToolRegistry:
         timeout: float = 30.0,
         max_retries: int = 0,
         fallback_tools: list[str] | None = None,
+        preflight: Callable[[dict[str, Any]], Any] | None = None,
         validate: bool = True,
     ) -> None:
         """Register a tool with its handler and schema.
@@ -86,6 +88,7 @@ class ToolRegistry:
             timeout: Execution timeout in seconds
             max_retries: Maximum number of retry attempts on failure
             fallback_tools: List of fallback tool names to try if this tool fails
+            preflight: Authorization or validation callback run before timeout
             validate: Whether to validate schema/handler/budget consistency
 
         Raises:
@@ -97,6 +100,11 @@ class ToolRegistry:
 
         with self._lock:
             self._handlers[name] = handler
+            resolved_preflight = preflight or getattr(handler, "__tool_preflight__", None)
+            if callable(resolved_preflight):
+                self._preflights[name] = resolved_preflight
+            else:
+                self._preflights.pop(name, None)
             self._schemas[name] = schema
             self._timeouts[name] = timeout
             self._retries[name] = max_retries
@@ -162,6 +170,7 @@ class ToolRegistry:
         """
         with self._lock:
             self._handlers.pop(name, None)
+            self._preflights.pop(name, None)
             self._schemas.pop(name, None)
             self._core_tools.discard(name)
             self._discovered.discard(name)
@@ -169,6 +178,20 @@ class ToolRegistry:
             self._retries.pop(name, None)
             self._fallbacks.pop(name, None)
             self._confirmed_tools.discard(name)
+
+    def set_preflight(
+        self,
+        name: str,
+        callback: Callable[[dict[str, Any]], Any] | None,
+    ) -> None:
+        """Set a preflight that is intentionally outside the tool timeout."""
+        with self._lock:
+            if name not in self._handlers:
+                raise KeyError(f"Tool '{name}' not found")
+            if callback is None:
+                self._preflights.pop(name, None)
+            else:
+                self._preflights[name] = callback
 
     def register_package(
         self,
@@ -388,27 +411,34 @@ class ToolRegistry:
         if cancel and cancel.is_set():
             return ToolResult(ok=False, error="Cancelled before execution")
 
-        # Check confirmation gate for write tools
-        if self.requires_confirmation(name):
-            return ToolResult(
-                ok=False,
-                error=f"Tool '{name}' requires confirmation before execution (write permission)",
-                meta={"requires_confirmation": True, "tool_name": name},
-            )
-
-        # Try primary tool
         _t0 = time.monotonic()
-        result = await self._execute_tool(name, args, user_id, meta, cancel)
+        preflight_result = await self._run_preflight(name, args)
+
+        # Human authorization and other preflight work finish before the
+        # execution budget starts. A slow confirmation must not leave a timed-
+        # out prompt alive in a background worker.
+        if preflight_result is not None:
+            preflight_handled = True
+            result = preflight_result
+        else:
+            preflight_handled = False
+            result = await self._execute_tool(name, args, user_id, meta, cancel)
         _duration = time.monotonic() - _t0
 
         # If primary tool failed, try fallbacks
-        if not result.ok:
+        if not result.ok and not preflight_handled:
             fallbacks = self.get_fallback_tools(name)
             for fallback_name in fallbacks:
                 if cancel and cancel.is_set():
                     return ToolResult(ok=False, error="Cancelled during fallback execution")
 
-                # Try fallback tool
+                fallback_preflight = await self._run_preflight(fallback_name, args)
+                if fallback_preflight is not None:
+                    # Authorization and validation decisions are authoritative;
+                    # never bypass them by moving to another fallback.
+                    result = fallback_preflight
+                    break
+
                 fallback_result = await self._execute_tool(
                     fallback_name, args, user_id, meta, cancel
                 )
@@ -439,6 +469,27 @@ class ToolRegistry:
 
         return result
 
+    async def _run_preflight(
+        self,
+        name: str,
+        args: dict[str, Any],
+    ) -> ToolResult | None:
+        """Run confirmation and registered preflight outside execution timeout."""
+        if self.requires_confirmation(name):
+            return ToolResult(
+                ok=False,
+                error=f"Tool '{name}' requires confirmation before execution (write permission)",
+                meta={"requires_confirmation": True, "tool_name": name},
+            )
+
+        preflight = self._preflights.get(name)
+        if preflight is None:
+            return None
+        result = preflight(args)
+        if inspect.isawaitable(result):
+            result = await result
+        return result if isinstance(result, ToolResult) else None
+
     def execute_sync(
         self,
         name: str,
@@ -461,6 +512,17 @@ class ToolRegistry:
         handler = self._handlers.get(name)
         if not handler:
             return ToolResult(ok=False, error=f"Tool '{name}' not found")
+
+        preflight = self._preflights.get(name)
+        if preflight is not None:
+            preflight_result = preflight(args)
+            if inspect.isawaitable(preflight_result):
+                return ToolResult(
+                    ok=False,
+                    error="Async tool preflight cannot run through execute_sync",
+                )
+            if isinstance(preflight_result, ToolResult):
+                return preflight_result
 
         activated_on_call = self._activate_deferred_tool(name)
 
@@ -714,11 +776,19 @@ class ToolRegistry:
                     results[idx] = result
 
         # Execute sequential tools one by one
+        abort_sequential = False
         for idx in sequential_indices:
             if cancel and cancel.is_set():
                 results[idx] = ToolResult(ok=False, error="Cancelled during batch execution")
+            elif abort_sequential:
+                results[idx] = ToolResult(
+                    ok=False,
+                    error="Skipped after an earlier tool stopped the batch",
+                )
             else:
-                results[idx] = await self.execute(tool_calls[idx], user_id, meta, cancel)
+                result = await self.execute(tool_calls[idx], user_id, meta, cancel)
+                results[idx] = result
+                abort_sequential = bool(result.meta.get("abort_batch"))
 
         # Type assertion: all results should be filled
         return [r for r in results if r is not None]

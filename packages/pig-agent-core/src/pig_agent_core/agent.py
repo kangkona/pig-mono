@@ -219,6 +219,32 @@ class Agent:
             "result": result,
         }
 
+    @staticmethod
+    def _termination_result(tool_results: list[dict[str, Any]]) -> ToolResult | None:
+        """Return the first tool result that requests a terminal turn boundary."""
+        for tool_result in tool_results:
+            result = tool_result.get("result")
+            if isinstance(result, ToolResult) and result.meta.get("terminate"):
+                return result
+        return None
+
+    @staticmethod
+    def _tool_termination_outcome(result: ToolResult) -> tuple[TurnOutcome, str]:
+        """Resolve success and failure termination metadata into a turn outcome."""
+        raw_outcome = result.meta.get("terminal_outcome")
+        if isinstance(raw_outcome, str):
+            try:
+                outcome = TurnOutcome(raw_outcome)
+            except ValueError:
+                outcome = TurnOutcome.COMPLETED if result.ok else TurnOutcome.INCOMPLETE
+        else:
+            outcome = TurnOutcome.COMPLETED if result.ok else TurnOutcome.INCOMPLETE
+        raw_reason = result.meta.get("finish_reason")
+        reason = (
+            raw_reason if isinstance(raw_reason, str) else ("stop" if result.ok else "tool_error")
+        )
+        return outcome, reason
+
     def _resolve_tool_capabilities(self) -> ToolModelCapabilities:
         """Map model-runtime capabilities into the provider-neutral tool contract."""
         if self.tool_capabilities is not None:
@@ -631,7 +657,7 @@ class Agent:
         self,
         tool_calls: list[dict[str, Any]],
         cancel: asyncio.Event | None = None,
-    ) -> tuple[list[dict[str, Any]], bool]:
+    ) -> tuple[list[dict[str, Any]], ToolResult | None]:
         """Execute tool calls via ToolRegistry.execute_batch preserving call order."""
         from types import SimpleNamespace
 
@@ -647,13 +673,14 @@ class Agent:
         results = await self.registry.execute_batch(tool_call_objects, "default", {}, cancel)
 
         tool_messages: list[dict[str, Any]] = []
-        terminate_any = False
+        termination: ToolResult | None = None
         for tool_call, result in zip(tool_calls, results, strict=False):
             tool_name = tool_call.get("function", {}).get("name")
             tool_messages.append(self._tool_message(tool_call, tool_name, result))
-            terminate_any = terminate_any or bool(result.ok and result.meta.get("terminate"))
+            if termination is None and result.meta.get("terminate"):
+                termination = result
 
-        return tool_messages, terminate_any
+        return tool_messages, termination
 
     def add_tool(self, tool: Tool) -> None:
         """Add a tool to the agent.
@@ -764,20 +791,23 @@ class Agent:
                         )
                     )
 
-                if tool_results and any(
-                    tr.get("result") and tr["result"].ok and tr["result"].meta.get("terminate")
-                    for tr in tool_results
-                ):
+                termination = self._termination_result(tool_results)
+                if termination is not None:
                     final_content = "\n".join(str(tr["content"]) for tr in tool_results)
+                    terminal_outcome, finish_reason = self._tool_termination_outcome(termination)
                     final_response = Response(
                         content=final_content,
                         model=self.llm.config.model or "unknown",
-                        finish_reason="stop",
+                        finish_reason=finish_reason,
                     )
-                    self._set_turn_outcome(TurnOutcome.COMPLETED, "stop")
+                    self._set_turn_outcome(terminal_outcome, finish_reason)
                     self.history.append(Message(role="assistant", content=final_response.content))
-                    self._emit_agent_end(success=True)
-                    if check_queue and self.message_queue.has_followup():
+                    completed = terminal_outcome is TurnOutcome.COMPLETED
+                    self._emit_agent_end(
+                        success=completed,
+                        error=None if completed else final_content,
+                    )
+                    if completed and check_queue and self.message_queue.has_followup():
                         followup = self.message_queue.get_followup_messages()
                         followup_response = self._drain_followup_messages(
                             followup, check_queue=check_queue
@@ -965,11 +995,11 @@ class Agent:
                         self._rounds_since_plan = 0
 
                 if self._can_use_async_batch_execution():
-                    tool_results, terminate_any = await self._execute_async_batch_tool_calls(
+                    tool_results, termination = await self._execute_async_batch_tool_calls(
                         response_tool_calls, cancel
                     )
                 else:
-                    terminate_any = False
+                    termination = None
 
                 if not self._can_use_async_batch_execution():
                     # Execute tools
@@ -1103,24 +1133,24 @@ class Agent:
                         )
                     )
 
-                if tool_results and (
-                    terminate_any
-                    if self._can_use_async_batch_execution()
-                    else any(
-                        tr.get("result") and tr["result"].ok and tr["result"].meta.get("terminate")
-                        for tr in tool_results
-                    )
-                ):
+                if termination is None:
+                    termination = self._termination_result(tool_results)
+                if termination is not None:
                     final_content = "\n".join(str(tr["content"]) for tr in tool_results)
+                    terminal_outcome, finish_reason = self._tool_termination_outcome(termination)
                     final_response = Response(
                         content=final_content,
                         model=self.llm.config.model or "unknown",
-                        finish_reason="stop",
+                        finish_reason=finish_reason,
                     )
-                    self._set_turn_outcome(TurnOutcome.COMPLETED, "stop")
+                    self._set_turn_outcome(terminal_outcome, finish_reason)
                     self.history.append(Message(role="assistant", content=final_response.content))
-                    self._emit_agent_end(success=True)
-                    if check_queue and self.message_queue.has_followup():
+                    completed = terminal_outcome is TurnOutcome.COMPLETED
+                    self._emit_agent_end(
+                        success=completed,
+                        error=None if completed else final_content,
+                    )
+                    if completed and check_queue and self.message_queue.has_followup():
                         followup = self.message_queue.get_followup_messages()
                         if followup:
                             followup_response: Response | None = None
@@ -1422,8 +1452,8 @@ class Agent:
 
             # Execute tool calls
             tool_history_start = len(self.history)
-            terminate_any = await self._execute_tool_calls_from_dict(assistant_tool_calls, cancel)
-            if terminate_any:
+            termination = await self._execute_tool_calls_from_dict(assistant_tool_calls, cancel)
+            if termination is not None:
                 current_tool_call_ids = {tool_call["id"] for tool_call in assistant_tool_calls}
                 final_content = "\n".join(
                     message.content
@@ -1432,9 +1462,19 @@ class Agent:
                     and (message.metadata or {}).get("tool_call_id") in current_tool_call_ids
                 )
                 self.history.append(Message(role="assistant", content=final_content))
-                self._set_turn_outcome(TurnOutcome.COMPLETED, "stop")
-                self._emit_agent_end(success=True)
-                if self.message_queue.has_followup():
+                terminal_outcome, finish_reason = self._tool_termination_outcome(termination)
+                self._set_turn_outcome(terminal_outcome, finish_reason)
+                completed = terminal_outcome is TurnOutcome.COMPLETED
+                if not completed and final_content:
+                    # Successful terminate tools are control-flow only, but a
+                    # failed terminal result is the user-visible explanation
+                    # for why the stream stopped.
+                    yield final_content
+                self._emit_agent_end(
+                    success=completed,
+                    error=None if completed else final_content,
+                )
+                if completed and self.message_queue.has_followup():
                     followup = self.message_queue.get_followup_messages()
                     for queued in followup:
                         async for followup_chunk in self.respond_stream(queued.content, cancel):
@@ -1462,7 +1502,7 @@ class Agent:
         self,
         tool_calls: list[dict[str, Any]],
         cancel: asyncio.Event | None = None,
-    ) -> bool:
+    ) -> ToolResult | None:
         """Execute tool calls from dictionary format.
 
         Args:
@@ -1470,10 +1510,10 @@ class Agent:
             cancel: Optional cancellation event
 
         Returns:
-            True when any tool result requested early termination.
+            The first tool result that requested early termination, if any.
         """
         if self._can_use_async_batch_execution():
-            tool_messages, terminate_any = await self._execute_async_batch_tool_calls(
+            tool_messages, batch_termination = await self._execute_async_batch_tool_calls(
                 tool_calls, cancel
             )
             for tool_result in tool_messages:
@@ -1487,12 +1527,12 @@ class Agent:
                         },
                     )
                 )
-            return terminate_any
+            return batch_termination
 
-        terminate_any = False
+        termination: ToolResult | None = None
         for tool_call in tool_calls:
             if cancel and cancel.is_set():
-                return False
+                return termination
 
             tool_name = tool_call.get("function", {}).get("name")
             tool_args_str = tool_call.get("function", {}).get("arguments", "{}")
@@ -1526,11 +1566,10 @@ class Agent:
                             },
                         )
                     )
-                    terminate_any = terminate_any or bool(
-                        result.ok and result.meta.get("terminate")
-                    )
+                    if termination is None and result.meta.get("terminate"):
+                        termination = result
                     if result.meta.get("abort_batch"):
-                        return False
+                        return termination
                     continue
 
             if self.on_tool_start:
@@ -1580,7 +1619,10 @@ class Agent:
                     result,
                     tool_call_id=(tool_call_id if isinstance(tool_call_id, str) else None),
                 )
-                terminate_any = terminate_any or bool(result.ok and result.meta.get("terminate"))
+                if termination is None and result.meta.get("terminate"):
+                    termination = result
+                if result.meta.get("abort_batch"):
+                    return termination
             except Exception as e:
                 error_msg = f"Error: {e}"
                 result = ToolResult(ok=False, error=error_msg)
@@ -1601,7 +1643,7 @@ class Agent:
                 )
                 self._log(f"✗ {error_msg}", style="red")
 
-        return terminate_any
+        return termination
 
     async def _execute_tool_calls(self, tool_calls: list[dict[str, Any]]) -> None:
         """Execute tool calls (backward compatibility wrapper).

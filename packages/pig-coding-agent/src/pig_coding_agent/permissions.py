@@ -49,7 +49,13 @@ def permission_denied_result(action: str, target: str, message: str) -> ToolResu
     return ToolResult(
         ok=False,
         error=message,
-        meta={"permission_denial": permission_denial_payload(action, target, message)},
+        meta={
+            "permission_denial": permission_denial_payload(action, target, message),
+            "abort_batch": True,
+            "terminate": True,
+            "terminal_outcome": "incomplete",
+            "finish_reason": "permission_denied",
+        },
     )
 
 

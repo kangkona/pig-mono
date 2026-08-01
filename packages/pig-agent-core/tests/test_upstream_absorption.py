@@ -1090,6 +1090,65 @@ async def test_respond_stream_terminate_tool_result_skips_followup_llm_call() ->
 
 
 @pytest.mark.asyncio
+async def test_respond_stream_failed_termination_is_visible_and_suppresses_followup() -> None:
+    class FakeLLM:
+        config = SimpleNamespace(model="fake")
+
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def achat_stream(self, messages: Any, tools: Any = None) -> Any:
+            del messages, tools
+            self.calls += 1
+
+            async def stream() -> Any:
+                yield StreamChunk(
+                    content="",
+                    tool_calls=[
+                        {
+                            "id": "call-1",
+                            "type": "function",
+                            "function": {"name": "deny", "arguments": "{}"},
+                        }
+                    ],
+                )
+
+            return stream()
+
+    events: list[Any] = []
+
+    def deny() -> Any:
+        return ToolResult(
+            ok=False,
+            error="permission denied",
+            meta={
+                "terminate": True,
+                "terminal_outcome": "incomplete",
+                "finish_reason": "permission_denied",
+            },
+        )
+
+    llm = FakeLLM()
+    agent = Agent(llm=llm, tools=[], verbose=False, event_callback=events.append)
+    agent.registry.register(
+        "deny",
+        deny,
+        {"type": "function", "function": {"name": "deny"}},
+    )
+    agent.message_queue.add_followup("must not run")
+
+    chunks = [chunk async for chunk in agent.respond_stream("start")]
+
+    assert chunks == ["permission denied"]
+    assert llm.calls == 1
+    assert agent.last_turn_outcome is TurnOutcome.INCOMPLETE
+    assert agent.last_finish_reason == "permission_denied"
+    end_event = next(event for event in events if event.type.value == "agent_end")
+    assert end_event.data["success"] is False
+    assert end_event.data["error"] == "permission denied"
+
+
+@pytest.mark.asyncio
 async def test_respond_stream_terminate_tool_result_drains_followup_queued_from_agent_end() -> None:
     class FakeLLM:
         config = SimpleNamespace(model="fake")

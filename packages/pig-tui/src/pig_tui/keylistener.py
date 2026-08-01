@@ -98,12 +98,18 @@ class LiveInputListener:
         self._fd: int | None = None
         self._old_termios: list[Any] | None = None
         self._active = False
+        self._resume_after_suspend = False
 
     async def __aenter__(self) -> LiveInputListener:
         if not _stdin_is_interactive():
             return self  # no-op fallback (Ctrl-C still aborts via Stage-4 handler)
 
         self._loop = asyncio.get_running_loop()
+        self._activate()
+        return self
+
+    def _activate(self) -> None:
+        """Start the platform reader when terminal input is available."""
         self._stop = threading.Event()
 
         if sys.platform == "win32":
@@ -115,7 +121,6 @@ class LiveInputListener:
             self._active = True
             self._thread = threading.Thread(target=self._reader, daemon=True)
             self._thread.start()
-        return self
 
     async def __aexit__(
         self,
@@ -123,6 +128,11 @@ class LiveInputListener:
         exc_value: BaseException | None,
         traceback: TracebackType | None,
     ) -> None:
+        self._resume_after_suspend = False
+        self._deactivate()
+
+    def _deactivate(self) -> None:
+        """Stop the platform reader and restore the terminal mode."""
         if not self._active:
             return
         if self._stop is not None:
@@ -131,6 +141,20 @@ class LiveInputListener:
             self._thread.join(timeout=1.0)
         self._restore()
         self._active = False
+        self._thread = None
+        self._stop = None
+
+    def suspend(self) -> None:
+        """Release stdin so a nested confirmation prompt can read it exclusively."""
+        self._resume_after_suspend = self._active
+        self._deactivate()
+
+    def resume(self) -> None:
+        """Resume listening after a nested prompt releases stdin."""
+        if not self._resume_after_suspend:
+            return
+        self._resume_after_suspend = False
+        self._activate()
 
     # -- platform setup -----------------------------------------------------
 

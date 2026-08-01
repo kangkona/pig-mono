@@ -1,6 +1,7 @@
 """Tests for the streaming-time key listener."""
 
 import asyncio
+from unittest.mock import Mock, patch
 
 import pytest
 from pig_tui.keylistener import LiveInputListener
@@ -15,6 +16,30 @@ async def test_listener_is_noop_when_stdin_not_a_tty() -> None:
         assert listener._active is False
         assert listener._thread is None
     assert not cancel.is_set()
+
+
+def test_listener_suspend_and_resume_release_terminal_reader() -> None:
+    listener = LiveInputListener(asyncio.Event())
+    stop = Mock()
+    thread = Mock()
+    listener._stop = stop
+    listener._thread = thread
+    listener._active = True
+
+    with patch.object(listener, "_restore") as restore:
+        listener.suspend()
+
+    stop.set.assert_called_once_with()
+    thread.join.assert_called_once_with(timeout=1.0)
+    restore.assert_called_once_with()
+    assert listener._active is False
+    assert listener._resume_after_suspend is True
+
+    with patch.object(listener, "_activate") as activate:
+        listener.resume()
+
+    activate.assert_called_once_with()
+    assert listener._resume_after_suspend is False
 
 
 @pytest.mark.asyncio

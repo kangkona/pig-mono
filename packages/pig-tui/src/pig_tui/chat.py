@@ -61,6 +61,7 @@ class MarkdownStreamWriter:
     def __init__(self) -> None:
         self.text = ""
         self._live: Live | None = None
+        self._live_suspended = False
         self._started = time.monotonic()
         self._frame = 0
         self._done = False
@@ -118,6 +119,20 @@ class MarkdownStreamWriter:
     def add_event(self, renderable: Any) -> None:
         self._events.append(renderable)
         self._refresh()
+
+    def suspend(self) -> None:
+        """Temporarily release the terminal while a nested prompt owns it."""
+        if self._live is None or self._live_suspended:
+            return
+        self._live.stop()
+        self._live_suspended = True
+
+    def resume(self) -> None:
+        """Resume live rendering after a nested prompt completes."""
+        if self._live is None or not self._live_suspended:
+            return
+        self._live.start(refresh=True)
+        self._live_suspended = False
 
     def set_input(
         self, text: str, cursor: int | None = None, suggestions: list[str] | None = None

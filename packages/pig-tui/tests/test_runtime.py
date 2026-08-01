@@ -1,6 +1,8 @@
 """Tests for pig-tui runtime primitives."""
 
 import asyncio
+import threading
+import time
 from collections.abc import AsyncIterator
 from typing import Any, Literal
 from unittest.mock import Mock, patch
@@ -142,6 +144,109 @@ def test_streaming_turn_controller_returns_content_and_abort_state() -> None:
     assert result.aborted is False
     writer.write.assert_any_call("hello ")
     writer.write.assert_any_call("world")
+
+
+def test_confirmation_during_stream_owns_terminal_and_is_not_timed_out() -> None:
+    """A slow human confirmation must not run inside a tool worker timeout."""
+    prompt_thread_ids: list[int] = []
+    listener_events: list[str] = []
+    writer_events: list[str] = []
+    allowed: list[bool] = []
+    runtime_thread_id: list[int] = []
+
+    class _PromptRuntime:
+        def __init__(self, **kwargs: Any) -> None:
+            del kwargs
+
+        def ask(self, prompt_text: str = "You> ") -> str:
+            assert prompt_text == "Confirm> "
+            prompt_thread_ids.append(threading.get_ident())
+            time.sleep(0.05)
+            return "yes"
+
+    class _Writer:
+        def write(self, text: str) -> None:
+            del text
+
+        def set_input(
+            self,
+            text: str,
+            cursor: int | None = None,
+            suggestions: list[str] | None = None,
+        ) -> None:
+            del text, cursor, suggestions
+
+        def tick(self) -> None:
+            return None
+
+        def suspend(self) -> None:
+            writer_events.append("suspend")
+
+        def resume(self) -> None:
+            writer_events.append("resume")
+
+    writer = _Writer()
+
+    class _StreamContext:
+        def __enter__(self) -> _Writer:
+            return writer
+
+        def __exit__(self, *args: Any) -> Literal[False]:
+            del args
+            return False
+
+    ui = Mock()
+    ui.assistant_stream_markdown.return_value = _StreamContext()
+
+    class _Listener:
+        async def __aenter__(self) -> "_Listener":
+            listener_events.append("enter")
+            return self
+
+        async def __aexit__(self, *args: Any) -> Literal[False]:
+            del args
+            listener_events.append("exit")
+            return False
+
+        def suspend(self) -> None:
+            listener_events.append("suspend")
+
+        def resume(self) -> None:
+            listener_events.append("resume")
+
+    def _turn_controller_factory(**kwargs: Any) -> StreamingTurnController:
+        def _listener_factory(*args: Any, **listener_kwargs: Any) -> _Listener:
+            del args, listener_kwargs
+            return _Listener()
+
+        return StreamingTurnController(
+            commands=kwargs["commands"],
+            live_input_listener_factory=_listener_factory,
+        )
+
+    prompt_runtime_factory: Any = _PromptRuntime
+    runtime = TerminalRuntime(
+        ui=ui,
+        commands=["/help"],
+        workspace=".",
+        prompt_runtime_factory=prompt_runtime_factory,
+        turn_controller_factory=_turn_controller_factory,
+    )
+
+    async def stream() -> AsyncIterator[str]:
+        runtime_thread_id.append(threading.get_ident())
+        loop = asyncio.get_running_loop()
+        decision = await loop.run_in_executor(None, runtime.confirm, "Allow write?")
+        allowed.append(decision)
+        yield "done"
+
+    result = asyncio.run(runtime.stream_turn(stream=stream(), on_steering=lambda _: None))
+
+    assert result.content == "done"
+    assert allowed == [True]
+    assert prompt_thread_ids == runtime_thread_id
+    assert listener_events == ["enter", "suspend", "resume", "exit"]
+    assert writer_events == ["suspend", "resume"]
 
 
 def test_terminal_runtime_tracks_prompt_focus() -> None:

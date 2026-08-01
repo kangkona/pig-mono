@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncIterator, Awaitable, Callable
-from contextlib import AbstractAsyncContextManager, AbstractContextManager
+import concurrent.futures
+import threading
+from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
+from contextlib import AbstractAsyncContextManager, AbstractContextManager, contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol
@@ -168,6 +170,10 @@ class StreamWriter(Protocol):
     ) -> None: ...
 
     def tick(self) -> None: ...
+
+    def suspend(self) -> None: ...
+
+    def resume(self) -> None: ...
 
 
 class ChatStreamUI(Protocol):
@@ -374,6 +380,8 @@ class StreamingTurnController:
     ) -> None:
         self.commands = commands
         self.live_input_listener_factory = live_input_listener_factory
+        self._active_listener: object | None = None
+        self._active_writer: StreamWriter | None = None
 
     def _resolve_commands(self) -> list[str]:
         return self.commands() if callable(self.commands) else list(self.commands)
@@ -390,28 +398,57 @@ class StreamingTurnController:
         parts: list[str] = []
 
         with ui.assistant_stream_markdown() as writer:
-            async with self.live_input_listener_factory(
+            self._active_writer = writer
+            listener = self.live_input_listener_factory(
                 cancel,
                 on_steering=on_steering,
                 on_change=writer.set_input,
                 completions=self._resolve_commands(),
                 echo=False,
-            ):
+            )
+            try:
+                async with listener as active_listener:
+                    self._active_listener = active_listener
 
-                async def _tick() -> None:
-                    while True:
-                        await asyncio.sleep(0.4)
-                        writer.tick()
+                    async def _tick() -> None:
+                        while True:
+                            await asyncio.sleep(0.4)
+                            writer.tick()
 
-                ticker = asyncio.create_task(_tick())
-                try:
-                    async for chunk in stream:
-                        parts.append(chunk)
-                        writer.write(chunk)
-                finally:
-                    ticker.cancel()
+                    ticker = asyncio.create_task(_tick())
+                    try:
+                        async for chunk in stream:
+                            parts.append(chunk)
+                            writer.write(chunk)
+                    finally:
+                        ticker.cancel()
+            finally:
+                self._active_listener = None
+                self._active_writer = None
 
         return TurnResult(content="".join(parts), aborted=cancel.is_set())
+
+    @contextmanager
+    def suspend_for_prompt(self) -> Iterator[None]:
+        """Give a nested prompt exclusive ownership of stdin and live output."""
+        listener = self._active_listener
+        writer = self._active_writer
+        listener_suspend = getattr(listener, "suspend", None)
+        listener_resume = getattr(listener, "resume", None)
+        writer_suspend = getattr(writer, "suspend", None)
+        writer_resume = getattr(writer, "resume", None)
+
+        if callable(listener_suspend):
+            listener_suspend()
+        if callable(writer_suspend):
+            writer_suspend()
+        try:
+            yield
+        finally:
+            if callable(writer_resume):
+                writer_resume()
+            if callable(listener_resume):
+                listener_resume()
 
 
 class TerminalRuntime:
@@ -433,6 +470,8 @@ class TerminalRuntime:
         self.overlays = OverlayStack()
         self.active_container: Container | None = None
         self._container_history: list[Container | None] = []
+        self._stream_loop: asyncio.AbstractEventLoop | None = None
+        self._stream_thread_id: int | None = None
         prompt_runtime_factory = prompt_runtime_factory or PromptRuntime
         turn_controller_factory = turn_controller_factory or StreamingTurnController
         self.presenter = ChatPresenter(lambda: self.ui)
@@ -546,6 +585,8 @@ class TerminalRuntime:
         cancel_event: asyncio.Event | None = None,
     ) -> TurnResult:
         self.focus.focus("streaming")
+        self._stream_loop = asyncio.get_running_loop()
+        self._stream_thread_id = threading.get_ident()
         try:
             return await self.turn_controller.run(
                 stream=stream,
@@ -554,6 +595,8 @@ class TerminalRuntime:
                 cancel_event=cancel_event,
             )
         finally:
+            self._stream_loop = None
+            self._stream_thread_id = None
             self.focus.restore_previous()
 
     def push_overlay(self, panel: PanelContent, component: Component | None = None) -> None:
@@ -633,6 +676,32 @@ class TerminalRuntime:
             self.end_overlay_session()
 
     def confirm(self, question: str, *, default: bool = False) -> bool:
+        def run_confirmation() -> bool:
+            with self.turn_controller.suspend_for_prompt():
+                return self._run_confirmation(question, default=default)
+
+        loop = self._stream_loop
+        stream_thread_id = self._stream_thread_id
+        if (
+            loop is not None
+            and loop.is_running()
+            and stream_thread_id is not None
+            and threading.get_ident() != stream_thread_id
+        ):
+            result: concurrent.futures.Future[bool] = concurrent.futures.Future()
+
+            def invoke() -> None:
+                try:
+                    result.set_result(run_confirmation())
+                except BaseException as exc:
+                    result.set_exception(exc)
+
+            loop.call_soon_threadsafe(invoke)
+            return result.result()
+        return run_confirmation()
+
+    def _run_confirmation(self, question: str, *, default: bool = False) -> bool:
+        """Render and collect one confirmation on the terminal-owning thread."""
         options = [
             SelectOption(
                 value="yes",

@@ -1,7 +1,7 @@
 """Tests for chat UI."""
 
 from typing import Any, cast
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from pig_tui.chat import ChatUI, MarkdownStreamWriter
 from pig_tui.rendering import normalize_markdown_for_terminal
@@ -204,6 +204,20 @@ def test_markdown_stream_writer_shows_then_drops_status_spinner() -> None:
     writer.finalize()
     final = render(writer._renderable())
     assert "Hi" in final and "working" not in final
+
+
+def test_markdown_stream_writer_releases_live_display_for_nested_prompt() -> None:
+    writer = MarkdownStreamWriter()
+    live = Mock()
+    writer._live = live
+
+    writer.suspend()
+    writer.suspend()
+    writer.resume()
+    writer.resume()
+
+    live.stop.assert_called_once_with()
+    live.start.assert_called_once_with(refresh=True)
 
 
 def test_markdown_stream_writer_shows_input_affordance() -> None:
