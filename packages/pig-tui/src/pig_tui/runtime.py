@@ -648,8 +648,30 @@ class TerminalRuntime:
 
     def run_prompt_step(self, step: PromptStep) -> str:
         self.focus.focus("prompt")
-        value = self.prompt_runtime.ask(step.prompt_text)
+        value = self._ask_sync_prompt(step.prompt_text)
         return value.strip() if step.strip else value
+
+    def _ask_sync_prompt(self, prompt_text: str) -> str:
+        """Run prompt_toolkit's synchronous prompt outside any active event loop."""
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            return self.prompt_runtime.ask(prompt_text)
+
+        result: concurrent.futures.Future[str] = concurrent.futures.Future()
+
+        def invoke() -> None:
+            try:
+                result.set_result(self.prompt_runtime.ask(prompt_text))
+            except BaseException as exc:
+                result.set_exception(exc)
+
+        prompt_thread = threading.Thread(target=invoke, name="pig-sync-prompt")
+        prompt_thread.start()
+        try:
+            return result.result()
+        finally:
+            prompt_thread.join()
 
     def run_selection_session(self, session: SelectionSession) -> SelectOption | None:
         items = [(option.label, option.description) for option in session.options]
@@ -722,6 +744,7 @@ class TerminalRuntime:
                 options=options,
                 prompt_text="Confirm> ",
                 header_component=ConfirmView(question=question, default=default),
+                note="Type yes/no (or 1/2), then press Enter.",
                 default_index=0 if default else 1,
             )
         )

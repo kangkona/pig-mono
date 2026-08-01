@@ -146,8 +146,9 @@ def test_streaming_turn_controller_returns_content_and_abort_state() -> None:
     writer.write.assert_any_call("world")
 
 
-def test_confirmation_during_stream_owns_terminal_and_is_not_timed_out() -> None:
-    """A slow human confirmation must not run inside a tool worker timeout."""
+@pytest.mark.parametrize("from_worker", [False, True])
+def test_confirmation_during_stream_runs_sync_prompt_off_event_loop(from_worker: bool) -> None:
+    """A sync prompt must own the terminal without nesting asyncio.run()."""
     prompt_thread_ids: list[int] = []
     listener_events: list[str] = []
     writer_events: list[str] = []
@@ -161,6 +162,12 @@ def test_confirmation_during_stream_owns_terminal_and_is_not_timed_out() -> None
         def ask(self, prompt_text: str = "You> ") -> str:
             assert prompt_text == "Confirm> "
             prompt_thread_ids.append(threading.get_ident())
+            sleep = asyncio.sleep(0)
+            try:
+                asyncio.run(sleep)
+            except BaseException:
+                sleep.close()
+                raise
             time.sleep(0.05)
             return "yes"
 
@@ -235,8 +242,11 @@ def test_confirmation_during_stream_owns_terminal_and_is_not_timed_out() -> None
 
     async def stream() -> AsyncIterator[str]:
         runtime_thread_id.append(threading.get_ident())
-        loop = asyncio.get_running_loop()
-        decision = await loop.run_in_executor(None, runtime.confirm, "Allow write?")
+        if from_worker:
+            loop = asyncio.get_running_loop()
+            decision = await loop.run_in_executor(None, runtime.confirm, "Allow write?")
+        else:
+            decision = runtime.confirm("Allow write?")
         allowed.append(decision)
         yield "done"
 
@@ -244,7 +254,7 @@ def test_confirmation_during_stream_owns_terminal_and_is_not_timed_out() -> None
 
     assert result.content == "done"
     assert allowed == [True]
-    assert prompt_thread_ids == runtime_thread_id
+    assert prompt_thread_ids != runtime_thread_id
     assert listener_events == ["enter", "suspend", "resume", "exit"]
     assert writer_events == ["suspend", "resume"]
 
@@ -762,6 +772,7 @@ def test_terminal_runtime_confirm_is_first_class_runtime_api() -> None:
     assert runtime.focus.current == "prompt"
     prompt_runtime.ask.assert_called_once_with("Confirm> ")
     ui.panel.assert_called_once()
+    assert "Type yes/no (or 1/2), then press Enter." in ui.panel.call_args.args[0]
 
 
 def test_terminal_runtime_confirm_supports_negative_aliases() -> None:
