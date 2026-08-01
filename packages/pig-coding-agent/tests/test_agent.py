@@ -9,7 +9,7 @@ from unittest.mock import Mock, patch
 
 import pytest
 from pig_agent_core import Session
-from pig_agent_core.tools import Tool
+from pig_agent_core.tools import Tool, ToolResult
 from pig_coding_agent import permissions
 from pig_coding_agent.agent import CodingAgent, SessionExitRequested
 from pig_coding_agent.permissions import PermissionPolicy
@@ -132,11 +132,16 @@ def test_write_confirmation_time_is_outside_tool_execution_timeout(
     mock_llm: Any, temp_workspace: Any
 ) -> None:
     decisions: list[tuple[str, str]] = []
+    writes: list[tuple[str, str]] = []
 
     def confirm(request: Any) -> bool:
         decisions.append((request.action, request.target))
-        time.sleep(0.05)
+        time.sleep(0.2)
         return True
+
+    async def write_file(path: str, content: str) -> ToolResult:
+        writes.append((path, content))
+        return ToolResult(ok=True, data="written")
 
     agent = CodingAgent(
         llm=mock_llm,
@@ -144,7 +149,8 @@ def test_write_confirmation_time_is_outside_tool_execution_timeout(
         verbose=False,
         permission_policy=PermissionPolicy.confirm_all(confirm),
     )
-    agent.agent.registry._timeouts["write_file"] = 0.01
+    agent.agent.registry._handlers["write_file"] = write_file
+    agent.agent.registry._timeouts["write_file"] = 0.1
     tool_call = SimpleNamespace(
         function=SimpleNamespace(
             name="write_file",
@@ -156,8 +162,8 @@ def test_write_confirmation_time_is_outside_tool_execution_timeout(
 
     target = temp_workspace / "slow-confirm.txt"
     assert result.ok is True
-    assert target.read_text() == "ok"
     assert decisions == [("write_file", str(target.resolve()))]
+    assert writes == [("slow-confirm.txt", "ok")]
 
 
 def test_permission_denial_terminates_turn_without_model_retry(
