@@ -34,6 +34,21 @@ from .resilience.retry import (
     resilient_streaming_call,
     resilient_sync_call,
 )
+from .run_integrity import (
+    Attempt,
+    AttemptStatus,
+    Evidence,
+    EvidenceType,
+    Operation,
+    OperationKind,
+    OperationStatus,
+    RecoveryClassification,
+    RecoveryDecision,
+    Run,
+    RunSnapshot,
+    RunStatus,
+    Turn,
+)
 from .session import Session, SessionEntry, SessionTree
 from .session_manager import SessionInfo, SessionManager, assert_valid_session_id
 from .share import GistSharer
@@ -85,6 +100,20 @@ __all__ = [
     "resilient_streaming_call",
     "resilient_sync_call",
     "ResilienceExhaustedError",
+    # Durable run integrity
+    "Run",
+    "RunStatus",
+    "RunSnapshot",
+    "Turn",
+    "Operation",
+    "OperationKind",
+    "OperationStatus",
+    "Attempt",
+    "AttemptStatus",
+    "Evidence",
+    "EvidenceType",
+    "RecoveryClassification",
+    "RecoveryDecision",
     # Token counting
     "count_tokens",
     "UsageKind",
