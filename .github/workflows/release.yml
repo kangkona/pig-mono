@@ -43,6 +43,12 @@ jobs:
         cp packages/*/dist/* dist/
         twine check dist/*
 
+    - name: Verify dependency-light pig-llm wheel
+      run: |
+        python -m venv /tmp/pig-llm-minimal
+        /tmp/pig-llm-minimal/bin/python -m pip install packages/pig-llm/dist/*.whl
+        /tmp/pig-llm-minimal/bin/python scripts/verify_minimal_pig_llm.py
+
     - name: Upload verified distributions
       uses: actions/upload-artifact@v4
       with:

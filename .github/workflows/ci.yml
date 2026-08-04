@@ -34,7 +34,7 @@ jobs:
         # Install local packages in dependency order. Let each package's
         # metadata provide its complete third-party dependency set so CI and
         # local type checking cannot silently drift apart.
-        pip install -e packages/pig-llm -e packages/pig-tui
+        pip install -e "packages/pig-llm[all]" -e packages/pig-tui
         pip install -e packages/pig-agent-core -e packages/pig-web-ui
         pip install -e packages/pig-coding-agent \
           -e "packages/pig-messenger[redis,encryption,slack,discord,whatsapp,telegram,feishu]"
@@ -43,8 +43,8 @@ jobs:
     - name: Run linting
       shell: bash
       run: |
-        ruff check packages/ tests/ scripts/verify_release.py
-        ruff format --check packages/ tests/ scripts/verify_release.py
+        ruff check packages/ tests/ scripts/verify_release.py scripts/verify_minimal_pig_llm.py
+        ruff format --check packages/ tests/ scripts/verify_release.py scripts/verify_minimal_pig_llm.py
 
     - name: Run type checking
       shell: bash
@@ -101,6 +101,12 @@ jobs:
     - name: Check distributions
       run: |
         twine check packages/*/dist/*
+
+    - name: Verify dependency-light pig-llm wheel
+      run: |
+        python -m venv /tmp/pig-llm-minimal
+        /tmp/pig-llm-minimal/bin/python -m pip install packages/pig-llm/dist/*.whl
+        /tmp/pig-llm-minimal/bin/python scripts/verify_minimal_pig_llm.py
 
   docs:
     runs-on: ubuntu-latest

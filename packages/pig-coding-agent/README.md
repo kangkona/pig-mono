@@ -40,8 +40,11 @@ interactive loop itself lives.
 ## Installation
 
 ```bash
-pip install pig-coding-agent
+pip install pig-coding-agent "pig-llm[openai]"
 ```
+
+Replace `openai` with the `pig-llm` provider extra you use. Provider SDKs are
+optional so installing the coding-agent package alone does not pull every SDK.
 
 ## Quick Start
 

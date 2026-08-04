@@ -46,7 +46,7 @@ dev = [
     "mypy>=1.8.0",
     "pig-agent-core",
     "pig-coding-agent",
-    "pig-llm",
+    "pig-llm[all]",
     "pig-messenger[redis,encryption,slack,discord,whatsapp,telegram,feishu]",
     "pig-tui",
     "pig-web-ui",

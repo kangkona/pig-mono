@@ -6,19 +6,19 @@ from __future__ import annotations
 import argparse
 import ast
 import hashlib
+import importlib
 import json
 import re
+import sys
 import time
 import urllib.error
 import urllib.request
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
-from typing import Any
+from types import ModuleType
+from typing import Any, cast
 
-try:
-    import tomllib
-except ModuleNotFoundError:  # pragma: no cover - Python 3.10 compatibility
-    import tomli as tomllib
+tomllib: ModuleType = importlib.import_module("tomllib" if sys.version_info >= (3, 11) else "tomli")
 
 
 PACKAGE_NAMES = (
@@ -29,6 +29,16 @@ PACKAGE_NAMES = (
     "pig-tui",
     "pig-web-ui",
 )
+PIG_LLM_CORE_DEPENDENCIES = ("pydantic>=2.6.0",)
+PIG_LLM_PROVIDER_EXTRAS = {
+    "anthropic": ("anthropic>=0.18.0",),
+    "bedrock": ("boto3>=1.34.0",),
+    "cohere": ("cohere>=7.0.8",),
+    "google": ("google-genai>=0.1.0",),
+    "groq": ("groq>=0.4.0",),
+    "mistral": ("mistralai>=0.1.0",),
+    "openai": ("openai>=1.12.0",),
+}
 
 
 class ReleaseVerificationError(RuntimeError):
@@ -65,9 +75,41 @@ def load_package_metadata(repo_root: Path) -> dict[str, dict[str, Any]]:
             "version": str(project["version"]),
             "module_version": _version_from_module(module_init),
             "dependencies": tuple(str(item) for item in project.get("dependencies", ())),
+            "optional_dependencies": {
+                str(extra): tuple(str(item) for item in requirements)
+                for extra, requirements in project.get("optional-dependencies", {}).items()
+            },
             "manifest": manifest,
         }
     return packages
+
+
+def verify_pig_llm_topology(metadata: Mapping[str, Any]) -> list[str]:
+    """Return release-blocking errors for the provider SDK dependency boundary."""
+    errors: list[str] = []
+    dependencies = tuple(metadata["dependencies"])
+    if dependencies != PIG_LLM_CORE_DEPENDENCIES:
+        errors.append(
+            "pig-llm: base dependencies must contain only the provider-neutral core; "
+            f"expected={PIG_LLM_CORE_DEPENDENCIES!r}, actual={dependencies!r}"
+        )
+
+    optional = metadata["optional_dependencies"]
+    for extra, expected in PIG_LLM_PROVIDER_EXTRAS.items():
+        actual = tuple(optional.get(extra, ()))
+        if actual != expected:
+            errors.append(f"pig-llm: extra {extra!r} expected={expected!r}, actual={actual!r}")
+
+    expected_all = {
+        requirement for values in PIG_LLM_PROVIDER_EXTRAS.values() for requirement in values
+    }
+    actual_all = set(optional.get("all", ()))
+    if actual_all != expected_all:
+        errors.append(
+            "pig-llm: all extra must equal the provider SDK union; "
+            f"expected={sorted(expected_all)!r}, actual={sorted(actual_all)!r}"
+        )
+    return errors
 
 
 def verify_metadata(repo_root: Path, tag: str) -> dict[str, str]:
@@ -88,6 +130,7 @@ def verify_metadata(repo_root: Path, tag: str) -> dict[str, str]:
         )
 
     errors: list[str] = []
+    errors.extend(verify_pig_llm_topology(packages["pig-llm"]))
     workspace_version = str(workspace_project["version"])
     if workspace_version != tag_version:
         errors.append(f"pig-mono: workspace manifest {workspace_version} != tag {tag_version}")
@@ -178,7 +221,7 @@ def compare_pypi_payload(expected: Mapping[str, str], payload: Mapping[str, Any]
 def _fetch_json(url: str) -> Mapping[str, Any]:
     request = urllib.request.Request(url, headers={"User-Agent": "pig-mono-release-verifier"})
     with urllib.request.urlopen(request, timeout=30) as response:  # noqa: S310
-        return json.load(response)
+        return cast(Mapping[str, Any], json.load(response))
 
 
 def verify_published_artifacts(

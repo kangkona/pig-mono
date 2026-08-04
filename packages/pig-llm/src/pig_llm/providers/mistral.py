@@ -4,15 +4,23 @@ from collections.abc import AsyncIterator, Iterator
 from importlib import import_module
 from typing import Any
 
-try:
-    ChatMessage: Any = import_module("mistralai.models.chat_completion").ChatMessage
-except ImportError:
-    # mistralai 1.x accepts the same role/content mapping but removed ChatMessage.
-    ChatMessage = dict
-
+from .._extras import missing_provider_dependency, provider_sdk_is_available
 from ..config import Config
 from ..models import Message, Response, StreamChunk
 from ._base import Provider
+
+if not provider_sdk_is_available("mistral"):
+    raise missing_provider_dependency("mistral")
+try:
+    ChatMessage: Any = import_module("mistralai.models.chat_completion").ChatMessage
+except ModuleNotFoundError as err:
+    if err.name not in {"mistralai.models", "mistralai.models.chat_completion"}:
+        raise
+    # mistralai 1.x accepts the same role/content mapping but removed this module.
+    ChatMessage = dict
+except AttributeError:
+    # mistralai 1.x accepts the same role/content mapping but removed ChatMessage.
+    ChatMessage = dict
 
 
 class MistralProvider(Provider):

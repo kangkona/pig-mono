@@ -3,14 +3,14 @@
 from collections.abc import AsyncIterator, Iterator
 from typing import Any
 
-try:
-    from cohere import AsyncClient, Client
-except ImportError as err:
-    raise ImportError("cohere is required. Install with: pip install cohere") from err
-
+from .._extras import missing_provider_dependency, provider_sdk_is_available
 from ..config import Config
 from ..models import Message, Response, StreamChunk
 from ._base import Provider
+
+if not provider_sdk_is_available("cohere"):
+    raise missing_provider_dependency("cohere")
+from cohere import AsyncClient, Client
 
 
 class CohereProvider(Provider):

@@ -64,10 +64,16 @@ Install only the surfaces an application needs:
 
 ```bash
 python -m pip install pig-llm pig-agent-core
-python -m pip install pig-coding-agent
-python -m pip install pig-web-ui
-python -m pip install "pig-messenger[slack]"
+python -m pip install "pig-llm[openai]" pig-coding-agent
+python -m pip install "pig-llm[anthropic]" pig-web-ui
+python -m pip install "pig-llm[google]" "pig-messenger[slack]"
 ```
+
+`pig-llm` keeps provider SDKs out of its default install. Add one of the
+`openai`, `anthropic`, `google`, `groq`, `mistral`, `bedrock`, or `cohere`
+extras, or use `pig-llm[all]` for a full provider development environment.
+The `openai` extra also powers Azure OpenAI, OpenRouter, xAI, Cerebras,
+Perplexity, DeepSeek, and Together because those adapters use the OpenAI SDK.
 
 For a source checkout:
 

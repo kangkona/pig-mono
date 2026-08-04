@@ -22,6 +22,10 @@ echo "→ Strict production source check..."
 echo "→ Checking root integration tests..."
 "$MYPY" tests --config-file "$REPO_ROOT/pyproject.toml"
 
+echo "→ Checking release verification scripts..."
+"$MYPY" scripts/verify_release.py scripts/verify_minimal_pig_llm.py \
+  --config-file "$REPO_ROOT/pyproject.toml"
+
 check_package_support_code() {
   local package="$1"
   shift

@@ -20,10 +20,10 @@ fi
 
 # Run ruff
 echo "→ Running ruff..."
-"$RUFF" check packages/ tests/ scripts/verify_release.py
+"$RUFF" check packages/ tests/ scripts/verify_release.py scripts/verify_minimal_pig_llm.py
 
 echo "→ Running ruff format check..."
-"$RUFF" format --check packages/ tests/ scripts/verify_release.py
+"$RUFF" format --check packages/ tests/ scripts/verify_release.py scripts/verify_minimal_pig_llm.py
 
 # Run mypy
 echo "→ Running mypy..."

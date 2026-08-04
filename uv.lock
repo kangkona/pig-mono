@@ -1996,42 +1996,82 @@ name = "pig-llm"
 version = "0.2.0"
 source = { editable = "packages/pig-llm" }
 dependencies = [
+    { name = "pydantic" },
+]
+
+[package.optional-dependencies]
+all = [
     { name = "anthropic" },
     { name = "boto3" },
     { name = "cohere" },
     { name = "google-genai" },
     { name = "groq" },
-    { name = "httpx" },
     { name = "mistralai" },
     { name = "openai" },
-    { name = "pydantic" },
-    { name = "tenacity" },
 ]
-
-[package.optional-dependencies]
+anthropic = [
+    { name = "anthropic" },
+]
+bedrock = [
+    { name = "boto3" },
+]
+cohere = [
+    { name = "cohere" },
+]
 dev = [
+    { name = "anthropic" },
+    { name = "boto3" },
+    { name = "cohere" },
+    { name = "google-genai" },
+    { name = "groq" },
+    { name = "mistralai" },
+    { name = "openai" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
     { name = "pytest-cov" },
 ]
+google = [
+    { name = "google-genai" },
+]
+groq = [
+    { name = "groq" },
+]
+mistral = [
+    { name = "mistralai" },
+]
+openai = [
+    { name = "openai" },
+]
 
 [package.metadata]
 requires-dist = [
-    { name = "anthropic", specifier = ">=0.18.0" },
-    { name = "boto3", specifier = ">=1.34.0" },
-    { name = "cohere", specifier = ">=7.0.8" },
-    { name = "google-genai", specifier = ">=0.1.0" },
-    { name = "groq", specifier = ">=0.4.0" },
-    { name = "httpx", specifier = ">=0.26.0" },
-    { name = "mistralai", specifier = ">=0.1.0" },
-    { name = "openai", specifier = ">=1.12.0" },
+    { name = "anthropic", marker = "extra == 'all'", specifier = ">=0.18.0" },
+    { name = "anthropic", marker = "extra == 'anthropic'", specifier = ">=0.18.0" },
+    { name = "anthropic", marker = "extra == 'dev'", specifier = ">=0.18.0" },
+    { name = "boto3", marker = "extra == 'all'", specifier = ">=1.34.0" },
+    { name = "boto3", marker = "extra == 'bedrock'", specifier = ">=1.34.0" },
+    { name = "boto3", marker = "extra == 'dev'", specifier = ">=1.34.0" },
+    { name = "cohere", marker = "extra == 'all'", specifier = ">=7.0.8" },
+    { name = "cohere", marker = "extra == 'cohere'", specifier = ">=7.0.8" },
+    { name = "cohere", marker = "extra == 'dev'", specifier = ">=7.0.8" },
+    { name = "google-genai", marker = "extra == 'all'", specifier = ">=0.1.0" },
+    { name = "google-genai", marker = "extra == 'dev'", specifier = ">=0.1.0" },
+    { name = "google-genai", marker = "extra == 'google'", specifier = ">=0.1.0" },
+    { name = "groq", marker = "extra == 'all'", specifier = ">=0.4.0" },
+    { name = "groq", marker = "extra == 'dev'", specifier = ">=0.4.0" },
+    { name = "groq", marker = "extra == 'groq'", specifier = ">=0.4.0" },
+    { name = "mistralai", marker = "extra == 'all'", specifier = ">=0.1.0" },
+    { name = "mistralai", marker = "extra == 'dev'", specifier = ">=0.1.0" },
+    { name = "mistralai", marker = "extra == 'mistral'", specifier = ">=0.1.0" },
+    { name = "openai", marker = "extra == 'all'", specifier = ">=1.12.0" },
+    { name = "openai", marker = "extra == 'dev'", specifier = ">=1.12.0" },
+    { name = "openai", marker = "extra == 'openai'", specifier = ">=1.12.0" },
     { name = "pydantic", specifier = ">=2.6.0" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0.0" },
     { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.23.0" },
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=4.1.0" },
-    { name = "tenacity", specifier = ">=8.2.3" },
 ]
-provides-extras = ["dev"]
+provides-extras = ["openai", "anthropic", "google", "groq", "mistral", "bedrock", "cohere", "all", "dev"]
 
 [[package]]
 name = "pig-messenger"
@@ -2135,7 +2175,7 @@ dev = [
     { name = "mypy" },
     { name = "pig-agent-core" },
     { name = "pig-coding-agent" },
-    { name = "pig-llm" },
+    { name = "pig-llm", extra = ["all"] },
     { name = "pig-messenger", extra = ["discord", "encryption", "feishu", "redis", "slack", "telegram", "whatsapp"] },
     { name = "pig-tui" },
     { name = "pig-web-ui" },
@@ -2166,7 +2206,7 @@ dev = [
     { name = "mypy", specifier = ">=1.8.0" },
     { name = "pig-agent-core", editable = "packages/pig-agent-core" },
     { name = "pig-coding-agent", editable = "packages/pig-coding-agent" },
-    { name = "pig-llm", editable = "packages/pig-llm" },
+    { name = "pig-llm", extras = ["all"], editable = "packages/pig-llm" },
     { name = "pig-messenger", extras = ["redis", "encryption", "slack", "discord", "whatsapp", "telegram", "feishu"], editable = "packages/pig-messenger" },
     { name = "pig-tui", editable = "packages/pig-tui" },
     { name = "pig-web-ui", editable = "packages/pig-web-ui" },

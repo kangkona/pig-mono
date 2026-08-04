@@ -4,16 +4,16 @@ from collections.abc import AsyncIterator, Iterator
 from importlib import import_module
 from typing import Any
 
-try:
-    boto3: Any = import_module("boto3")
-    BotoConfig: Any = import_module("botocore.config").Config
-except ImportError as err:
-    raise ImportError("boto3 is required for Bedrock. Install with: pip install boto3") from err
-
+from .._extras import missing_provider_dependency, provider_sdk_is_available
 from ..compat import BEDROCK_COMPAT, apply_thinking_level, normalize_messages
 from ..config import Config
 from ..models import Message, Response, StreamChunk
 from ._base import Provider
+
+if not provider_sdk_is_available("bedrock"):
+    raise missing_provider_dependency("bedrock")
+boto3: Any = import_module("boto3")
+BotoConfig: Any = import_module("botocore.config").Config
 
 
 class BedrockProvider(Provider):

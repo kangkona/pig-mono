@@ -20,8 +20,11 @@ Agent runtime with tool calling, streaming, sessions, resilience, and observabil
 ## Installation
 
 ```bash
-pip install pig-agent-core
+pip install pig-agent-core "pig-llm[openai]"
 ```
+
+Replace `openai` with the `pig-llm` provider extra used by the host. Installing
+`pig-agent-core` alone keeps the provider SDK surface empty.
 
 ## Quick Start
 
