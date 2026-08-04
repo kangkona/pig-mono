@@ -18,6 +18,9 @@ from .models import (
     EvidenceType,
     Operation,
     OperationKind,
+    OperationStatus,
+    RecoveryClassification,
+    RecoveryDecision,
     Run,
     RunSnapshot,
     RunStatus,
@@ -576,6 +579,21 @@ class SQLiteRunStore:
             occurred_at=occurred_at,
         )
 
+    def wait_operation(
+        self,
+        operation_id: str,
+        *,
+        reason_code: str,
+        occurred_at: datetime | None = None,
+    ) -> Evidence:
+        """Leave a safely resumable operation waiting for explicit ownership."""
+        return self._operation_event(
+            operation_id,
+            EvidenceType.OPERATION_WAITING,
+            payload={"reason_code": reason_code},
+            occurred_at=occurred_at,
+        )
+
     def record_effect_started(
         self,
         operation_id: str,
@@ -687,6 +705,150 @@ class SQLiteRunStore:
             evidence_id=evidence_id,
         )
         return evidence
+
+    def recover_expired(
+        self,
+        run_id: str,
+        *,
+        now: datetime,
+    ) -> RecoveryDecision:
+        """Classify expired ownership once without implicitly redispatching work."""
+        timestamp = _occurred_at(now)
+        with self._transaction():
+            snapshot = self._snapshot_locked(run_id)
+            if snapshot is None:
+                raise KeyError(f"Unknown run {run_id}")
+            run = snapshot.run
+            if run.status.is_terminal:
+                return RecoveryDecision(
+                    run_id=run_id,
+                    classification=RecoveryClassification.ALREADY_TERMINAL,
+                    status=run.status,
+                )
+            if run.owner_id is None or run.lease_expires_at is None:
+                return RecoveryDecision(
+                    run_id=run_id,
+                    classification=RecoveryClassification.UNOWNED,
+                    status=run.status,
+                )
+            if run.lease_expires_at > timestamp:
+                return RecoveryDecision(
+                    run_id=run_id,
+                    classification=RecoveryClassification.LEASE_ACTIVE,
+                    status=run.status,
+                )
+
+            expired_owner = run.owner_id
+            _, snapshot = self._append_locked(
+                snapshot,
+                run_id=run_id,
+                evidence_type=EvidenceType.OWNERSHIP_EXPIRED,
+                entity_id=run_id,
+                payload={
+                    "owner_id": expired_owner,
+                    "lease_expires_at": run.lease_expires_at.isoformat(),
+                },
+                occurred_at=timestamp,
+            )
+            operation = snapshot.latest_operation()
+            if operation is None:
+                classification = RecoveryClassification.BEFORE_DISPATCH
+                resume_allowed = True
+            elif operation.status is OperationStatus.COMPLETED:
+                classification = RecoveryClassification.DURABLE_OPERATION_COMPLETION
+                resume_allowed = True
+            elif operation.kind is OperationKind.PROVIDER and operation.dispatch_recorded:
+                classification = RecoveryClassification.PROVIDER_OUTCOME_UNKNOWN
+                resume_allowed = False
+            elif operation.kind is OperationKind.TOOL and not operation.effect_started:
+                classification = RecoveryClassification.BEFORE_TOOL_EFFECT
+                resume_allowed = True
+            elif operation.kind is OperationKind.TOOL:
+                classification = RecoveryClassification.TOOL_OUTCOME_UNKNOWN
+                resume_allowed = False
+            elif not operation.dispatch_recorded:
+                classification = RecoveryClassification.BEFORE_DISPATCH
+                resume_allowed = True
+            else:
+                classification = RecoveryClassification.TOOL_OUTCOME_UNKNOWN
+                resume_allowed = False
+
+            classification_evidence, snapshot = self._append_locked(
+                snapshot,
+                run_id=run_id,
+                evidence_type=EvidenceType.RECOVERY_CLASSIFIED,
+                entity_id=operation.id if operation is not None else run_id,
+                payload={
+                    "classification": classification.value,
+                    "operation_id": operation.id if operation is not None else None,
+                    "resume_allowed": resume_allowed,
+                    "should_redispatch": False,
+                },
+                occurred_at=timestamp,
+            )
+
+            if operation is not None and not operation.status.is_terminal:
+                active_attempts = [
+                    item
+                    for item in snapshot.attempts.values()
+                    if item.operation_id == operation.id and not item.status.is_terminal
+                ]
+                attempt_status = (
+                    AttemptStatus.FAILED if resume_allowed else AttemptStatus.OUTCOME_UNKNOWN
+                )
+                for attempt in active_attempts:
+                    _, snapshot = self._append_locked(
+                        snapshot,
+                        run_id=run_id,
+                        evidence_type=EvidenceType.ATTEMPT_FINISHED,
+                        entity_id=attempt.id,
+                        payload={
+                            "status": attempt_status.value,
+                            "metadata": {"reason_code": "owner_expired"},
+                        },
+                        occurred_at=timestamp,
+                    )
+                operation_evidence_type = (
+                    EvidenceType.OPERATION_WAITING
+                    if resume_allowed
+                    else EvidenceType.OPERATION_OUTCOME_UNKNOWN
+                )
+                _, snapshot = self._append_locked(
+                    snapshot,
+                    run_id=run_id,
+                    evidence_type=operation_evidence_type,
+                    entity_id=operation.id,
+                    payload={"reason_code": "owner_expired"},
+                    occurred_at=timestamp,
+                )
+
+            target: RunStatus | None = None
+            if not resume_allowed:
+                target = RunStatus.OUTCOME_UNKNOWN
+            elif snapshot.run.status is RunStatus.RUNNING:
+                target = RunStatus.WAITING
+            if target is not None:
+                _, snapshot = self._append_locked(
+                    snapshot,
+                    run_id=run_id,
+                    evidence_type=EvidenceType.RUN_TRANSITIONED,
+                    entity_id=run_id,
+                    payload={
+                        "status": target.value,
+                        "reason": classification.value,
+                    },
+                    occurred_at=timestamp,
+                )
+
+            return RecoveryDecision(
+                run_id=run_id,
+                classification=classification,
+                status=snapshot.run.status,
+                operation_id=operation.id if operation is not None else None,
+                should_redispatch=False,
+                resume_allowed=resume_allowed,
+                evidence_id=classification_evidence.id,
+            )
 
     def get_snapshot(self, run_id: str) -> RunSnapshot:
         """Read the materialized projection for one run."""

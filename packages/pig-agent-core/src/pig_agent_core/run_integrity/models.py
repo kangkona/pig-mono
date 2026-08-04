@@ -157,6 +157,7 @@ class EvidenceType(str, Enum):
     TURN_CREATED = "turn_created"
     OPERATION_CREATED = "operation_created"
     OPERATION_DISPATCHED = "operation_dispatched"
+    OPERATION_WAITING = "operation_waiting"
     OPERATION_EFFECT_STARTED = "operation_effect_started"
     PROVIDER_PARTIAL_OUTPUT = "provider_partial_output"
     OPERATION_COMPLETED = "operation_completed"

@@ -189,6 +189,12 @@ def apply_evidence(snapshot: RunSnapshot | None, evidence: Evidence) -> RunSnaps
             status=OperationStatus.RUNNING,
             dispatch_recorded=True,
         )
+    elif evidence.type is EvidenceType.OPERATION_WAITING:
+        operations = _updated_operation(
+            snapshot,
+            evidence,
+            status=OperationStatus.WAITING,
+        )
     elif evidence.type is EvidenceType.OPERATION_EFFECT_STARTED:
         effect_operation = operations.get(evidence.entity_id)
         if effect_operation is None or not effect_operation.dispatch_recorded:
