@@ -1,7 +1,7 @@
 """Tests for extension protocol wiring and exports."""
 
 
-def test_all_exports_available():
+def test_all_exports_available() -> None:
     """Test that all new subsystems are exported from __init__.py."""
     import pig_agent_core
 
@@ -47,7 +47,7 @@ def test_all_exports_available():
     assert hasattr(pig_agent_core, "ToolMetricsCollector")
 
 
-def test_version_matches_pyproject():
+def test_version_matches_pyproject() -> None:
     """Test that __version__ matches the version declared in pyproject.toml."""
     import re
     from pathlib import Path
@@ -60,7 +60,7 @@ def test_version_matches_pyproject():
     assert pig_agent_core.__version__ == match.group(1)
 
 
-def test_memory_provider_protocol():
+def test_memory_provider_protocol() -> None:
     """Test that MemoryProvider protocol can be imported and used."""
     from pig_agent_core import InMemoryProvider
 
@@ -71,7 +71,7 @@ def test_memory_provider_protocol():
     assert hasattr(provider, "clear_messages")
 
 
-def test_billing_hook_protocol():
+def test_billing_hook_protocol() -> None:
     """Test that BillingHook protocol can be imported."""
     from pig_agent_core import BillingHook
 
@@ -81,7 +81,7 @@ def test_billing_hook_protocol():
     assert hasattr(BillingHook, "get_usage_summary")
 
 
-def test_context_loader_protocol():
+def test_context_loader_protocol() -> None:
     """Test that ContextLoader protocol can be imported."""
     from pig_agent_core import ContextLoader
 
@@ -89,7 +89,7 @@ def test_context_loader_protocol():
     assert hasattr(ContextLoader, "load_context")
 
 
-def test_system_prompt_builder_protocol():
+def test_system_prompt_builder_protocol() -> None:
     """Test that SystemPromptBuilder protocol can be imported."""
     from pig_agent_core import SystemPromptBuilder
 
@@ -97,7 +97,7 @@ def test_system_prompt_builder_protocol():
     assert hasattr(SystemPromptBuilder, "build_prompt")
 
 
-def test_agent_accepts_all_protocols():
+def test_agent_accepts_all_protocols() -> None:
     """Test that Agent constructor accepts all protocol parameters."""
     from unittest.mock import Mock
 
@@ -127,7 +127,7 @@ def test_agent_accepts_all_protocols():
     assert agent.billing_hook is not None
 
 
-def test_enhanced_tool_registry_available():
+def test_enhanced_tool_registry_available() -> None:
     """Test that enhanced ToolRegistry is available."""
     from pig_agent_core import EnhancedToolRegistry
 
@@ -137,7 +137,7 @@ def test_enhanced_tool_registry_available():
     assert hasattr(registry, "execute_batch")
 
 
-def test_resilience_components_available():
+def test_resilience_components_available() -> None:
     """Test that resilience components are available."""
     from pig_agent_core import FailoverReason, ProfileManager, classify_failure
 
@@ -157,7 +157,7 @@ def test_resilience_components_available():
     assert hasattr(manager, "get_next_profile")
 
 
-def test_token_counter_available():
+def test_token_counter_available() -> None:
     """Test that token counter is available."""
     from pig_agent_core import count_tokens
 
@@ -168,7 +168,7 @@ def test_token_counter_available():
     assert tokens > 0
 
 
-def test_audit_and_metrics_available():
+def test_audit_and_metrics_available() -> None:
     """Test that audit and metrics are available."""
     from pig_agent_core import ToolAuditLog, ToolMetricsCollector
 

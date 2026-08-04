@@ -3,7 +3,7 @@
 from unittest.mock import patch
 
 
-def test_ai_to_agent_integration():
+def test_ai_to_agent_integration() -> None:
     """Test pig-ai integration with pig-agent-core."""
     from pig_agent_core import Agent, tool
     from pig_llm import LLM
@@ -22,7 +22,7 @@ def test_ai_to_agent_integration():
         assert len(agent.registry) == 1
 
 
-def test_agent_to_tui_integration():
+def test_agent_to_tui_integration() -> None:
     """Test pig-agent-core integration with pig-tui."""
     from pig_agent_core import Agent
     from pig_tui import ChatUI
@@ -43,7 +43,7 @@ def test_agent_to_tui_integration():
     assert chat.title == "Test"
 
 
-def test_agent_to_webui_integration():
+def test_agent_to_webui_integration() -> None:
     """Test pig-agent-core integration with pig-web-ui."""
     from pig_agent_core import Agent
     from pig_web_ui import ChatServer
@@ -59,7 +59,7 @@ def test_agent_to_webui_integration():
     assert server.agent == agent
 
 
-def test_full_stack_integration():
+def test_full_stack_integration() -> None:
     """Test full stack integration."""
     from pig_agent_core import Agent, tool
     from pig_llm import LLM
@@ -88,7 +88,7 @@ def test_full_stack_integration():
     assert "double" in agent.registry
 
 
-def test_data_model_compatibility():
+def test_data_model_compatibility() -> None:
     """Test data models are compatible across packages."""
     from pig_agent_core.models import AgentState
     from pig_llm.models import Message, Response

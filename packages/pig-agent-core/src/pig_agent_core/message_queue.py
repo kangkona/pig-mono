@@ -23,7 +23,7 @@ class QueuedMessage(BaseModel):
 class MessageQueue:
     """Queue for messages submitted while agent is working."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize message queue."""
         self.queue: list[QueuedMessage] = []
         self.is_processing = False

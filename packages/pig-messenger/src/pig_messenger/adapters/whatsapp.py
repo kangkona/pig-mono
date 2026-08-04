@@ -16,6 +16,7 @@ from pig_messenger.base import (
     MessengerCapabilities,
     MessengerType,
     MessengerUser,
+    WebhookRequest,
 )
 
 logger = logging.getLogger(__name__)
@@ -98,7 +99,7 @@ class WhatsAppMessengerAdapter(BaseMessengerAdapter):
         )
 
     async def send_message(
-        self, channel_id: str, text: str, *, thread_id: str | None = None, **kwargs
+        self, channel_id: str, text: str, *, thread_id: str | None = None, **kwargs: Any
     ) -> dict[str, Any]:
         """Send message to WhatsApp.
 
@@ -133,7 +134,7 @@ class WhatsAppMessengerAdapter(BaseMessengerAdapter):
         }
 
     async def update_message(
-        self, channel_id: str, message_id: str, text: str, **kwargs
+        self, channel_id: str, message_id: str, text: str, **kwargs: Any
     ) -> dict[str, Any]:
         """Update message (not supported by WhatsApp).
 
@@ -151,7 +152,7 @@ class WhatsAppMessengerAdapter(BaseMessengerAdapter):
         """
         raise NotImplementedError("WhatsApp does not support message editing")
 
-    async def delete_message(self, channel_id: str, message_id: str) -> bool:
+    async def delete_message(self, channel_id: str, message_id: str, **kwargs: Any) -> bool:
         """Delete message (not supported by WhatsApp).
 
         Args:
@@ -172,7 +173,7 @@ class WhatsAppMessengerAdapter(BaseMessengerAdapter):
         content: bytes,
         filename: str,
         content_type: str,
-        **kwargs,
+        **kwargs: Any,
     ) -> dict[str, Any]:
         """Send file from content.
 
@@ -189,19 +190,21 @@ class WhatsAppMessengerAdapter(BaseMessengerAdapter):
         # WhatsApp via Twilio requires media URL, not direct upload
         raise NotImplementedError("Direct file upload not supported, use media URL")
 
-    async def verify_signature(self, url: str, params: dict[str, str], signature: str) -> bool:
+    async def verify_signature(self, request: WebhookRequest) -> bool:
         """Verify Twilio request signature.
 
         Args:
-            url: Full request URL
-            params: Request parameters
-            signature: X-Twilio-Signature header
+            request: Public request URL, form parameters, and Twilio signature
 
         Returns:
             True if signature is valid
         """
         # Construct data string
-        data_string = url + "".join(f"{k}{params[k]}" for k in sorted(params.keys()))
+        if request.url is None:
+            return False
+        data_string = request.url + "".join(
+            f"{key}{request.params[key]}" for key in sorted(request.params)
+        )
 
         # Compute HMAC-SHA1
         expected = hmac.new(
@@ -214,7 +217,7 @@ class WhatsAppMessengerAdapter(BaseMessengerAdapter):
 
         expected_b64 = base64.b64encode(expected).decode()
 
-        return hmac.compare_digest(expected_b64, signature)
+        return hmac.compare_digest(expected_b64, request.signature)
 
     async def aclose(self) -> None:
         """Close HTTP client."""

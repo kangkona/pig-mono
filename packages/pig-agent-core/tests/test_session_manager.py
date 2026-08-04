@@ -1,13 +1,14 @@
 """Tests for session manager."""
 
 from datetime import datetime, timedelta
+from typing import Any
 
 import pytest
 from pig_agent_core import Session, SessionInfo, SessionManager
 
 
 @pytest.fixture
-def temp_workspace(tmp_path):
+def temp_workspace(tmp_path: Any) -> Any:
     """Create temporary workspace with sessions."""
     workspace = tmp_path / "workspace"
     workspace.mkdir()
@@ -18,7 +19,7 @@ def temp_workspace(tmp_path):
     return workspace
 
 
-def test_session_info_creation(temp_workspace):
+def test_session_info_creation(temp_workspace: Any) -> None:
     """Test creating session info."""
     # Create a session file
     session = Session(name="test", workspace=str(temp_workspace), auto_save=False)
@@ -31,21 +32,21 @@ def test_session_info_creation(temp_workspace):
     assert info.path == path
 
 
-def test_session_manager_creation(temp_workspace):
+def test_session_manager_creation(temp_workspace: Any) -> None:
     """Test creating session manager."""
     mgr = SessionManager(temp_workspace)
     assert mgr.workspace == temp_workspace
     assert mgr.sessions_dir == temp_workspace / ".sessions"
 
 
-def test_session_manager_list_empty(temp_workspace):
+def test_session_manager_list_empty(temp_workspace: Any) -> None:
     """Test listing with no sessions."""
     mgr = SessionManager(temp_workspace)
     sessions = mgr.list_sessions()
     assert len(sessions) == 0
 
 
-def test_session_manager_list_sessions(temp_workspace):
+def test_session_manager_list_sessions(temp_workspace: Any) -> None:
     """Test listing sessions."""
     # Create some sessions
     for i in range(3):
@@ -59,7 +60,7 @@ def test_session_manager_list_sessions(temp_workspace):
     assert len(sessions) == 3
 
 
-def test_session_manager_list_sorted(temp_workspace):
+def test_session_manager_list_sorted(temp_workspace: Any) -> None:
     """Test sessions are sorted by modified time."""
     import time
 
@@ -80,7 +81,7 @@ def test_session_manager_list_sorted(temp_workspace):
     assert sessions[1].name == "old"
 
 
-def test_session_manager_list_limit(temp_workspace):
+def test_session_manager_list_limit(temp_workspace: Any) -> None:
     """Test limiting session list."""
     # Create many sessions
     for i in range(10):
@@ -93,7 +94,7 @@ def test_session_manager_list_limit(temp_workspace):
     assert len(sessions) == 5
 
 
-def test_session_manager_get_most_recent(temp_workspace):
+def test_session_manager_get_most_recent(temp_workspace: Any) -> None:
     """Test getting most recent session."""
     import time
 
@@ -112,7 +113,7 @@ def test_session_manager_get_most_recent(temp_workspace):
     assert recent.name == "second"
 
 
-def test_session_manager_find_by_file_stem(temp_workspace):
+def test_session_manager_find_by_file_stem(temp_workspace: Any) -> None:
     session = Session(name="file-stem", workspace=str(temp_workspace), auto_save=False)
     path = session.save()
 
@@ -122,7 +123,7 @@ def test_session_manager_find_by_file_stem(temp_workspace):
     assert found == path
 
 
-def test_session_manager_find_by_name(temp_workspace):
+def test_session_manager_find_by_name(temp_workspace: Any) -> None:
     """Test finding session by name."""
     session = Session(name="findme", workspace=str(temp_workspace), auto_save=False)
     path = session.save()
@@ -133,7 +134,7 @@ def test_session_manager_find_by_name(temp_workspace):
     assert found == path
 
 
-def test_session_manager_find_by_explicit_path(temp_workspace):
+def test_session_manager_find_by_explicit_path(temp_workspace: Any) -> None:
     session = Session(name="find-by-path", workspace=str(temp_workspace), auto_save=False)
     path = session.save()
 
@@ -143,7 +144,7 @@ def test_session_manager_find_by_explicit_path(temp_workspace):
     assert found == path
 
 
-def test_session_manager_find_by_relative_path(temp_workspace):
+def test_session_manager_find_by_relative_path(temp_workspace: Any) -> None:
     session = Session(name="relative-path", workspace=str(temp_workspace), auto_save=False)
     path = session.save()
 
@@ -153,7 +154,9 @@ def test_session_manager_find_by_relative_path(temp_workspace):
     assert found == path
 
 
-def test_session_manager_rejects_explicit_path_outside_sessions_dir(temp_workspace, tmp_path):
+def test_session_manager_rejects_explicit_path_outside_sessions_dir(
+    temp_workspace: Any, tmp_path: Any
+) -> None:
     external_path = tmp_path / "external.jsonl"
     external_path.write_text("{}\n")
 
@@ -162,7 +165,9 @@ def test_session_manager_rejects_explicit_path_outside_sessions_dir(temp_workspa
     assert mgr.find_session(str(external_path)) is None
 
 
-def test_session_manager_prefers_session_name_over_unrelated_workspace_path(temp_workspace):
+def test_session_manager_prefers_session_name_over_unrelated_workspace_path(
+    temp_workspace: Any,
+) -> None:
     session = Session(name="findme", workspace=str(temp_workspace), auto_save=False)
     path = session.save()
     (temp_workspace / "findme").mkdir()
@@ -172,7 +177,7 @@ def test_session_manager_prefers_session_name_over_unrelated_workspace_path(temp
     assert mgr.find_session("findme") == path
 
 
-def test_session_manager_find_missing(temp_workspace):
+def test_session_manager_find_missing(temp_workspace: Any) -> None:
     """Test finding non-existent session."""
     mgr = SessionManager(temp_workspace)
     found = mgr.find_session("missing")
@@ -180,7 +185,7 @@ def test_session_manager_find_missing(temp_workspace):
     assert found is None
 
 
-def test_session_manager_uses_env_session_dir(tmp_path, monkeypatch):
+def test_session_manager_uses_env_session_dir(tmp_path: Any, monkeypatch: Any) -> None:
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     session_dir = tmp_path / "custom-sessions"
@@ -191,7 +196,9 @@ def test_session_manager_uses_env_session_dir(tmp_path, monkeypatch):
     assert mgr.sessions_dir == session_dir
 
 
-def test_session_manager_scopes_custom_session_dir_to_current_workspace(tmp_path, monkeypatch):
+def test_session_manager_scopes_custom_session_dir_to_current_workspace(
+    tmp_path: Any, monkeypatch: Any
+) -> None:
     workspace1 = tmp_path / "workspace-1"
     workspace2 = tmp_path / "workspace-2"
     workspace1.mkdir()
@@ -214,7 +221,9 @@ def test_session_manager_scopes_custom_session_dir_to_current_workspace(tmp_path
     assert mgr1.find_session("two") is None
 
 
-def test_session_manager_explicit_session_dir_overrides_env(tmp_path, monkeypatch):
+def test_session_manager_explicit_session_dir_overrides_env(
+    tmp_path: Any, monkeypatch: Any
+) -> None:
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     env_session_dir = tmp_path / "env-sessions"
@@ -226,7 +235,7 @@ def test_session_manager_explicit_session_dir_overrides_env(tmp_path, monkeypatc
     assert mgr.sessions_dir == explicit_session_dir
 
 
-def test_session_manager_delete(temp_workspace):
+def test_session_manager_delete(temp_workspace: Any) -> None:
     """Test deleting a session."""
     session = Session(name="delete-me", workspace=str(temp_workspace), auto_save=False)
     path = session.save()
@@ -240,7 +249,7 @@ def test_session_manager_delete(temp_workspace):
     assert not path.exists()
 
 
-def test_session_manager_format_list(temp_workspace):
+def test_session_manager_format_list(temp_workspace: Any) -> None:
     """Test formatting session list."""
     session = Session(name="test", workspace=str(temp_workspace), auto_save=False)
     session.add_message("user", "Hello")
@@ -255,7 +264,7 @@ def test_session_manager_format_list(temp_workspace):
     assert "ago" in formatted or "just now" in formatted
 
 
-def test_session_manager_format_empty():
+def test_session_manager_format_empty() -> None:
     """Test formatting empty list."""
     mgr = SessionManager()
     formatted = mgr.format_session_list([])
@@ -263,7 +272,7 @@ def test_session_manager_format_empty():
     assert "No sessions" in formatted
 
 
-def test_session_manager_cleanup_old(temp_workspace):
+def test_session_manager_cleanup_old(temp_workspace: Any) -> None:
     """Test cleaning up old sessions."""
     # Create old session (mock by setting mtime)
     session = Session(name="old", workspace=str(temp_workspace), auto_save=False)

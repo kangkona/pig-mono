@@ -17,6 +17,7 @@ from pig_llm.compat import (
     OPENROUTER_COMPAT,
     QWEN_COMPAT,
     ZAI_COMPAT,
+    ProviderCompat,
     apply_thinking_level,
 )
 
@@ -25,36 +26,36 @@ from pig_llm.compat import (
 _ALL_THINKING_KEYS = {"thinking", "reasoning", "reasoning_effort", "enable_thinking"}
 
 
-def _apply(compat, level, model):
+def _apply(compat: ProviderCompat, level: str, model: str) -> dict[str, object]:
     return apply_thinking_level({"thinking_level": level, "model": model}, compat)
 
 
-def test_openai_uses_reasoning_effort():
+def test_openai_uses_reasoning_effort() -> None:
     out = _apply(OPENAI_COMPAT, "high", "gpt-4o")
     assert out["reasoning_effort"] == "high"
     assert "thinking" not in out and "reasoning" not in out
 
 
-def test_groq_uses_reasoning_effort():
+def test_groq_uses_reasoning_effort() -> None:
     out = _apply(GROQ_COMPAT, "medium", "llama-3.3-70b-versatile")
     assert out["reasoning_effort"] == "medium"
     assert "thinking" not in out and "reasoning" not in out
 
 
-def test_openrouter_uses_nested_reasoning():
+def test_openrouter_uses_nested_reasoning() -> None:
     out = _apply(OPENROUTER_COMPAT, "high", "openai/gpt-4o")
     assert out["reasoning"] == {"effort": "high"}
     assert "thinking" not in out and "reasoning_effort" not in out
 
 
-def test_deepseek_uses_thinking_type_dict():
+def test_deepseek_uses_thinking_type_dict() -> None:
     on = _apply(DEEPSEEK_COMPAT, "high", "deepseek-chat")
     assert on["thinking"] == {"type": "enabled"}
     off = _apply(DEEPSEEK_COMPAT, "off", "deepseek-chat")
     assert off["thinking"] == {"type": "disabled"}
 
 
-def test_qwen_and_zai_use_enable_thinking_flag():
+def test_qwen_and_zai_use_enable_thinking_flag() -> None:
     assert _apply(QWEN_COMPAT, "high", "qwen")["enable_thinking"] is True
     assert _apply(QWEN_COMPAT, "off", "qwen")["enable_thinking"] is False
     assert _apply(ZAI_COMPAT, "high", "glm")["enable_thinking"] is True
@@ -70,7 +71,9 @@ def test_qwen_and_zai_use_enable_thinking_flag():
     ],
     ids=["openai", "groq", "openrouter"],
 )
-def test_off_strips_reasoning_to_explicit_disable_or_none(compat, model):
+def test_off_strips_reasoning_to_explicit_disable_or_none(
+    compat: ProviderCompat, model: str
+) -> None:
     """'off' must not leave a stale enabled-reasoning payload around."""
     out = _apply(compat, "off", model)
     # Either a normalized 'none'/disable value or fully stripped — never an
@@ -93,7 +96,7 @@ def test_off_strips_reasoning_to_explicit_disable_or_none(compat, model):
     ],
     ids=["openai", "groq", "openrouter", "deepseek", "qwen", "zai"],
 )
-def test_unknown_level_strips_all_thinking_keys(compat, model):
+def test_unknown_level_strips_all_thinking_keys(compat: ProviderCompat, model: str) -> None:
     """An unmapped thinking level removes every thinking-family key."""
     out = apply_thinking_level(
         {"thinking_level": "bogus-level", "model": model, "thinking": {"x": 1}}, compat
@@ -110,7 +113,7 @@ def test_unknown_level_strips_all_thinking_keys(compat, model):
     ],
     ids=["openai", "deepseek", "qwen"],
 )
-def test_no_thinking_level_is_passthrough(compat, model):
+def test_no_thinking_level_is_passthrough(compat: ProviderCompat, model: str) -> None:
     """Without a thinking_level, the request is untouched."""
     out = apply_thinking_level({"model": model, "temperature": 0.5}, compat)
     assert out == {"model": model, "temperature": 0.5}
@@ -128,7 +131,9 @@ def test_no_thinking_level_is_passthrough(compat, model):
     ],
     ids=["openai", "groq", "openrouter", "deepseek", "qwen", "zai"],
 )
-def test_each_family_emits_exactly_one_thinking_key(compat, model, key):
+def test_each_family_emits_exactly_one_thinking_key(
+    compat: ProviderCompat, model: str, key: str
+) -> None:
     """Each family sets its own key and strips the others (no cross-leak)."""
     out = _apply(compat, "high", model)
     present = _ALL_THINKING_KEYS & set(out)

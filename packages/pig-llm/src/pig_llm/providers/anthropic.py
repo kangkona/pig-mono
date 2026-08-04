@@ -3,6 +3,7 @@
 import json
 import os
 from collections.abc import AsyncIterator, Iterator
+from typing import Any
 
 import anthropic
 
@@ -33,10 +34,10 @@ class AnthropicProvider(Provider):
         }
         if base_url:
             client_kwargs["base_url"] = base_url
-        self.client = anthropic.Anthropic(**client_kwargs)
-        self.async_client = anthropic.AsyncAnthropic(**client_kwargs)
+        self.client: Any = anthropic.Anthropic(**client_kwargs)
+        self.async_client: Any = anthropic.AsyncAnthropic(**client_kwargs)
 
-    def _convert_messages(self, messages: list[Message]) -> tuple[str | None, list[dict]]:
+    def _convert_messages(self, messages: list[Message]) -> tuple[str | None, list[dict[str, Any]]]:
         """Convert internal messages to Anthropic format.
 
         Returns:
@@ -93,7 +94,7 @@ class AnthropicProvider(Provider):
         return system_message, anthropic_messages
 
     @staticmethod
-    def _extract_tool_calls(content_blocks) -> list[dict] | None:
+    def _extract_tool_calls(content_blocks: Any) -> list[dict[str, Any]] | None:
         """Extract tool_use blocks from Anthropic response content."""
         tool_calls = []
 
@@ -112,7 +113,7 @@ class AnthropicProvider(Provider):
 
         return tool_calls if tool_calls else None
 
-    def _convert_tools(self, tools: list[dict] | None) -> list[dict] | None:
+    def _convert_tools(self, tools: list[dict[str, Any]] | None) -> list[dict[str, Any]] | None:
         """Convert OpenAI-style tools to Anthropic format."""
         if not tools:
             return None
@@ -131,7 +132,7 @@ class AnthropicProvider(Provider):
 
         return anthropic_tools if anthropic_tools else None
 
-    def _resolve_tools_with_web_search(self, kwargs: dict) -> list[dict] | None:
+    def _resolve_tools_with_web_search(self, kwargs: dict[str, Any]) -> list[dict[str, Any]] | None:
         """Build the Anthropic tools list from function tools + optional native search.
 
         Pops the provider-neutral control flags (``enable_web_search`` /
@@ -156,7 +157,7 @@ class AnthropicProvider(Provider):
         model: str,
         temperature: float = 0.7,
         max_tokens: int | None = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> Response:
         """Generate a completion."""
         normalized_messages = normalize_messages(messages, ANTHROPIC_COMPAT)
@@ -211,7 +212,7 @@ class AnthropicProvider(Provider):
         model: str,
         temperature: float = 0.7,
         max_tokens: int | None = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> Iterator[StreamChunk]:
         """Stream a completion."""
         normalized_messages = normalize_messages(messages, ANTHROPIC_COMPAT)
@@ -230,6 +231,26 @@ class AnthropicProvider(Provider):
         ) as stream:
             for text in stream.text_stream:
                 yield StreamChunk(content=text, finish_reason=None)
+            final = stream.get_final_message()
+            tool_calls = self._extract_tool_calls(final.content)
+            final_usage = getattr(final, "usage", None)
+            usage = None
+            if final_usage is not None:
+                input_tokens = int(getattr(final_usage, "input_tokens", 0) or 0)
+                output_tokens = int(getattr(final_usage, "output_tokens", 0) or 0)
+                usage = {
+                    "input_tokens": input_tokens,
+                    "output_tokens": output_tokens,
+                    "total_tokens": input_tokens + output_tokens,
+                }
+            stop_reason = getattr(final, "stop_reason", None)
+            if tool_calls or usage or stop_reason is not None:
+                yield StreamChunk(
+                    content="",
+                    finish_reason=str(stop_reason) if stop_reason is not None else None,
+                    tool_calls=tool_calls,
+                    usage=usage,
+                )
 
     async def acomplete(
         self,
@@ -237,7 +258,7 @@ class AnthropicProvider(Provider):
         model: str,
         temperature: float = 0.7,
         max_tokens: int | None = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> Response:
         """Async generate a completion."""
         normalized_messages = normalize_messages(messages, ANTHROPIC_COMPAT)
@@ -292,7 +313,7 @@ class AnthropicProvider(Provider):
         model: str,
         temperature: float = 0.7,
         max_tokens: int | None = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> AsyncIterator[StreamChunk]:
         """Async stream a completion."""
         normalized_messages = normalize_messages(messages, ANTHROPIC_COMPAT)
@@ -330,5 +351,11 @@ class AnthropicProvider(Provider):
                     "total_tokens": int(getattr(u, "input_tokens", 0) or 0)
                     + int(getattr(u, "output_tokens", 0) or 0),
                 }
-            if tool_calls or usage:
-                yield StreamChunk(content="", tool_calls=tool_calls, usage=usage)
+            stop_reason = getattr(final, "stop_reason", None)
+            if tool_calls or usage or stop_reason is not None:
+                yield StreamChunk(
+                    content="",
+                    finish_reason=str(stop_reason) if stop_reason is not None else None,
+                    tool_calls=tool_calls,
+                    usage=usage,
+                )

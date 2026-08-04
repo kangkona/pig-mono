@@ -1,21 +1,24 @@
 """Tests for Discord messenger adapter."""
 
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from pig_messenger.adapters.discord import DiscordMessengerAdapter
-from pig_messenger.base import MessengerType
+from pig_messenger.base import MessengerType, WebhookRequest
 
 
 @pytest.fixture
-def adapter():
+def adapter() -> Any:
     """Create Discord adapter."""
     adapter = DiscordMessengerAdapter(bot_token="test_token", public_key="test_key")
     adapter.client = AsyncMock()
     return adapter
 
 
-def test_discord_adapter_capabilities(adapter):
+def test_discord_adapter_capabilities(adapter: Any) -> None:
     """Test Discord adapter capabilities."""
     caps = adapter.capabilities
     assert caps.can_edit is True
@@ -25,7 +28,7 @@ def test_discord_adapter_capabilities(adapter):
 
 
 @pytest.mark.asyncio
-async def test_parse_event_message(adapter):
+async def test_parse_event_message(adapter: Any) -> None:
     """Test parsing message event."""
     raw_event = {
         "t": "MESSAGE_CREATE",
@@ -49,7 +52,7 @@ async def test_parse_event_message(adapter):
 
 
 @pytest.mark.asyncio
-async def test_parse_event_bot_message(adapter):
+async def test_parse_event_bot_message(adapter: Any) -> None:
     """Test parsing bot message."""
     raw_event = {
         "t": "MESSAGE_CREATE",
@@ -63,7 +66,7 @@ async def test_parse_event_bot_message(adapter):
 
 
 @pytest.mark.asyncio
-async def test_send_message(adapter):
+async def test_send_message(adapter: Any) -> None:
     """Test sending message."""
     mock_response = MagicMock()
     mock_response.json.return_value = {"id": "999"}
@@ -74,7 +77,7 @@ async def test_send_message(adapter):
 
 
 @pytest.mark.asyncio
-async def test_update_message(adapter):
+async def test_update_message(adapter: Any) -> None:
     """Test updating message."""
     mock_response = MagicMock()
     mock_response.json.return_value = {"id": "999"}
@@ -85,7 +88,7 @@ async def test_update_message(adapter):
 
 
 @pytest.mark.asyncio
-async def test_delete_message(adapter):
+async def test_delete_message(adapter: Any) -> None:
     """Test deleting message."""
     mock_response = MagicMock()
     adapter.client.delete.return_value = mock_response
@@ -95,14 +98,40 @@ async def test_delete_message(adapter):
 
 
 @pytest.mark.asyncio
-async def test_send_reaction(adapter):
+async def test_send_reaction(adapter: Any) -> None:
     """Test sending reaction."""
     await adapter.send_reaction("456", "999", "👍")
     adapter.client.put.assert_called_once()
 
 
 @pytest.mark.asyncio
-async def test_verify_signature(adapter):
+async def test_verify_signature(adapter: Any) -> None:
     """Test signature verification."""
-    result = await adapter.verify_signature(b"body", "sig", "timestamp")
-    assert isinstance(result, bool)
+    private_key = Ed25519PrivateKey.generate()
+    adapter.public_key = (
+        private_key.public_key()
+        .public_bytes(
+            encoding=serialization.Encoding.Raw,
+            format=serialization.PublicFormat.Raw,
+        )
+        .hex()
+    )
+    body = b"body"
+    timestamp = "timestamp"
+    signature = private_key.sign(timestamp.encode() + body).hex()
+    result = await adapter.verify_signature(
+        WebhookRequest(body=body, signature=signature, timestamp=timestamp)
+    )
+    assert result is True
+
+    tampered = await adapter.verify_signature(
+        WebhookRequest(body=b"tampered", signature=signature, timestamp=timestamp)
+    )
+    assert tampered is False
+
+
+@pytest.mark.asyncio
+async def test_verify_signature_fails_closed_without_public_key() -> None:
+    adapter = DiscordMessengerAdapter(bot_token="test_token")
+
+    assert await adapter.verify_signature(WebhookRequest(signature="signature")) is False

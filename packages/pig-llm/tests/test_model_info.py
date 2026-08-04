@@ -3,7 +3,7 @@
 from pig_llm import get_model_info
 
 
-def test_lookup_exact_id():
+def test_lookup_exact_id() -> None:
     info = get_model_info("gpt-4o-mini")
     assert info is not None
     assert info["context_window"] == 128000
@@ -11,14 +11,14 @@ def test_lookup_exact_id():
     assert info["output_cost"] == 0.6
 
 
-def test_lookup_bare_from_vendor_prefixed_id():
+def test_lookup_bare_from_vendor_prefixed_id() -> None:
     # OpenRouter-style "vendor/model" resolves via the bare name.
     info = get_model_info("google/gemini-3.5-flash")
     assert info is not None
     assert info["context_window"] == 1048576
 
 
-def test_unknown_model_returns_none():
+def test_unknown_model_returns_none() -> None:
     assert get_model_info("totally-made-up-model-zzz") is None
     assert get_model_info("") is None
     assert get_model_info(None) is None

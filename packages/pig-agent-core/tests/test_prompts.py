@@ -1,13 +1,14 @@
 """Tests for prompt templates."""
 
 from pathlib import Path
+from typing import Any
 
 import pytest
 from pig_agent_core.prompts import PromptManager, PromptTemplate
 
 
 @pytest.fixture
-def sample_template_content():
+def sample_template_content() -> Any:
     """Sample template content."""
     return """# Code Review
 
@@ -18,14 +19,14 @@ Provide {{detail_level}} feedback.
 
 
 @pytest.fixture
-def sample_template_file(tmp_path, sample_template_content):
+def sample_template_file(tmp_path: Any, sample_template_content: Any) -> Any:
     """Create sample template file."""
     template_file = tmp_path / "review.md"
     template_file.write_text(sample_template_content)
     return template_file
 
 
-def test_template_creation(sample_template_file, sample_template_content):
+def test_template_creation(sample_template_file: Any, sample_template_content: Any) -> None:
     """Test creating a template."""
     template = PromptTemplate(
         name="review",
@@ -37,7 +38,9 @@ def test_template_creation(sample_template_file, sample_template_content):
     assert template.path == sample_template_file
 
 
-def test_template_extract_variables(sample_template_file, sample_template_content):
+def test_template_extract_variables(
+    sample_template_file: Any, sample_template_content: Any
+) -> None:
     """Test extracting template variables."""
     template = PromptTemplate("review", sample_template_file, sample_template_content)
 
@@ -46,7 +49,7 @@ def test_template_extract_variables(sample_template_file, sample_template_conten
     assert len(template.variables) == 2
 
 
-def test_template_render(sample_template_file, sample_template_content):
+def test_template_render(sample_template_file: Any, sample_template_content: Any) -> None:
     """Test rendering template."""
     template = PromptTemplate("review", sample_template_file, sample_template_content)
 
@@ -58,7 +61,7 @@ def test_template_render(sample_template_file, sample_template_content):
     assert "{{detail_level}}" not in rendered
 
 
-def test_template_render_partial(sample_template_file, sample_template_content):
+def test_template_render_partial(sample_template_file: Any, sample_template_content: Any) -> None:
     """Test rendering with missing variables."""
     template = PromptTemplate("review", sample_template_file, sample_template_content)
 
@@ -69,13 +72,13 @@ def test_template_render_partial(sample_template_file, sample_template_content):
     assert "{{detail_level}}" not in rendered
 
 
-def test_prompt_manager_creation():
+def test_prompt_manager_creation() -> None:
     """Test creating prompt manager."""
     manager = PromptManager()
     assert len(manager) == 0
 
 
-def test_prompt_manager_load_template(sample_template_file):
+def test_prompt_manager_load_template(sample_template_file: Any) -> None:
     """Test loading a template."""
     manager = PromptManager()
 
@@ -85,7 +88,7 @@ def test_prompt_manager_load_template(sample_template_file):
     assert len(manager) == 1
 
 
-def test_prompt_manager_get_template(sample_template_file):
+def test_prompt_manager_get_template(sample_template_file: Any) -> None:
     """Test getting a template."""
     manager = PromptManager()
     manager.load_template(sample_template_file)
@@ -95,7 +98,7 @@ def test_prompt_manager_get_template(sample_template_file):
     assert template.name == "review"
 
 
-def test_prompt_manager_get_missing_template():
+def test_prompt_manager_get_missing_template() -> None:
     """Test getting non-existent template."""
     manager = PromptManager()
 
@@ -103,7 +106,7 @@ def test_prompt_manager_get_missing_template():
     assert template is None
 
 
-def test_prompt_manager_list_templates(sample_template_file):
+def test_prompt_manager_list_templates(sample_template_file: Any) -> None:
     """Test listing templates."""
     manager = PromptManager()
     manager.load_template(sample_template_file)
@@ -113,7 +116,7 @@ def test_prompt_manager_list_templates(sample_template_file):
     assert templates[0].name == "review"
 
 
-def test_prompt_manager_render_template(sample_template_file):
+def test_prompt_manager_render_template(sample_template_file: Any) -> None:
     """Test rendering via manager."""
     manager = PromptManager()
     manager.load_template(sample_template_file)
@@ -125,7 +128,7 @@ def test_prompt_manager_render_template(sample_template_file):
     assert "medium" in rendered
 
 
-def test_prompt_manager_render_missing():
+def test_prompt_manager_render_missing() -> None:
     """Test rendering non-existent template."""
     manager = PromptManager()
 
@@ -133,7 +136,7 @@ def test_prompt_manager_render_missing():
     assert rendered is None
 
 
-def test_prompt_manager_contains(sample_template_file):
+def test_prompt_manager_contains(sample_template_file: Any) -> None:
     """Test checking if template exists."""
     manager = PromptManager()
 
@@ -144,7 +147,7 @@ def test_prompt_manager_contains(sample_template_file):
     assert "review" in manager
 
 
-def test_prompt_manager_discover(tmp_path):
+def test_prompt_manager_discover(tmp_path: Any) -> None:
     """Test discovering templates."""
     # Create prompts directory
     prompts_dir = tmp_path / ".agents" / "prompts"
@@ -164,7 +167,7 @@ def test_prompt_manager_discover(tmp_path):
     assert "template2" in manager
 
 
-def test_template_no_variables():
+def test_template_no_variables() -> None:
     """Test template without variables."""
     content = "# Simple Template\nNo variables here."
     template = PromptTemplate("simple", Path("test.md"), content)

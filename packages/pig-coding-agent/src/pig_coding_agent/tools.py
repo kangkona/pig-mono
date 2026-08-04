@@ -15,7 +15,10 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from pig_agent_core.tools import ToolResult
+
 from .operations import FileOperations, LocalFileOperations, LocalShellOperations, ShellOperations
+from .permissions import PermissionPolicy, permission_denied_result
 
 MAX_COMMAND_OUTPUT_BYTES = 64_000
 MAX_COMMAND_OUTPUT_LINES = 2_000
@@ -53,7 +56,12 @@ def _truncate_command_output(output: str) -> str:
 class FileTools:
     """File operation tools backed by a pluggable FileOperations backend."""
 
-    def __init__(self, workspace: str = ".", ops: FileOperations | None = None):
+    def __init__(
+        self,
+        workspace: str = ".",
+        ops: FileOperations | None = None,
+        permission_policy: PermissionPolicy | None = None,
+    ):
         """Initialize file tools.
 
         Args:
@@ -64,13 +72,25 @@ class FileTools:
         """
         self.workspace = Path(workspace).resolve()
         self.ops: FileOperations = ops if ops is not None else LocalFileOperations()
+        self.permission_policy = permission_policy or PermissionPolicy.deny_all()
 
     def _resolve_path(self, path: str) -> Path:
         """Resolve path within workspace."""
         full_path = (self.workspace / path).resolve()
-        if not str(full_path).startswith(str(self.workspace)):
+        if not full_path.is_relative_to(self.workspace):
             raise ValueError(f"Path {path} is outside workspace")
         return full_path
+
+    def check_write_permission(self, path: str, content: str) -> tuple[bool, str | None, Path]:
+        """Check whether writing *path* is allowed under the current policy."""
+        file_path = self._resolve_path(path)
+        allowed, reason = self.permission_policy.check(
+            "write_file",
+            str(file_path),
+            path=path,
+            bytes=len(content.encode("utf-8")),
+        )
+        return allowed, reason, file_path
 
     def read_file(self, path: str) -> str:
         file_path = self._resolve_path(path)
@@ -79,7 +99,9 @@ class FileTools:
         return self.ops.read_text(file_path)
 
     def write_file(self, path: str, content: str) -> str:
-        file_path = self._resolve_path(path)
+        allowed, reason, file_path = self.check_write_permission(path, content)
+        if not allowed:
+            return reason or "Permission denied"
         self.ops.mkdir(file_path.parent)
         self.ops.write_text(file_path, content)
         return f"Successfully wrote to {path}"
@@ -190,7 +212,11 @@ class FileTools:
 class ShellTools:
     """Shell command execution tools backed by a pluggable ShellOperations backend."""
 
-    def __init__(self, ops: ShellOperations | None = None):
+    def __init__(
+        self,
+        ops: ShellOperations | None = None,
+        permission_policy: PermissionPolicy | None = None,
+    ):
         """Initialize shell tools.
 
         Args:
@@ -198,6 +224,7 @@ class ShellTools:
                 which runs real subprocesses. Pass a fake/stub for testing.
         """
         self.ops: ShellOperations = ops if ops is not None else LocalShellOperations()
+        self.permission_policy = permission_policy or PermissionPolicy.deny_all()
 
     async def run_command(
         self,
@@ -213,8 +240,6 @@ class ShellTools:
         injected by callers of ``registry.execute(on_update=cb)`` for real-time
         streaming of command output to the TUI.
         """
-        from pig_agent_core.tools.base import ToolResult
-
         command: str = args.get("command", "")
         cwd: str | None = args.get("cwd")
         exclude_from_context: bool = bool(args.get("exclude_from_context", False))
@@ -222,6 +247,19 @@ class ShellTools:
 
         if not command:
             return ToolResult(ok=False, error="command is required")
+
+        allowed, reason = self.permission_policy.check(
+            "run_command",
+            command,
+            cwd=cwd,
+            exclude_from_context=exclude_from_context,
+        )
+        if not allowed:
+            return permission_denied_result(
+                "run_command",
+                command,
+                reason or "Permission denied",
+            )
 
         try:
             output = await self.ops.exec_async(command, cwd, timeout=30, on_data=on_update)
@@ -240,39 +278,33 @@ class ShellTools:
         cwd: str | None = None,
         exclude_from_context: bool = False,
     ) -> str:
-        """Synchronous shell execution used by the git helpers (not cancellable)."""
+        """Return text from the synchronous shell execution compatibility path."""
+        result = self._run_command_sync_result(command, cwd, exclude_from_context)
+        return str(result.data if result.ok else result.error)
+
+    def _run_command_sync_result(
+        self,
+        command: str,
+        cwd: str | None = None,
+        exclude_from_context: bool = False,
+    ) -> ToolResult:
+        """Return a structured result for direct synchronous shell callers."""
+        allowed, reason = self.permission_policy.check(
+            "run_command",
+            command,
+            cwd=cwd,
+            exclude_from_context=exclude_from_context,
+        )
+        if not allowed:
+            return permission_denied_result(
+                "run_command",
+                command,
+                reason or "Permission denied",
+            )
         output = self.ops.exec_sync(command, cwd, timeout=30)
         if exclude_from_context:
-            return "[Output excluded from model context]"
-        return _truncate_command_output(output)
-
-    def git_status(self) -> str:
-        return self._run_command_sync("git status --short")
-
-    def git_diff(self, path: str | None = None) -> str:
-        cmd = f"git diff {path}" if path else "git diff"
-        return self._run_command_sync(cmd)
-
-    def git_commit(self, message: str, add_all: bool = False) -> str:
-        if add_all:
-            self._run_command_sync("git add -A")
-        import shlex
-
-        safe_message = shlex.quote(message)
-        return self._run_command_sync(f"git commit -m {safe_message}")
-
-    def git_push(self, remote: str = "origin", branch: str | None = None) -> str:
-        if branch:
-            return self._run_command_sync(f"git push {remote} {branch}")
-        return self._run_command_sync(f"git push {remote}")
-
-    def git_branch(self, branch_name: str, checkout: bool = True) -> str:
-        if checkout:
-            return self._run_command_sync(f"git checkout -b {branch_name}")
-        return self._run_command_sync(f"git branch {branch_name}")
-
-    def git_log(self, limit: int = 10) -> str:
-        return self._run_command_sync(f"git log --oneline -n {limit}")
+            return ToolResult(ok=True, data="[Output excluded from model context]")
+        return ToolResult(ok=True, data=_truncate_command_output(output))
 
 
 def _fn(name: str, description: str, properties: dict, required: list[str]) -> dict[str, Any]:
@@ -357,49 +389,6 @@ CODING_TOOL_SCHEMAS: list[dict[str, Any]] = [
         },
         ["command"],
     ),
-    _fn("git_status", "Get git status", {}, []),
-    _fn(
-        "git_diff",
-        "Get git diff",
-        {"path": {"type": "string", "description": "Optional path to diff"}},
-        [],
-    ),
-    _fn(
-        "git_commit",
-        "Commit changes to git",
-        {
-            "message": {"type": "string", "description": "Commit message"},
-            "add_all": {"type": "boolean", "description": "Add all changes first"},
-        },
-        ["message"],
-    ),
-    _fn(
-        "git_push",
-        "Push changes to a remote",
-        {
-            "remote": {"type": "string", "description": "Remote name (default 'origin')"},
-            "branch": {"type": "string", "description": "Branch name (current if omitted)"},
-        },
-        [],
-    ),
-    _fn(
-        "git_branch",
-        "Create a git branch",
-        {
-            "branch_name": {"type": "string", "description": "Branch name"},
-            "checkout": {
-                "type": "boolean",
-                "description": "Checkout after creating (default true)",
-            },
-        },
-        ["branch_name"],
-    ),
-    _fn(
-        "git_log",
-        "Get recent git commits",
-        {"limit": {"type": "integer", "description": "Number of commits (default 10)"}},
-        [],
-    ),
 ]
 
 
@@ -407,6 +396,7 @@ def build_coding_tools(
     workspace: str = ".",
     file_ops: FileOperations | None = None,
     shell_ops: ShellOperations | None = None,
+    permission_policy: PermissionPolicy | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, Callable]]:
     """Build the coding tools' schemas and name→handler map.
 
@@ -418,23 +408,29 @@ def build_coding_tools(
     Returns:
         A ``(CODING_TOOL_SCHEMAS, handlers)`` tuple.
     """
-    file_tools = FileTools(workspace, ops=file_ops)
-    shell_tools = ShellTools(ops=shell_ops)
+    file_tools = FileTools(workspace, ops=file_ops, permission_policy=permission_policy)
+    shell_tools = ShellTools(ops=shell_ops, permission_policy=permission_policy)
+
+    def _write_file_handler(path: str, content: str) -> Any:
+        allowed, reason, file_path = file_tools.check_write_permission(path, content)
+        if not allowed:
+            return permission_denied_result(
+                "write_file",
+                str(file_path),
+                reason or "Permission denied",
+            )
+        file_tools.ops.mkdir(file_path.parent)
+        file_tools.ops.write_text(file_path, content)
+        return f"Successfully wrote to {path}"
 
     handlers: dict[str, Callable] = {
         "read_file": file_tools.read_file,
-        "write_file": file_tools.write_file,
+        "write_file": _write_file_handler,
         "list_files": file_tools.list_files,
         "file_exists": file_tools.file_exists,
         "grep_files": file_tools.grep_files,
         "find_files": file_tools.find_files,
         "ls_detailed": file_tools.ls_detailed,
         "run_command": shell_tools.run_command,
-        "git_status": shell_tools.git_status,
-        "git_diff": shell_tools.git_diff,
-        "git_commit": shell_tools.git_commit,
-        "git_push": shell_tools.git_push,
-        "git_branch": shell_tools.git_branch,
-        "git_log": shell_tools.git_log,
     }
     return CODING_TOOL_SCHEMAS, handlers

@@ -6,10 +6,13 @@ import json
 import threading
 import time
 from collections.abc import Awaitable, Callable
-from typing import Any
+from typing import Any, cast
+
+from pig_agent_core.models import ToolModelCapabilities
 
 from .audit import ToolAuditLog
 from .base import CancelledError, ToolResult
+from .contracts import prepare_tool_schema
 from .metrics import ToolMetricsCollector
 from .schemas import PARALLEL_SAFE_TOOLS, TOOL_PERMISSIONS
 
@@ -50,6 +53,7 @@ class ToolRegistry:
                 duration statistics. Defaults to None (no metrics).
         """
         self._handlers: dict[str, Callable] = {}
+        self._preflights: dict[str, Callable[[dict[str, Any]], Any]] = {}
         self._schemas: dict[str, dict] = {}
         self._core_tools: set[str] = set()
         self._discovered: set[str] = set()
@@ -71,6 +75,7 @@ class ToolRegistry:
         timeout: float = 30.0,
         max_retries: int = 0,
         fallback_tools: list[str] | None = None,
+        preflight: Callable[[dict[str, Any]], Any] | None = None,
         validate: bool = True,
     ) -> None:
         """Register a tool with its handler and schema.
@@ -83,6 +88,7 @@ class ToolRegistry:
             timeout: Execution timeout in seconds
             max_retries: Maximum number of retry attempts on failure
             fallback_tools: List of fallback tool names to try if this tool fails
+            preflight: Authorization or validation callback run before timeout
             validate: Whether to validate schema/handler/budget consistency
 
         Raises:
@@ -94,6 +100,11 @@ class ToolRegistry:
 
         with self._lock:
             self._handlers[name] = handler
+            resolved_preflight = preflight or getattr(handler, "__tool_preflight__", None)
+            if callable(resolved_preflight):
+                self._preflights[name] = resolved_preflight
+            else:
+                self._preflights.pop(name, None)
             self._schemas[name] = schema
             self._timeouts[name] = timeout
             self._retries[name] = max_retries
@@ -159,6 +170,7 @@ class ToolRegistry:
         """
         with self._lock:
             self._handlers.pop(name, None)
+            self._preflights.pop(name, None)
             self._schemas.pop(name, None)
             self._core_tools.discard(name)
             self._discovered.discard(name)
@@ -166,6 +178,20 @@ class ToolRegistry:
             self._retries.pop(name, None)
             self._fallbacks.pop(name, None)
             self._confirmed_tools.discard(name)
+
+    def set_preflight(
+        self,
+        name: str,
+        callback: Callable[[dict[str, Any]], Any] | None,
+    ) -> None:
+        """Set a preflight that is intentionally outside the tool timeout."""
+        with self._lock:
+            if name not in self._handlers:
+                raise KeyError(f"Tool '{name}' not found")
+            if callback is None:
+                self._preflights.pop(name, None)
+            else:
+                self._preflights[name] = callback
 
     def register_package(
         self,
@@ -227,6 +253,42 @@ class ToolRegistry:
             # Always include core tools
             active_names = self._core_tools | self._discovered
             return [self._schemas[name] for name in sorted(active_names) if name in self._schemas]
+
+    def get_provider_schemas(
+        self,
+        capabilities: ToolModelCapabilities,
+        *,
+        available_tool_names: set[str] | None = None,
+    ) -> list[dict[str, Any]]:
+        """Build a stable, capability-gated tool definition list for a provider.
+
+        When deferred loading is supported, registered definitions that are not
+        yet available at the selected transcript point are marked for deferred
+        loading. Otherwise only transcript-available definitions are sent.
+
+        ``available_tool_names`` should come from
+        :meth:`Session.available_tool_names_at` during replay/branching.  When
+        omitted, the registry's legacy global active set is used.
+        """
+        with self._lock:
+            available = (
+                set(available_tool_names)
+                if available_tool_names is not None
+                else self._core_tools | self._discovered
+            )
+            names = (
+                set(self._schemas)
+                if capabilities.supports_deferred_tools
+                else available & set(self._schemas)
+            )
+            return [
+                prepare_tool_schema(
+                    self._schemas[name],
+                    capabilities,
+                    deferred=name not in available,
+                )
+                for name in sorted(names)
+            ]
 
     def activate_tools(self, names: list[str]) -> list[str]:
         """Activate deferred tools by name (lazy loading).
@@ -349,27 +411,34 @@ class ToolRegistry:
         if cancel and cancel.is_set():
             return ToolResult(ok=False, error="Cancelled before execution")
 
-        # Check confirmation gate for write tools
-        if self.requires_confirmation(name):
-            return ToolResult(
-                ok=False,
-                error=f"Tool '{name}' requires confirmation before execution (write permission)",
-                meta={"requires_confirmation": True, "tool_name": name},
-            )
-
-        # Try primary tool
         _t0 = time.monotonic()
-        result = await self._execute_tool(name, args, user_id, meta, cancel)
+        preflight_result = await self._run_preflight(name, args)
+
+        # Human authorization and other preflight work finish before the
+        # execution budget starts. A slow confirmation must not leave a timed-
+        # out prompt alive in a background worker.
+        if preflight_result is not None:
+            preflight_handled = True
+            result = preflight_result
+        else:
+            preflight_handled = False
+            result = await self._execute_tool(name, args, user_id, meta, cancel)
         _duration = time.monotonic() - _t0
 
         # If primary tool failed, try fallbacks
-        if not result.ok:
+        if not result.ok and not preflight_handled:
             fallbacks = self.get_fallback_tools(name)
             for fallback_name in fallbacks:
                 if cancel and cancel.is_set():
                     return ToolResult(ok=False, error="Cancelled during fallback execution")
 
-                # Try fallback tool
+                fallback_preflight = await self._run_preflight(fallback_name, args)
+                if fallback_preflight is not None:
+                    # Authorization and validation decisions are authoritative;
+                    # never bypass them by moving to another fallback.
+                    result = fallback_preflight
+                    break
+
                 fallback_result = await self._execute_tool(
                     fallback_name, args, user_id, meta, cancel
                 )
@@ -400,6 +469,27 @@ class ToolRegistry:
 
         return result
 
+    async def _run_preflight(
+        self,
+        name: str,
+        args: dict[str, Any],
+    ) -> ToolResult | None:
+        """Run confirmation and registered preflight outside execution timeout."""
+        if self.requires_confirmation(name):
+            return ToolResult(
+                ok=False,
+                error=f"Tool '{name}' requires confirmation before execution (write permission)",
+                meta={"requires_confirmation": True, "tool_name": name},
+            )
+
+        preflight = self._preflights.get(name)
+        if preflight is None:
+            return None
+        result = preflight(args)
+        if inspect.isawaitable(result):
+            result = await result
+        return result if isinstance(result, ToolResult) else None
+
     def execute_sync(
         self,
         name: str,
@@ -423,6 +513,19 @@ class ToolRegistry:
         if not handler:
             return ToolResult(ok=False, error=f"Tool '{name}' not found")
 
+        preflight = self._preflights.get(name)
+        if preflight is not None:
+            preflight_result = preflight(args)
+            if inspect.isawaitable(preflight_result):
+                return ToolResult(
+                    ok=False,
+                    error="Async tool preflight cannot run through execute_sync",
+                )
+            if isinstance(preflight_result, ToolResult):
+                return preflight_result
+
+        activated_on_call = self._activate_deferred_tool(name)
+
         try:
             signature = inspect.signature(handler)
             params = list(signature.parameters)
@@ -437,10 +540,37 @@ class ToolRegistry:
             else:
                 value = handler(**args)
             if isinstance(value, ToolResult):
-                return value
-            return ToolResult(ok=True, data=value)
+                return self._with_activation_anchor(name, value, activated_on_call)
+            return self._with_activation_anchor(
+                name,
+                ToolResult(ok=True, data=value),
+                activated_on_call,
+            )
         except Exception as exc:
-            return ToolResult(ok=False, error=str(exc))
+            return self._with_activation_anchor(
+                name,
+                ToolResult(ok=False, error=str(exc)),
+                activated_on_call,
+            )
+
+    def _activate_deferred_tool(self, name: str) -> bool:
+        """Activate a registered non-core tool called directly by a provider."""
+        with self._lock:
+            if name in self._core_tools or name in self._discovered or name not in self._schemas:
+                return False
+            self._discovered.add(name)
+            return True
+
+    @staticmethod
+    def _with_activation_anchor(
+        name: str,
+        result: ToolResult,
+        activated_on_call: bool,
+    ) -> ToolResult:
+        """Attach a durable activation fact to the direct call's result."""
+        if activated_on_call and name not in result.added_tool_names:
+            result.added_tool_names.append(name)
+        return result
 
     async def _execute_tool(
         self,
@@ -462,10 +592,13 @@ class ToolRegistry:
         Returns:
             ToolResult from execution
         """
-        # Auto-activate deferred tools
-        if name not in self._core_tools and name not in self._discovered and name in self._schemas:
-            with self._lock:
-                self._discovered.add(name)
+        # A provider may call a deferred definition directly after native tool
+        # search. Preserve that transition on the transcript, not only in this
+        # registry instance.
+        activated_on_call = self._activate_deferred_tool(name)
+
+        def with_activation(result: ToolResult) -> ToolResult:
+            return self._with_activation_anchor(name, result, activated_on_call)
 
         # Get handler
         handler = self._handlers.get(name)
@@ -480,7 +613,7 @@ class ToolRegistry:
         last_error = None
         for attempt in range(max_retries + 1):
             if cancel and cancel.is_set():
-                return ToolResult(ok=False, error="Cancelled during execution")
+                return with_activation(ToolResult(ok=False, error="Cancelled during execution"))
 
             try:
                 # Execute with timeout, racing against cancellation so an
@@ -492,22 +625,22 @@ class ToolRegistry:
                     cancel,
                 )
                 if isinstance(result, ToolResult):
-                    return result
-                return ToolResult(ok=True, data=result)
+                    return with_activation(result)
+                return with_activation(ToolResult(ok=True, data=result))
             except asyncio.TimeoutError:
                 last_error = f"Tool execution timed out after {timeout}s"
                 if attempt < max_retries:
                     await asyncio.sleep(0.5 * (attempt + 1))  # Exponential backoff
                     continue
             except CancelledError:
-                return ToolResult(ok=False, error="Cancelled by user")
+                return with_activation(ToolResult(ok=False, error="Cancelled by user"))
             except Exception as e:
                 last_error = str(e)
                 if attempt < max_retries:
                     await asyncio.sleep(0.5 * (attempt + 1))
                     continue
 
-        return ToolResult(ok=False, error=last_error or "Unknown error")
+        return with_activation(ToolResult(ok=False, error=last_error or "Unknown error"))
 
     async def _run_with_cancel(
         self,
@@ -577,14 +710,17 @@ class ToolRegistry:
         # Check if handler is async
         if asyncio.iscoroutinefunction(handler):
             if params[:4] == ["args", "user_id", "meta", "cancel"]:
-                return await handler(args, user_id, meta, cancel)
-            return await handler(**args)
+                return cast(ToolResult, await handler(args, user_id, meta, cancel))
+            return cast(ToolResult, await handler(**args))
         else:
             # Run sync handler in executor
             loop = asyncio.get_event_loop()
             if params[:4] == ["args", "user_id", "meta", "cancel"]:
-                return await loop.run_in_executor(None, handler, args, user_id, meta, cancel)
-            return await loop.run_in_executor(None, lambda: handler(**args))
+                return cast(
+                    ToolResult,
+                    await loop.run_in_executor(None, handler, args, user_id, meta, cancel),
+                )
+            return cast(ToolResult, await loop.run_in_executor(None, lambda: handler(**args)))
 
     async def execute_batch(
         self,
@@ -634,15 +770,25 @@ class ToolRegistry:
             for idx, result in zip(parallel_indices, parallel_results, strict=False):
                 if isinstance(result, Exception):
                     results[idx] = ToolResult(ok=False, error=str(result))
+                elif isinstance(result, BaseException):
+                    raise result
                 else:
                     results[idx] = result
 
         # Execute sequential tools one by one
+        abort_sequential = False
         for idx in sequential_indices:
             if cancel and cancel.is_set():
                 results[idx] = ToolResult(ok=False, error="Cancelled during batch execution")
+            elif abort_sequential:
+                results[idx] = ToolResult(
+                    ok=False,
+                    error="Skipped after an earlier tool stopped the batch",
+                )
             else:
-                results[idx] = await self.execute(tool_calls[idx], user_id, meta, cancel)
+                result = await self.execute(tool_calls[idx], user_id, meta, cancel)
+                results[idx] = result
+                abort_sequential = bool(result.meta.get("abort_batch"))
 
         # Type assertion: all results should be filled
         return [r for r in results if r is not None]
@@ -666,6 +812,11 @@ class ToolRegistry:
         """
         with self._lock:
             return sorted(self._handlers.keys())
+
+    def list_core_tools(self) -> list[str]:
+        """List tools that are available before transcript-driven activation."""
+        with self._lock:
+            return sorted(self._core_tools)
 
     def list_active_tools(self) -> list[str]:
         """List currently active tool names (core + discovered).

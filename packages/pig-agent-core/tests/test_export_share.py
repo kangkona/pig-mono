@@ -2,6 +2,7 @@
 
 import tempfile
 from pathlib import Path
+from typing import Any
 from unittest.mock import Mock, patch
 
 from pig_agent_core.export import SessionExporter
@@ -68,12 +69,12 @@ def test_share_session_uses_platform_temp_directory(tmp_path: Path) -> None:
 
     exported_paths: list[Path] = []
 
-    def capture_html(_session, output_path, title=None):
+    def capture_html(_session: Any, output_path: Any, title: Any = None) -> Any:
         exported_paths.append(output_path)
         output_path.write_text("<html></html>")
         return output_path
 
-    def capture_md(_session, output_path):
+    def capture_md(_session: Any, output_path: Any) -> Any:
         exported_paths.append(output_path)
         output_path.write_text("# md")
         return output_path

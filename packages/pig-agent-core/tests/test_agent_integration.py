@@ -3,6 +3,7 @@
 
 import sys
 from pathlib import Path
+from typing import Any, cast
 from unittest.mock import Mock
 
 # Add src to path
@@ -12,16 +13,17 @@ sys.path.insert(0, str(src_path))
 from pig_agent_core.agent import Agent  # noqa: E402
 from pig_agent_core.observability.events import AgentEvent  # noqa: E402
 from pig_agent_core.resilience.profile import APIProfile, ProfileManager  # noqa: E402
+from pig_llm import Message  # noqa: E402
 
 
-def create_mock_llm():
+def create_mock_llm() -> Any:
     """Create a mock LLM for testing."""
     llm = Mock()
     llm.config = Mock(model="gpt-4")
     return llm
 
 
-def test_agent_initialization():
+def test_agent_initialization() -> None:
     """Test Agent initialization with new subsystems."""
     # Create profile manager
     profiles = [
@@ -33,11 +35,11 @@ def test_agent_initialization():
     # Create event callback
     events = []
 
-    def event_callback(event: AgentEvent):
+    def event_callback(event: AgentEvent) -> Any:
         events.append(event)
 
     # Create compress function
-    def compress_fn(messages):
+    def compress_fn(messages: Any) -> Any:
         # Simple compression: keep only last 5 messages
         return messages[-5:] if len(messages) > 5 else messages
 
@@ -58,7 +60,7 @@ def test_agent_initialization():
     print("✓ test_agent_initialization passed")
 
 
-def test_agent_has_subsystems():
+def test_agent_has_subsystems() -> None:
     """Test that agent has all subsystem attributes."""
     agent = Agent(llm=create_mock_llm())
 
@@ -74,7 +76,7 @@ def test_agent_has_subsystems():
     print("✓ test_agent_has_subsystems passed")
 
 
-def test_agent_backward_compatibility():
+def test_agent_backward_compatibility() -> None:
     """Test that agent still works without new subsystems."""
     # Create agent without new subsystems (backward compatibility)
     agent = Agent(
@@ -89,7 +91,7 @@ def test_agent_backward_compatibility():
     print("✓ test_agent_backward_compatibility passed")
 
 
-def test_profile_manager_integration():
+def test_profile_manager_integration() -> None:
     """Test ProfileManager integration."""
     profiles = [
         APIProfile(api_key="key1", model="gpt-4"),
@@ -108,14 +110,16 @@ def test_profile_manager_integration():
 
     # Test profile rotation
     p1 = agent.profile_manager.get_next_profile()
+    assert p1 is not None
     assert p1.api_key == "key1"
 
     p2 = agent.profile_manager.get_next_profile()
+    assert p2 is not None
     assert p2.api_key == "key2"
     print("✓ test_profile_manager_integration passed")
 
 
-def test_event_callback_integration():
+def test_event_callback_integration() -> None:
     """Test event callback integration."""
     from pig_agent_core.observability.events import (
         AgentEvent as Event,
@@ -127,7 +131,7 @@ def test_event_callback_integration():
 
     events = []
 
-    def callback(event: Event):
+    def callback(event: Event) -> Any:
         events.append(event)
 
     agent = Agent(llm=create_mock_llm(), event_callback=callback)
@@ -147,10 +151,10 @@ def test_event_callback_integration():
     print("✓ test_event_callback_integration passed")
 
 
-def test_compress_fn_integration():
+def test_compress_fn_integration() -> None:
     """Test compress function integration."""
 
-    def compress_fn(messages):
+    def compress_fn(messages: Any) -> Any:
         # Keep only last 3 messages
         return messages[-3:]
 
@@ -168,13 +172,13 @@ def test_compress_fn_integration():
         {"role": "user", "content": "5"},
     ]
 
-    compressed = agent.compress_fn(messages)
+    compressed = agent.compress_fn(cast(list[Message], messages))
     assert len(compressed) == 3
-    assert compressed[0]["content"] == "3"
+    assert cast(Any, compressed[0])["content"] == "3"
     print("✓ test_compress_fn_integration passed")
 
 
-def test_all_subsystems_together():
+def test_all_subsystems_together() -> None:
     """Test all subsystems working together."""
     from pig_agent_core.observability.events import (
         AgentEvent as Event,
@@ -190,10 +194,10 @@ def test_all_subsystems_together():
 
     events = []
 
-    def event_callback(event):
+    def event_callback(event: Any) -> Any:
         events.append(event)
 
-    def compress_fn(messages):
+    def compress_fn(messages: Any) -> Any:
         return messages[-5:]
 
     # Create agent with everything
@@ -212,7 +216,9 @@ def test_all_subsystems_together():
     assert agent.compress_fn is not None
 
     # Test they all work
-    assert agent.profile_manager.get_next_profile().api_key == "key1"
+    profile = agent.profile_manager.get_next_profile()
+    assert profile is not None
+    assert profile.api_key == "key1"
 
     emit(
         agent.event_callback,
@@ -220,12 +226,12 @@ def test_all_subsystems_together():
     )
     assert len(events) == 1
 
-    compressed = agent.compress_fn([1, 2, 3, 4, 5, 6, 7])
+    compressed = agent.compress_fn(cast(list[Message], [1, 2, 3, 4, 5, 6, 7]))
     assert len(compressed) == 5
     print("✓ test_all_subsystems_together passed")
 
 
-def main():
+def main() -> Any:
     """Run all tests."""
     print("Running Agent integration tests...")
     print()

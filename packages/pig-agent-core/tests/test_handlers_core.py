@@ -16,18 +16,18 @@ from pig_agent_core.tools.handlers_core import (
 class TestHandlerRegistry:
     """Test handler registration."""
 
-    def test_handlers_dict_exists(self):
+    def test_handlers_dict_exists(self) -> None:
         """Test that HANDLERS dict is defined."""
         assert isinstance(HANDLERS, dict)
 
-    def test_all_core_handlers_registered(self):
+    def test_all_core_handlers_registered(self) -> None:
         """Test that all core handlers are registered."""
         assert "think" in HANDLERS
         assert "plan" in HANDLERS
         assert "discover_tools" in HANDLERS
         assert "get_current_time" in HANDLERS
 
-    def test_handlers_are_callable(self):
+    def test_handlers_are_callable(self) -> None:
         """Test that all handlers are callable."""
         for name, handler in HANDLERS.items():
             assert callable(handler), f"{name} handler should be callable"
@@ -37,7 +37,7 @@ class TestHandleThink:
     """Test think tool handler."""
 
     @pytest.mark.asyncio
-    async def test_think_with_valid_thought(self):
+    async def test_think_with_valid_thought(self) -> None:
         """Test think with valid thought."""
         result = await handle_think(
             args={"thought": "This is my reasoning"},
@@ -50,7 +50,7 @@ class TestHandleThink:
         assert result.data["thought_length"] == 20
 
     @pytest.mark.asyncio
-    async def test_think_with_empty_thought(self):
+    async def test_think_with_empty_thought(self) -> None:
         """Test think with empty thought."""
         result = await handle_think(
             args={"thought": ""},
@@ -59,10 +59,11 @@ class TestHandleThink:
             cancel=None,
         )
         assert result.ok is False
+        assert result.error is not None
         assert "required" in result.error.lower()
 
     @pytest.mark.asyncio
-    async def test_think_with_whitespace_thought(self):
+    async def test_think_with_whitespace_thought(self) -> None:
         """Test think with whitespace-only thought."""
         result = await handle_think(
             args={"thought": "   "},
@@ -73,7 +74,7 @@ class TestHandleThink:
         assert result.ok is False
 
     @pytest.mark.asyncio
-    async def test_think_with_missing_thought(self):
+    async def test_think_with_missing_thought(self) -> None:
         """Test think with missing thought field."""
         result = await handle_think(
             args={},
@@ -88,7 +89,7 @@ class TestHandlePlan:
     """Test plan tool handler."""
 
     @pytest.mark.asyncio
-    async def test_plan_with_valid_inputs(self):
+    async def test_plan_with_valid_inputs(self) -> None:
         """Test plan with valid goal and steps."""
         result = await handle_plan(
             args={
@@ -106,7 +107,7 @@ class TestHandlePlan:
         assert len(result.data["steps"]) == 3
 
     @pytest.mark.asyncio
-    async def test_plan_with_empty_goal(self):
+    async def test_plan_with_empty_goal(self) -> None:
         """Test plan with empty goal."""
         result = await handle_plan(
             args={"goal": "", "steps": ["Step 1"]},
@@ -115,10 +116,11 @@ class TestHandlePlan:
             cancel=None,
         )
         assert result.ok is False
+        assert result.error is not None
         assert "goal" in result.error.lower()
 
     @pytest.mark.asyncio
-    async def test_plan_with_empty_steps(self):
+    async def test_plan_with_empty_steps(self) -> None:
         """Test plan with empty steps list."""
         result = await handle_plan(
             args={"goal": "Complete task", "steps": []},
@@ -127,10 +129,11 @@ class TestHandlePlan:
             cancel=None,
         )
         assert result.ok is False
+        assert result.error is not None
         assert "step" in result.error.lower()
 
     @pytest.mark.asyncio
-    async def test_plan_with_invalid_step_type(self):
+    async def test_plan_with_invalid_step_type(self) -> None:
         """Test plan with non-string step."""
         result = await handle_plan(
             args={"goal": "Complete task", "steps": ["Step 1", 123, "Step 3"]},
@@ -139,10 +142,11 @@ class TestHandlePlan:
             cancel=None,
         )
         assert result.ok is False
+        assert result.error is not None
         assert "step 2" in result.error.lower()
 
     @pytest.mark.asyncio
-    async def test_plan_with_empty_step_string(self):
+    async def test_plan_with_empty_step_string(self) -> None:
         """Test plan with empty string in steps."""
         result = await handle_plan(
             args={"goal": "Complete task", "steps": ["Step 1", "", "Step 3"]},
@@ -153,7 +157,7 @@ class TestHandlePlan:
         assert result.ok is False
 
     @pytest.mark.asyncio
-    async def test_plan_with_missing_steps(self):
+    async def test_plan_with_missing_steps(self) -> None:
         """Test plan with missing steps field."""
         result = await handle_plan(
             args={"goal": "Complete task"},
@@ -168,7 +172,7 @@ class TestHandleDiscoverTools:
     """Test discover_tools handler."""
 
     @pytest.mark.asyncio
-    async def test_discover_tools_without_query(self):
+    async def test_discover_tools_without_query(self) -> None:
         """Test discover_tools without query returns available tools."""
         result = await handle_discover_tools(
             args={},
@@ -181,7 +185,7 @@ class TestHandleDiscoverTools:
         assert "hint" in result.data
 
     @pytest.mark.asyncio
-    async def test_discover_tools_with_empty_query(self):
+    async def test_discover_tools_with_empty_query(self) -> None:
         """Test discover_tools with empty query."""
         result = await handle_discover_tools(
             args={"query": ""},
@@ -193,7 +197,7 @@ class TestHandleDiscoverTools:
         assert "available" in result.data
 
     @pytest.mark.asyncio
-    async def test_discover_tools_with_no_matches(self):
+    async def test_discover_tools_with_no_matches(self) -> None:
         """Test discover_tools with query that matches nothing."""
         result = await handle_discover_tools(
             args={"query": "nonexistent_tool_xyz"},
@@ -210,7 +214,7 @@ class TestHandleGetCurrentTime:
     """Test get_current_time handler."""
 
     @pytest.mark.asyncio
-    async def test_get_current_time_default_utc(self):
+    async def test_get_current_time_default_utc(self) -> None:
         """Test get_current_time with default UTC timezone."""
         result = await handle_get_current_time(
             args={},
@@ -230,7 +234,7 @@ class TestHandleGetCurrentTime:
         assert isinstance(parsed, datetime)
 
     @pytest.mark.asyncio
-    async def test_get_current_time_explicit_utc(self):
+    async def test_get_current_time_explicit_utc(self) -> None:
         """Test get_current_time with explicit UTC."""
         result = await handle_get_current_time(
             args={"timezone": "UTC"},
@@ -242,7 +246,7 @@ class TestHandleGetCurrentTime:
         assert result.data["timezone"] == "UTC"
 
     @pytest.mark.asyncio
-    async def test_get_current_time_america_new_york(self):
+    async def test_get_current_time_america_new_york(self) -> None:
         """Test get_current_time with America/New_York timezone."""
         result = await handle_get_current_time(
             args={"timezone": "America/New_York"},
@@ -259,7 +263,7 @@ class TestHandleGetCurrentTime:
         assert parsed.tzinfo is not None
 
     @pytest.mark.asyncio
-    async def test_get_current_time_asia_tokyo(self):
+    async def test_get_current_time_asia_tokyo(self) -> None:
         """Test get_current_time with Asia/Tokyo timezone."""
         result = await handle_get_current_time(
             args={"timezone": "Asia/Tokyo"},
@@ -271,7 +275,7 @@ class TestHandleGetCurrentTime:
         assert result.data["timezone"] == "Asia/Tokyo"
 
     @pytest.mark.asyncio
-    async def test_get_current_time_europe_london(self):
+    async def test_get_current_time_europe_london(self) -> None:
         """Test get_current_time with Europe/London timezone."""
         result = await handle_get_current_time(
             args={"timezone": "Europe/London"},
@@ -283,7 +287,7 @@ class TestHandleGetCurrentTime:
         assert result.data["timezone"] == "Europe/London"
 
     @pytest.mark.asyncio
-    async def test_get_current_time_invalid_timezone(self):
+    async def test_get_current_time_invalid_timezone(self) -> None:
         """Test get_current_time with invalid timezone."""
         result = await handle_get_current_time(
             args={"timezone": "Invalid/Timezone"},
@@ -292,10 +296,11 @@ class TestHandleGetCurrentTime:
             cancel=None,
         )
         assert result.ok is False
+        assert result.error is not None
         assert "invalid timezone" in result.error.lower()
 
     @pytest.mark.asyncio
-    async def test_get_current_time_timestamp_is_int(self):
+    async def test_get_current_time_timestamp_is_int(self) -> None:
         """Test that timestamp is an integer."""
         result = await handle_get_current_time(
             args={},
@@ -307,7 +312,7 @@ class TestHandleGetCurrentTime:
         assert isinstance(result.data["timestamp"], int)
 
     @pytest.mark.asyncio
-    async def test_get_current_time_timestamp_is_recent(self):
+    async def test_get_current_time_timestamp_is_recent(self) -> None:
         """Test that timestamp is recent (within last minute)."""
         before = int(datetime.now(timezone.utc).timestamp())
         result = await handle_get_current_time(
@@ -323,7 +328,7 @@ class TestHandleGetCurrentTime:
         assert before <= timestamp <= after + 1
 
     @pytest.mark.asyncio
-    async def test_get_current_time_with_whitespace_timezone(self):
+    async def test_get_current_time_with_whitespace_timezone(self) -> None:
         """Test get_current_time with whitespace in timezone."""
         result = await handle_get_current_time(
             args={"timezone": "  UTC  "},
@@ -335,7 +340,7 @@ class TestHandleGetCurrentTime:
         assert result.data["timezone"] == "UTC"
 
     @pytest.mark.asyncio
-    async def test_get_current_time_case_insensitive_utc(self):
+    async def test_get_current_time_case_insensitive_utc(self) -> None:
         """Test that UTC is case-insensitive."""
         for tz in ["UTC", "utc", "Utc"]:
             result = await handle_get_current_time(
@@ -347,7 +352,7 @@ class TestHandleGetCurrentTime:
             assert result.ok is True
 
     @pytest.mark.asyncio
-    async def test_get_current_time_with_cancel_event(self):
+    async def test_get_current_time_with_cancel_event(self) -> None:
         """Test get_current_time with cancel event (should still work)."""
         cancel = asyncio.Event()
         result = await handle_get_current_time(
@@ -359,7 +364,7 @@ class TestHandleGetCurrentTime:
         assert result.ok is True
 
     @pytest.mark.asyncio
-    async def test_get_current_time_iso_format_includes_timezone(self):
+    async def test_get_current_time_iso_format_includes_timezone(self) -> None:
         """Test that ISO format includes timezone offset."""
         result = await handle_get_current_time(
             args={"timezone": "America/New_York"},

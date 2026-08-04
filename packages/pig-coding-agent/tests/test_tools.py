@@ -2,12 +2,20 @@
 
 import asyncio
 import sys
+from typing import Any
 
 import pytest
-from pig_coding_agent.tools import FileTools, ShellTools, build_coding_tools
+from pig_coding_agent import permissions
+from pig_coding_agent.permissions import PermissionPolicy
+from pig_coding_agent.tools import FileTools, build_coding_tools
 
 
-def _run_cmd(command: str, cwd: str | None = None, exclude_from_context: bool = False) -> str:
+def _run_cmd(
+    command: str,
+    cwd: str | None = None,
+    exclude_from_context: bool = False,
+    permission_policy: PermissionPolicy | None = None,
+) -> str:
     """Drive run_command via the registry for tests (canonical path)."""
     import json
     from types import SimpleNamespace
@@ -15,9 +23,9 @@ def _run_cmd(command: str, cwd: str | None = None, exclude_from_context: bool = 
     from pig_agent_core.tools.registry import ToolRegistry
 
     registry = ToolRegistry()
-    schemas, handlers = build_coding_tools(".")
+    schemas, handlers = build_coding_tools(".", permission_policy=permission_policy)
     registry.register_package(schemas, handlers, is_core=True)
-    args = {"command": command}
+    args: dict[str, object] = {"command": command}
     if cwd is not None:
         args["cwd"] = cwd
     if exclude_from_context:
@@ -30,20 +38,20 @@ def _run_cmd(command: str, cwd: str | None = None, exclude_from_context: bool = 
 
 
 @pytest.fixture
-def temp_workspace(tmp_path):
+def temp_workspace(tmp_path: Any) -> Any:
     """Create a temporary workspace."""
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     return workspace
 
 
-def test_file_tools_creation(temp_workspace):
+def test_file_tools_creation(temp_workspace: Any) -> None:
     """Test FileTools initialization."""
     tools = FileTools(str(temp_workspace))
     assert tools.workspace == temp_workspace
 
 
-def test_read_file(temp_workspace):
+def test_read_file(temp_workspace: Any) -> None:
     """Test reading a file."""
     tools = FileTools(str(temp_workspace))
 
@@ -56,7 +64,7 @@ def test_read_file(temp_workspace):
     assert content == "Hello, World!"
 
 
-def test_read_nonexistent_file(temp_workspace):
+def test_read_nonexistent_file(temp_workspace: Any) -> None:
     """Test reading non-existent file."""
     tools = FileTools(str(temp_workspace))
 
@@ -64,9 +72,20 @@ def test_read_nonexistent_file(temp_workspace):
     assert "does not exist" in result
 
 
-def test_write_file(temp_workspace):
-    """Test writing a file."""
+def test_file_tools_reject_prefix_sibling_outside_workspace(temp_workspace: Any) -> None:
+    sibling = temp_workspace.parent / f"{temp_workspace.name}-sibling"
+    sibling.mkdir()
+    outside_file = sibling / "outside.txt"
+    outside_file.write_text("outside")
     tools = FileTools(str(temp_workspace))
+
+    with pytest.raises(ValueError, match="outside workspace"):
+        tools.read_file(str(outside_file))
+
+
+def test_write_file(temp_workspace: Any) -> None:
+    """Test writing a file."""
+    tools = FileTools(str(temp_workspace), permission_policy=PermissionPolicy.allow_all())
 
     result = tools.write_file("output.txt", "Test content")
     assert "Successfully wrote" in result
@@ -77,9 +96,9 @@ def test_write_file(temp_workspace):
     assert output_file.read_text() == "Test content"
 
 
-def test_write_file_creates_directories(temp_workspace):
+def test_write_file_creates_directories(temp_workspace: Any) -> None:
     """Test writing file creates parent directories."""
-    tools = FileTools(str(temp_workspace))
+    tools = FileTools(str(temp_workspace), permission_policy=PermissionPolicy.allow_all())
 
     result = tools.write_file("subdir/nested/file.txt", "Content")
     assert "Successfully wrote" in result
@@ -89,7 +108,7 @@ def test_write_file_creates_directories(temp_workspace):
     assert nested_file.exists()
 
 
-def test_list_files(temp_workspace):
+def test_list_files(temp_workspace: Any) -> None:
     """Test listing files."""
     tools = FileTools(str(temp_workspace))
 
@@ -104,7 +123,7 @@ def test_list_files(temp_workspace):
     assert "subdir" in result
 
 
-def test_list_empty_directory(temp_workspace):
+def test_list_empty_directory(temp_workspace: Any) -> None:
     """Test listing empty directory."""
     tools = FileTools(str(temp_workspace))
 
@@ -112,7 +131,7 @@ def test_list_empty_directory(temp_workspace):
     assert "Empty directory" in result
 
 
-def test_list_nonexistent_directory(temp_workspace):
+def test_list_nonexistent_directory(temp_workspace: Any) -> None:
     """Test listing non-existent directory."""
     tools = FileTools(str(temp_workspace))
 
@@ -120,7 +139,7 @@ def test_list_nonexistent_directory(temp_workspace):
     assert "does not exist" in result
 
 
-def test_file_exists(temp_workspace):
+def test_file_exists(temp_workspace: Any) -> None:
     """Test checking if file exists."""
     tools = FileTools(str(temp_workspace))
 
@@ -131,7 +150,7 @@ def test_file_exists(temp_workspace):
     assert tools.file_exists("notexists.txt") is False
 
 
-def test_path_traversal_prevention(temp_workspace):
+def test_path_traversal_prevention(temp_workspace: Any) -> None:
     """Test that path traversal is prevented."""
     tools = FileTools(str(temp_workspace))
 
@@ -139,32 +158,32 @@ def test_path_traversal_prevention(temp_workspace):
         tools.read_file("../../../etc/passwd")
 
 
-def test_shell_tools_run_command():
+def test_shell_tools_run_command() -> None:
     """Test running shell command."""
-    result = _run_cmd("echo 'Hello'")
+    result = _run_cmd("echo 'Hello'", permission_policy=PermissionPolicy.allow_all())
     assert "Hello" in result
 
 
-def test_shell_tools_run_command_with_error():
+def test_shell_tools_run_command_with_error() -> None:
     """Test running command that fails."""
-    result = _run_cmd("exit 1")
+    result = _run_cmd("exit 1", permission_policy=PermissionPolicy.allow_all())
     assert isinstance(result, str)
 
 
-def test_shell_tools_timeout():
+def test_shell_tools_timeout() -> None:
     """Test command timeout."""
-    result = _run_cmd("sleep 100")
+    result = _run_cmd("sleep 100", permission_policy=PermissionPolicy.allow_all())
     assert "timed out" in result.lower() or "error" in result.lower()
 
 
-def test_shell_tools_truncates_large_line_output_without_counting_trailing_newline_twice():
+def test_shell_tools_truncates_large_line_output_without_counting_trailing_newline_twice() -> None:
     """Large single-line output should trim to a stable tail without phantom newline lines."""
     command = (
         f'"{sys.executable}" -c "import sys; '
         """sys.stdout.write('X' * 300000 + '\\n')"""
         '"'
     )
-    result = _run_cmd(command)
+    result = _run_cmd(command, permission_policy=PermissionPolicy.allow_all())
 
     assert "[Output truncated" in result
     assert "300001" not in result
@@ -173,14 +192,14 @@ def test_shell_tools_truncates_large_line_output_without_counting_trailing_newli
     assert result.rstrip("\r\n").endswith("X" * 2000)
 
 
-def test_shell_tools_truncates_many_lines_without_extra_trailing_newline_line():
+def test_shell_tools_truncates_many_lines_without_extra_trailing_newline_line() -> None:
     """Line-limited output should ignore the final trailing newline as an extra line."""
     command = (
         f'"{sys.executable}" -c "for i in range(1, 4001): '
         """print(f'line-{i:04d}')"""
         '"'
     )
-    result = _run_cmd(command)
+    result = _run_cmd(command, permission_policy=PermissionPolicy.allow_all())
 
     assert "[Showing lines 2001-4000 of 4000." in result
     assert "line-2001" in result
@@ -188,31 +207,22 @@ def test_shell_tools_truncates_many_lines_without_extra_trailing_newline_line():
     assert "4001" not in result
 
 
-def test_shell_tools_git_status():
-    """Test git status command."""
-    tools = ShellTools()
+def test_build_coding_tools_does_not_expose_git_mutation_or_status_tools() -> None:
+    """Git-specific helpers should not be exposed as first-class model tools."""
+    schemas, handlers = build_coding_tools(".", permission_policy=PermissionPolicy.allow_all())
+    names = {schema["function"]["name"] for schema in schemas}
 
-    result = tools.git_status()
-    assert isinstance(result, str)
-
-
-def test_shell_tools_git_diff():
-    """Test git diff command."""
-    tools = ShellTools()
-
-    result = tools.git_diff()
-    assert isinstance(result, str)
-
-
-def test_shell_tools_git_diff_with_path():
-    """Test git diff with specific path."""
-    tools = ShellTools()
-
-    result = tools.git_diff("README.md")
-    assert isinstance(result, str)
+    assert "git_status" not in names
+    assert "git_diff" not in names
+    assert "git_commit" not in names
+    assert "git_push" not in names
+    assert "git_branch" not in names
+    assert "git_log" not in names
+    assert "git_status" not in handlers
+    assert "git_commit" not in handlers
 
 
-def test_file_tools_grep(temp_workspace):
+def test_file_tools_grep(temp_workspace: Any) -> None:
     """Test grep_files tool."""
     tools = FileTools(str(temp_workspace))
 
@@ -227,7 +237,7 @@ def test_file_tools_grep(temp_workspace):
     assert "Hello again" in result
 
 
-def test_file_tools_grep_no_match(temp_workspace):
+def test_file_tools_grep_no_match(temp_workspace: Any) -> None:
     """Test grep with no matches."""
     tools = FileTools(str(temp_workspace))
 
@@ -238,7 +248,7 @@ def test_file_tools_grep_no_match(temp_workspace):
     assert "No matches" in result
 
 
-def test_file_tools_find(temp_workspace):
+def test_file_tools_find(temp_workspace: Any) -> None:
     """Test find_files tool."""
     tools = FileTools(str(temp_workspace))
 
@@ -256,7 +266,7 @@ def test_file_tools_find(temp_workspace):
     assert "test.txt" not in result
 
 
-def test_file_tools_ls_detailed(temp_workspace):
+def test_file_tools_ls_detailed(temp_workspace: Any) -> None:
     """Test ls_detailed tool."""
     tools = FileTools(str(temp_workspace))
 
@@ -271,7 +281,7 @@ def test_file_tools_ls_detailed(temp_workspace):
     assert "KB" in result or "<DIR>" in result
 
 
-def test_run_command_killed_when_turn_cancelled(tmp_path):
+def test_run_command_killed_when_turn_cancelled(tmp_path: Any) -> None:
     """Cancelling the turn mid-command kills the subprocess (registry cancel-race)."""
     import json
     from types import SimpleNamespace
@@ -279,7 +289,7 @@ def test_run_command_killed_when_turn_cancelled(tmp_path):
     from pig_agent_core.tools.registry import ToolRegistry
 
     registry = ToolRegistry()
-    schemas, handlers = build_coding_tools(".")
+    schemas, handlers = build_coding_tools(".", permission_policy=PermissionPolicy.allow_all())
     registry.register_package(schemas, handlers, is_core=True)
 
     sentinel = tmp_path / "done.txt"
@@ -290,7 +300,7 @@ def test_run_command_killed_when_turn_cancelled(tmp_path):
         function=SimpleNamespace(name="run_command", arguments=json.dumps({"command": cmd}))
     )
 
-    async def drive():
+    async def drive() -> Any:
         cancel = asyncio.Event()
         task = asyncio.ensure_future(registry.execute(tool_call, "default", {}, cancel))
         await asyncio.sleep(0.5)  # let the subprocess start
@@ -303,7 +313,7 @@ def test_run_command_killed_when_turn_cancelled(tmp_path):
     assert not sentinel.exists()  # the sleep was killed before it could touch the file
 
 
-def test_run_command_cancel_none_is_unaffected():
+def test_run_command_cancel_none_is_unaffected() -> None:
     """With no cancel event the tool runs to completion (no-op cancel-race path)."""
     import json
     from types import SimpleNamespace
@@ -311,7 +321,7 @@ def test_run_command_cancel_none_is_unaffected():
     from pig_agent_core.tools.registry import ToolRegistry
 
     registry = ToolRegistry()
-    schemas, handlers = build_coding_tools(".")
+    schemas, handlers = build_coding_tools(".", permission_policy=PermissionPolicy.allow_all())
     registry.register_package(schemas, handlers, is_core=True)
 
     tool_call = SimpleNamespace(
@@ -323,7 +333,7 @@ def test_run_command_cancel_none_is_unaffected():
     assert "hi" in str(result.data)
 
 
-def test_execute_sync_drives_async_run_command():
+def test_execute_sync_drives_async_run_command() -> None:
     """The synchronous run() path must drive the async run_command to a result.
 
     Regression: making run_command async returned an un-awaited coroutine via
@@ -332,7 +342,7 @@ def test_execute_sync_drives_async_run_command():
     from pig_agent_core.tools.registry import ToolRegistry
 
     registry = ToolRegistry()
-    schemas, handlers = build_coding_tools(".")
+    schemas, handlers = build_coding_tools(".", permission_policy=PermissionPolicy.allow_all())
     registry.register_package(schemas, handlers, is_core=True)
 
     result = registry.execute_sync("run_command", {"command": "echo hi"})
@@ -349,47 +359,47 @@ def test_execute_sync_drives_async_run_command():
 class _FakeFileOperations:
     """In-memory filesystem stub for unit tests."""
 
-    def __init__(self):
+    def __init__(self: Any) -> None:
         self._files: dict = {}  # path str → content str
         self._dirs: set = set()  # path strs that are directories
         self.calls: list = []  # recorded method calls
 
-    def _record(self, method, *args):
+    def _record(self: Any, method: Any, *args: Any) -> Any:
         self.calls.append((method,) + args)
 
-    def seed(self, path_str: str, content: str):
+    def seed(self: Any, path_str: str, content: str) -> Any:
         from pathlib import Path
 
         self._files[str(Path(path_str).resolve())] = content
 
-    def seed_dir(self, path_str: str):
+    def seed_dir(self: Any, path_str: str) -> Any:
         from pathlib import Path
 
         self._dirs.add(str(Path(path_str).resolve()))
 
-    def exists(self, path):
+    def exists(self: Any, path: Any) -> Any:
         self._record("exists", path)
         return str(path) in self._files or str(path) in self._dirs
 
-    def is_file(self, path):
+    def is_file(self: Any, path: Any) -> Any:
         return str(path) in self._files
 
-    def is_dir(self, path):
+    def is_dir(self: Any, path: Any) -> Any:
         return str(path) in self._dirs
 
-    def read_text(self, path):
+    def read_text(self: Any, path: Any) -> Any:
         self._record("read_text", path)
         return self._files.get(str(path), "")
 
-    def write_text(self, path, content):
+    def write_text(self: Any, path: Any, content: Any) -> Any:
         self._record("write_text", path)
         self._files[str(path)] = content
 
-    def mkdir(self, path, *, parents=True, exist_ok=True):
+    def mkdir(self: Any, path: Any, *, parents: Any = True, exist_ok: Any = True) -> Any:
         self._record("mkdir", path)
         self._dirs.add(str(path))
 
-    def iterdir(self, path):
+    def iterdir(self: Any, path: Any) -> Any:
         prefix = str(path) + "/"
         seen = set()
         results = []
@@ -402,14 +412,14 @@ class _FakeFileOperations:
                     results.append(child_path)
         return results
 
-    def glob(self, path, pattern):
+    def glob(self: Any, path: Any, pattern: Any) -> Any:
         return [
             p
             for p in [__import__("pathlib").Path(f) for f in self._files]
             if p.parent == path or str(p).startswith(str(path) + "/")
         ]
 
-    def rglob(self, path, pattern):
+    def rglob(self: Any, path: Any, pattern: Any) -> Any:
         import fnmatch
         from pathlib import Path as P
 
@@ -419,7 +429,7 @@ class _FakeFileOperations:
             if fnmatch.fnmatch(P(f).name, pattern) and str(f).startswith(str(path))
         ]
 
-    def stat(self, path):
+    def stat(self: Any, path: Any) -> Any:
         from unittest.mock import MagicMock
 
         s = MagicMock()
@@ -431,26 +441,30 @@ class _FakeFileOperations:
 class _FakeShellOperations:
     """Subprocess stub that records calls and returns preset output."""
 
-    def __init__(self, async_output: str = "fake output", sync_output: str = "fake sync"):
+    def __init__(
+        self: Any, async_output: str = "fake output", sync_output: str = "fake sync"
+    ) -> None:
         self._async_output = async_output
         self._sync_output = sync_output
         self.async_calls: list = []
         self.sync_calls: list = []
         self.on_data_received: list = []
 
-    async def exec_async(self, command, cwd, timeout, on_data=None):
+    async def exec_async(
+        self: Any, command: Any, cwd: Any, timeout: Any, on_data: Any = None
+    ) -> Any:
         self.async_calls.append({"command": command, "cwd": cwd, "on_data": on_data})
         if on_data:
             on_data(self._async_output)
             self.on_data_received.append(self._async_output)
         return self._async_output
 
-    def exec_sync(self, command, cwd, timeout):
+    def exec_sync(self: Any, command: Any, cwd: Any, timeout: Any) -> Any:
         self.sync_calls.append({"command": command, "cwd": cwd})
         return self._sync_output
 
 
-def test_file_tools_route_read_through_ops(tmp_path):
+def test_file_tools_route_read_through_ops(tmp_path: Any) -> None:
     """read_file must use ops.read_text, not Path.read_text directly."""
     fake = _FakeFileOperations()
     fake.seed(str(tmp_path / "hello.txt"), "ops content")
@@ -463,13 +477,13 @@ def test_file_tools_route_read_through_ops(tmp_path):
     assert "read_text" in methods
 
 
-def test_file_tools_route_write_through_ops(tmp_path):
+def test_file_tools_route_write_through_ops(tmp_path: Any) -> None:
     """write_file must use ops.write_text."""
     fake = _FakeFileOperations()
     fake.seed_dir(str(tmp_path))
     fake.seed_dir(str(tmp_path / "sub"))
 
-    tools = FileTools(str(tmp_path), ops=fake)
+    tools = FileTools(str(tmp_path), ops=fake, permission_policy=PermissionPolicy.allow_all())
     tools.write_file("sub/out.txt", "written")
 
     methods = [c[0] for c in fake.calls]
@@ -477,7 +491,7 @@ def test_file_tools_route_write_through_ops(tmp_path):
     assert fake._files.get(str(tmp_path / "sub" / "out.txt")) == "written"
 
 
-def test_file_tools_route_exists_through_ops(tmp_path):
+def test_file_tools_route_exists_through_ops(tmp_path: Any) -> None:
     """file_exists must use ops.exists."""
     fake = _FakeFileOperations()
     tools = FileTools(str(tmp_path), ops=fake)
@@ -486,7 +500,7 @@ def test_file_tools_route_exists_through_ops(tmp_path):
     assert any(c[0] == "exists" for c in fake.calls)
 
 
-def test_shell_tools_route_async_through_ops():
+def test_shell_tools_route_async_through_ops() -> None:
     """run_command must use ops.exec_async and return its output."""
     import json
     from types import SimpleNamespace
@@ -494,7 +508,11 @@ def test_shell_tools_route_async_through_ops():
     from pig_agent_core.tools.registry import ToolRegistry
 
     fake = _FakeShellOperations(async_output="hello from fake")
-    schemas, handlers = build_coding_tools(".", shell_ops=fake)
+    schemas, handlers = build_coding_tools(
+        ".",
+        shell_ops=fake,
+        permission_policy=PermissionPolicy.allow_all(),
+    )
 
     registry = ToolRegistry()
     registry.register_package(schemas, handlers, is_core=True)
@@ -512,7 +530,7 @@ def test_shell_tools_route_async_through_ops():
     assert fake.async_calls[0]["command"] == "echo ignored"
 
 
-def test_shell_tools_on_update_forwarded_to_exec_async():
+def test_shell_tools_on_update_forwarded_to_exec_async() -> None:
     """on_update from registry.execute() must reach ops.exec_async as on_data."""
     import json
     from types import SimpleNamespace
@@ -521,7 +539,11 @@ def test_shell_tools_on_update_forwarded_to_exec_async():
 
     chunks_received: list = []
     fake = _FakeShellOperations(async_output="streaming chunk")
-    schemas, handlers = build_coding_tools(".", shell_ops=fake)
+    schemas, handlers = build_coding_tools(
+        ".",
+        shell_ops=fake,
+        permission_policy=PermissionPolicy.allow_all(),
+    )
 
     registry = ToolRegistry()
     registry.register_package(schemas, handlers, is_core=True)
@@ -539,12 +561,114 @@ def test_shell_tools_on_update_forwarded_to_exec_async():
     assert fake.async_calls[0]["on_data"] is not None
 
 
-def test_shell_tools_route_sync_through_ops():
-    """git_status (sync shell) must use ops.exec_sync."""
-    fake = _FakeShellOperations(sync_output="M  file.txt")
-    tools = ShellTools(ops=fake)
-    result = tools.git_status()
+def test_write_file_requires_permission_by_default(tmp_path: Any) -> None:
+    """Default file writes are denied unless the caller supplies a policy."""
+    tools = FileTools(str(tmp_path))
 
-    assert "file.txt" in result
-    assert len(fake.sync_calls) == 1
-    assert "git status" in fake.sync_calls[0]["command"]
+    result = tools.write_file("blocked.txt", "should not write")
+
+    assert "Permission denied" in result
+    assert not (tmp_path / "blocked.txt").exists()
+
+
+def test_write_file_can_be_confirmed_by_policy(tmp_path: Any) -> None:
+    decisions = []
+
+    def confirm(request: Any) -> Any:
+        decisions.append((request.action, request.target))
+        return True
+
+    tools = FileTools(
+        str(tmp_path),
+        permission_policy=PermissionPolicy.confirm_all(confirm),
+    )
+
+    result = tools.write_file("allowed.txt", "ok")
+
+    assert "Successfully wrote" in result
+    assert (tmp_path / "allowed.txt").read_text() == "ok"
+    assert decisions == [("write_file", str(tmp_path / "allowed.txt"))]
+
+
+def test_write_file_custom_deny_reason_surfaces_as_tool_failure() -> None:
+    """Custom deny reasons must still propagate as ok=False at registry level."""
+    from pig_agent_core.tools.registry import ToolRegistry
+
+    registry = ToolRegistry()
+    schemas, handlers = build_coding_tools(
+        ".",
+        permission_policy=PermissionPolicy.deny_all("blocked by policy"),
+    )
+    registry.register_package(schemas, handlers, is_core=True)
+
+    result = registry.execute_sync("write_file", {"path": "blocked.txt", "content": "x"})
+
+    assert result.ok is False
+    assert result.error == "blocked by policy"
+    assert result.meta["permission_denial"]["code"] == permissions.PERMISSION_DENIED_CODE
+    assert result.meta["permission_denial"]["action"] == "write_file"
+
+
+def test_run_command_requires_permission_by_default() -> None:
+    """Default shell execution is denied unless the caller supplies a policy."""
+    result = _run_cmd("echo denied")
+
+    assert "Permission denied" in result
+
+
+def test_run_command_can_be_denied_by_policy() -> None:
+    import json
+    from types import SimpleNamespace
+
+    from pig_agent_core.tools.registry import ToolRegistry
+
+    fake = _FakeShellOperations(async_output="should not run")
+    schemas, handlers = build_coding_tools(
+        ".",
+        shell_ops=fake,
+        permission_policy=PermissionPolicy.deny_all("test deny"),
+    )
+    registry = ToolRegistry()
+    registry.register_package(schemas, handlers, is_core=True)
+    tool_call = SimpleNamespace(
+        function=SimpleNamespace(name="run_command", arguments=json.dumps({"command": "echo hi"}))
+    )
+
+    result = asyncio.run(registry.execute(tool_call, "default", {}, None))
+
+    assert result.ok is False
+    assert "test deny" in (result.error or "")
+    assert result.meta["permission_denial"]["code"] == permissions.PERMISSION_DENIED_CODE
+    assert result.meta["permission_denial"]["action"] == "run_command"
+    assert fake.async_calls == []
+
+
+def test_run_command_can_be_confirmed_by_policy() -> None:
+    import json
+    from types import SimpleNamespace
+
+    from pig_agent_core.tools.registry import ToolRegistry
+
+    decisions = []
+
+    def confirm(request: Any) -> Any:
+        decisions.append((request.action, request.target))
+        return True
+
+    fake = _FakeShellOperations(sync_output="M  file.txt")
+    schemas, handlers = build_coding_tools(
+        ".",
+        shell_ops=fake,
+        permission_policy=PermissionPolicy.confirm_all(confirm),
+    )
+    registry = ToolRegistry()
+    registry.register_package(schemas, handlers, is_core=True)
+    tool_call = SimpleNamespace(
+        function=SimpleNamespace(name="run_command", arguments=json.dumps({"command": "echo hi"}))
+    )
+
+    result = asyncio.run(registry.execute(tool_call, "default", {}, None))
+
+    assert result.ok is True
+    assert "fake output" in str(result.data)
+    assert decisions == [("run_command", "echo hi")]

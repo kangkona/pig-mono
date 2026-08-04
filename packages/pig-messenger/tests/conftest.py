@@ -1,10 +1,12 @@
 """Shared fixtures for py-messenger tests."""
 
+from typing import Any
+
 import pytest
 
 
 @pytest.fixture
-def slack_event_mention():
+def slack_event_mention() -> Any:
     """A Slack app_mention event."""
     return {
         "type": "app_mention",
@@ -17,7 +19,7 @@ def slack_event_mention():
 
 
 @pytest.fixture
-def slack_event_dm():
+def slack_event_dm() -> Any:
     """A Slack DM event."""
     return {
         "type": "message",
@@ -30,7 +32,7 @@ def slack_event_dm():
 
 
 @pytest.fixture
-def slack_event_with_file():
+def slack_event_with_file() -> Any:
     """A Slack message with file attachment."""
     return {
         "type": "message",
@@ -52,7 +54,7 @@ def slack_event_with_file():
 
 
 @pytest.fixture
-def slack_event_thread():
+def slack_event_thread() -> Any:
     """A Slack threaded message."""
     return {
         "type": "message",

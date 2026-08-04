@@ -1,5 +1,6 @@
 """Verify README examples are accurate."""
 
+from typing import Any
 from unittest.mock import Mock
 
 # Test 1: Basic Agent creation
@@ -76,7 +77,7 @@ print("\nTest 5: Event System...")
 try:
     from pig_agent_core.observability.events import AgentEvent, AgentEventType
 
-    def event_callback(event: AgentEvent):
+    def event_callback(event: AgentEvent) -> Any:
         pass
 
     event = AgentEvent(
@@ -97,10 +98,10 @@ try:
     mock_llm = Mock()
     mock_llm.config.model = "gpt-4"
 
-    def log_events(event: AgentEvent):
+    def log_events(event: AgentEvent) -> Any:
         pass
 
-    def compress(messages):
+    def compress(messages: Any) -> Any:
         return [messages[0]] + messages[-9:] if len(messages) > 10 else messages
 
     agent = Agent(

@@ -1,5 +1,7 @@
 """Tests for messenger distributed state."""
 
+from typing import Any
+
 import pytest
 from pig_messenger.state import MessengerState
 
@@ -7,11 +9,11 @@ from pig_messenger.state import MessengerState
 class MockRedis:
     """Mock Redis client for testing."""
 
-    def __init__(self):
-        self.data = {}
-        self.ttls = {}
+    def __init__(self) -> None:
+        self.data: dict[Any, Any] = {}
+        self.ttls: dict[Any, Any] = {}
 
-    async def set(self, key, value, ex=None, nx=False):
+    async def set(self, key: Any, value: Any, ex: Any = None, nx: Any = False) -> bool:
         if nx and key in self.data:
             return False
         self.data[key] = value
@@ -19,49 +21,49 @@ class MockRedis:
             self.ttls[key] = ex
         return True
 
-    async def get(self, key):
+    async def get(self, key: Any) -> Any:
         return self.data.get(key)
 
-    async def delete(self, key):
+    async def delete(self, key: Any) -> int:
         if key in self.data:
             del self.data[key]
             return 1
         return 0
 
-    async def expire(self, key, seconds):
+    async def expire(self, key: Any, seconds: Any) -> int:
         if key in self.data:
             self.ttls[key] = seconds
             return 1
         return 0
 
-    async def lpush(self, key, *values):
+    async def lpush(self, key: Any, *values: Any) -> Any:
         if key not in self.data:
             self.data[key] = []
         for value in values:
             self.data[key].insert(0, value)
         return len(self.data[key])
 
-    async def rpush(self, key, *values):
+    async def rpush(self, key: Any, *values: Any) -> Any:
         if key not in self.data:
             self.data[key] = []
         self.data[key].extend(values)
         return len(self.data[key])
 
-    async def llen(self, key):
+    async def llen(self, key: Any) -> Any:
         return len(self.data.get(key, []))
 
-    async def lrange(self, key, start, stop):
+    async def lrange(self, key: Any, start: Any, stop: Any) -> Any:
         data = self.data.get(key, [])
         if stop == -1:
             return data[start:]
         return data[start : stop + 1]
 
-    async def ltrim(self, key, start, stop):
+    async def ltrim(self, key: Any, start: Any, stop: Any) -> bool:
         if key in self.data:
             self.data[key] = self.data[key][start : stop + 1]
         return True
 
-    async def eval(self, script, num_keys, *args):
+    async def eval(self, script: Any, num_keys: Any, *args: Any) -> Any:
         """Mock eval for Lua scripts."""
         # Simple mock - just execute the logic
         keys = args[:num_keys]
@@ -112,7 +114,7 @@ class MockRedis:
 
 
 @pytest.mark.asyncio
-async def test_check_event_dedup():
+async def test_check_event_dedup() -> None:
     """Test event deduplication."""
     redis = MockRedis()
     state = MessengerState(redis)
@@ -125,7 +127,7 @@ async def test_check_event_dedup():
 
 
 @pytest.mark.asyncio
-async def test_acquire_release_agent_lock():
+async def test_acquire_release_agent_lock() -> None:
     """Test agent lock acquire and release."""
     redis = MockRedis()
     state = MessengerState(redis)
@@ -148,7 +150,7 @@ async def test_acquire_release_agent_lock():
 
 
 @pytest.mark.asyncio
-async def test_renew_agent_lock():
+async def test_renew_agent_lock() -> None:
     """Test agent lock renewal."""
     redis = MockRedis()
     state = MessengerState(redis)
@@ -166,12 +168,13 @@ async def test_renew_agent_lock():
 
 
 @pytest.mark.asyncio
-async def test_release_lock_if_queue_empty():
+async def test_release_lock_if_queue_empty() -> None:
     """Test conditional lock release based on queue."""
     redis = MockRedis()
     state = MessengerState(redis)
 
     token = await state.acquire_agent_lock("conv_1")
+    assert token is not None
 
     # Queue is empty, should release
     released = await state.release_lock_if_queue_empty("conv_1", token)
@@ -179,6 +182,7 @@ async def test_release_lock_if_queue_empty():
 
     # Acquire again and add to queue
     token = await state.acquire_agent_lock("conv_1")
+    assert token is not None
     await state.enqueue_followup("conv_1", {"text": "hello"})
 
     # Queue not empty, should not release
@@ -187,7 +191,7 @@ async def test_release_lock_if_queue_empty():
 
 
 @pytest.mark.asyncio
-async def test_cancel_flag():
+async def test_cancel_flag() -> None:
     """Test cancel flag operations."""
     redis = MockRedis()
     state = MessengerState(redis)
@@ -205,7 +209,7 @@ async def test_cancel_flag():
 
 
 @pytest.mark.asyncio
-async def test_enqueue_drain_followups():
+async def test_enqueue_drain_followups() -> None:
     """Test follow-up queue operations."""
     redis = MockRedis()
     state = MessengerState(redis)
@@ -228,7 +232,7 @@ async def test_enqueue_drain_followups():
 
 
 @pytest.mark.asyncio
-async def test_followup_queue_max():
+async def test_followup_queue_max() -> None:
     """Test follow-up queue max limit."""
     redis = MockRedis()
     state = MessengerState(redis, followup_max_pending=2)
@@ -242,7 +246,7 @@ async def test_followup_queue_max():
 
 
 @pytest.mark.asyncio
-async def test_dead_letters():
+async def test_dead_letters() -> None:
     """Test dead letter operations."""
     redis = MockRedis()
     state = MessengerState(redis)
@@ -259,7 +263,7 @@ async def test_dead_letters():
 
 
 @pytest.mark.asyncio
-async def test_conv_create_lock():
+async def test_conv_create_lock() -> None:
     """Test conversation creation lock."""
     redis = MockRedis()
     state = MessengerState(redis)
@@ -278,7 +282,7 @@ async def test_conv_create_lock():
 
 
 @pytest.mark.asyncio
-async def test_no_redis():
+async def test_no_redis() -> None:
     """Test state works without Redis (local mode)."""
     state = MessengerState(None)
 

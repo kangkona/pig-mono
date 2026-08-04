@@ -11,7 +11,7 @@ from pig_agent_core.tools.schemas import (
 )
 
 
-def test_core_tool_names():
+def test_core_tool_names() -> None:
     """Test core tool names are defined."""
     assert "think" in CORE_TOOL_NAMES
     assert "plan" in CORE_TOOL_NAMES
@@ -20,7 +20,7 @@ def test_core_tool_names():
     assert len(CORE_TOOL_NAMES) == 4
 
 
-def test_tool_schemas_structure():
+def test_tool_schemas_structure() -> None:
     """Test tool schemas have correct structure."""
     for schema in TOOL_SCHEMAS:
         assert "type" in schema
@@ -32,7 +32,7 @@ def test_tool_schemas_structure():
         assert "_permission" in schema  # Internal field
 
 
-def test_tool_schemas_openai_format():
+def test_tool_schemas_openai_format() -> None:
     """Test schemas validate against OpenAI function calling format."""
     for schema in TOOL_SCHEMAS:
         func = schema["function"]
@@ -49,7 +49,7 @@ def test_tool_schemas_openai_format():
         assert "required" in params
 
 
-def test_think_tool_schema():
+def test_think_tool_schema() -> None:
     """Test think tool schema."""
     think_schema = next(s for s in TOOL_SCHEMAS if s["function"]["name"] == "think")
 
@@ -58,7 +58,7 @@ def test_think_tool_schema():
     assert "thought" in think_schema["function"]["parameters"]["required"]
 
 
-def test_plan_tool_schema():
+def test_plan_tool_schema() -> None:
     """Test plan tool schema."""
     plan_schema = next(s for s in TOOL_SCHEMAS if s["function"]["name"] == "plan")
 
@@ -74,7 +74,7 @@ def test_plan_tool_schema():
     assert "steps" in required
 
 
-def test_discover_tools_schema():
+def test_discover_tools_schema() -> None:
     """Test discover_tools schema."""
     discover_schema = next(s for s in TOOL_SCHEMAS if s["function"]["name"] == "discover_tools")
 
@@ -83,7 +83,7 @@ def test_discover_tools_schema():
     assert "query" in discover_schema["function"]["parameters"]["required"]
 
 
-def test_tool_permissions():
+def test_tool_permissions() -> None:
     """Test tool permissions mapping."""
     assert TOOL_PERMISSIONS["think"] == "none"
     assert TOOL_PERMISSIONS["plan"] == "none"
@@ -95,7 +95,7 @@ def test_tool_permissions():
         assert name in TOOL_PERMISSIONS
 
 
-def test_tool_budgets():
+def test_tool_budgets() -> None:
     """Test tool budgets configuration."""
     assert "think" in TOOL_BUDGETS
     assert "plan" in TOOL_BUDGETS
@@ -109,7 +109,7 @@ def test_tool_budgets():
         assert isinstance(budget["max_retries"], int)
 
 
-def test_strip_internal_fields():
+def test_strip_internal_fields() -> None:
     """Test stripping internal fields from schemas."""
     test_schemas = [
         {
@@ -129,7 +129,7 @@ def test_strip_internal_fields():
     assert "function" in stripped[0]
 
 
-def test_get_core_schemas():
+def test_get_core_schemas() -> None:
     """Test getting core tool schemas."""
     core_schemas = get_core_schemas()
 
@@ -145,7 +145,7 @@ def test_get_core_schemas():
         assert "_permission" not in schema
 
 
-def test_get_all_schemas():
+def test_get_all_schemas() -> None:
     """Test getting all schemas as mapping."""
     all_schemas = get_all_schemas()
 
@@ -163,7 +163,7 @@ def test_get_all_schemas():
         assert schema["function"]["name"] == name
 
 
-def test_schema_permissions_valid():
+def test_schema_permissions_valid() -> None:
     """Test all schemas have valid permissions."""
     valid_permissions = {"none", "read", "storage", "write"}
 
@@ -172,7 +172,7 @@ def test_schema_permissions_valid():
         assert permission in valid_permissions
 
 
-def test_schema_consistency():
+def test_schema_consistency() -> None:
     """Test consistency between schemas, permissions, and budgets."""
     schema_names = {s["function"]["name"] for s in TOOL_SCHEMAS}
     permission_names = set(TOOL_PERMISSIONS.keys())

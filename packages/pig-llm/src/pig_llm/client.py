@@ -1,9 +1,16 @@
 """Main LLM client."""
 
+from __future__ import annotations
+
 from collections.abc import AsyncIterator, Iterator
+from typing import TYPE_CHECKING, Any, cast
 
 from .config import Config
 from .models import Message, Response, StreamChunk
+from .runtime import ModelRuntime, get_default_runtime
+
+if TYPE_CHECKING:
+    from .providers._base import Provider
 
 
 class LLM:
@@ -16,8 +23,9 @@ class LLM:
         config: Config | None = None,
         enable_web_search: bool = False,
         web_search_max_uses: int = 5,
-        **kwargs,
-    ):
+        runtime: ModelRuntime | None = None,
+        **kwargs: Any,
+    ) -> None:
         """Initialize LLM client.
 
         Args:
@@ -29,16 +37,19 @@ class LLM:
                 support it (currently Anthropic), which translate it into their
                 native tool spec.
             web_search_max_uses: Max distinct searches per request (Anthropic).
+            runtime: Explicit provider/model runtime. Defaults to the built-in
+                process runtime for backwards compatibility.
             **kwargs: Additional config parameters
         """
         if config is None:
-            config_dict = {"provider": provider or "openai"}
+            config_dict: dict[str, Any] = {"provider": provider or "openai"}
             if api_key:
                 config_dict["api_key"] = api_key
             config_dict.update(kwargs)
             config = Config(**config_dict)
 
         self.config = config
+        self.runtime = runtime or get_default_runtime()
         self.enable_web_search = enable_web_search
         self.web_search_max_uses = web_search_max_uses
         self._provider = self._init_provider()
@@ -48,7 +59,7 @@ class LLM:
                 "Pass --model / -m or set the model in your config."
             )
 
-    def _inject_web_search(self, kwargs: dict) -> None:
+    def _inject_web_search(self, kwargs: dict[str, Any]) -> None:
         """Add the native web-search intent for providers that support it.
 
         Gated by provider so the control flags never reach an SDK that would
@@ -62,54 +73,37 @@ class LLM:
     @property
     def model(self) -> str:
         """Return the configured model name (validated at construction time)."""
-        return self.config.model  # type: ignore[return-value]
+        return cast(str, self.config.model)
 
-    # Maps provider name to (module, class_name) for lazy import
-    _PROVIDER_MAP = {
-        "openai": ("openai", "OpenAIProvider"),
-        "anthropic": ("anthropic", "AnthropicProvider"),
-        "google": ("google", "GoogleProvider"),
-        "azure": ("azure", "AzureOpenAIProvider"),
-        "groq": ("groq", "GroqProvider"),
-        "mistral": ("mistral", "MistralProvider"),
-        "openrouter": ("openrouter", "OpenRouterProvider"),
-        "bedrock": ("bedrock", "BedrockProvider"),
-        "xai": ("xai", "XAIProvider"),
-        "cerebras": ("cerebras", "CerebrasProvider"),
-        "cohere": ("cohere", "CohereProvider"),
-        "perplexity": ("perplexity", "PerplexityProvider"),
-        "deepseek": ("deepseek", "DeepSeekProvider"),
-        "together": ("together", "TogetherProvider"),
-    }
-
-    def _init_provider(self):
+    def _init_provider(self) -> Provider:
         """Initialize the provider client."""
-        entry = self._PROVIDER_MAP.get(self.config.provider)
-        if entry:
-            if self.config.provider != "bedrock" and not self.config.api_key:
-                raise ValueError(f"No API key for provider: {self.config.provider}")
-            module_name, class_name = entry
-            import importlib
+        return self.runtime.create_provider(self.config)
 
-            mod = importlib.import_module(f".providers.{module_name}", package="pig_llm")
-            provider_class = getattr(mod, class_name)
-            return provider_class(self.config)
+    def with_profile(self, *, api_key: str, model: str | None = None) -> LLM:
+        """Create an equivalent client bound to an explicitly selected credential.
 
-        # Unknown provider → OpenAI-compatible with base_url
-        if not self.config.base_url:
-            raise ValueError(
-                f"Unknown provider '{self.config.provider}'. "
-                f"Provide base_url for OpenAI-compatible custom providers."
-            )
-        from .providers.openai import OpenAIProvider
-
-        return OpenAIProvider(self.config)
+        Resilience code uses this immutable clone operation so a profile-rotation
+        event always corresponds to a real provider client rebuilt with the new
+        key.  The original client and its frozen configuration remain unchanged.
+        """
+        config = self.config.model_copy(
+            update={
+                "api_key": api_key,
+                "model": model or self.config.model,
+            }
+        )
+        return LLM(
+            config=config,
+            runtime=self.runtime,
+            enable_web_search=self.enable_web_search,
+            web_search_max_uses=self.web_search_max_uses,
+        )
 
     def complete(
         self,
         prompt: str,
         system: str | None = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> Response:
         """Generate a completion.
 
@@ -139,7 +133,7 @@ class LLM:
         self,
         prompt: str,
         system: str | None = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> Iterator[StreamChunk]:
         """Stream a completion.
 
@@ -168,7 +162,7 @@ class LLM:
     def chat(
         self,
         messages: list[Message],
-        **kwargs,
+        **kwargs: Any,
     ) -> Response:
         """Generate a chat completion with full message history.
 
@@ -195,7 +189,7 @@ class LLM:
     async def achat(
         self,
         messages: list[Message],
-        **kwargs,
+        **kwargs: Any,
     ) -> Response:
         """Async generate a chat completion with full message history.
 
@@ -222,7 +216,7 @@ class LLM:
     async def achat_stream(
         self,
         messages: list[Message],
-        **kwargs,
+        **kwargs: Any,
     ) -> AsyncIterator[StreamChunk]:
         """Async stream a chat completion with full message history.
 

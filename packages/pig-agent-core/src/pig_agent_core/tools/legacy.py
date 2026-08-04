@@ -2,9 +2,11 @@
 
 import inspect
 from collections.abc import Callable
-from typing import Any, get_type_hints
+from typing import Any, get_type_hints, overload
 
 from pydantic import BaseModel, create_model
+
+ToolCallable = Callable[..., Any]
 
 
 class Tool:
@@ -12,11 +14,14 @@ class Tool:
 
     def __init__(
         self,
-        func: Callable,
+        func: ToolCallable,
         name: str | None = None,
         description: str | None = None,
         params_model: type[BaseModel] | None = None,
-    ):
+        strict_json: str | None = None,
+        grammar: dict[str, str] | None = None,
+        deferred: bool = False,
+    ) -> None:
         """Initialize tool.
 
         Args:
@@ -24,17 +29,31 @@ class Tool:
             name: Tool name (defaults to function name)
             description: Tool description for LLM
             params_model: Optional Pydantic model for parameters
+            strict_json: Optional ``prefer`` or ``require`` strict-schema policy
+            grammar: Optional ``{"type": "regex"|"lark", "value": ...}`` constraint
+            deferred: Whether this definition may be loaded lazily by supporting models
         """
         self.func = func
         self.name = name or func.__name__
         self.description = description or (func.__doc__ or "").strip()
         self.params_model = params_model or self._create_params_model(func)
+        if strict_json not in {None, "prefer", "require"}:
+            raise ValueError("strict_json must be 'prefer', 'require', or None")
+        self.strict_json = strict_json
+        self.grammar = dict(grammar) if grammar is not None else None
+        self.deferred = deferred
 
-    def __set_name__(self, owner, name):
+    def __set_name__(self, owner: type[Any], name: str) -> None:
         """Called when the Tool is assigned as a class attribute."""
         self._attr_name = name
 
-    def __get__(self, obj, objtype=None):
+    @overload
+    def __get__(self, obj: None, objtype: type[Any] | None = None) -> "Tool": ...
+
+    @overload
+    def __get__(self, obj: Any, objtype: type[Any] | None = None) -> "Tool": ...
+
+    def __get__(self, obj: Any | None, objtype: type[Any] | None = None) -> "Tool":
         """Descriptor protocol: bind self to the instance when accessed on an object."""
         if obj is None:
             return self
@@ -46,15 +65,18 @@ class Tool:
             name=self.name,
             description=self.description,
             params_model=self.params_model,
+            strict_json=self.strict_json,
+            grammar=self.grammar,
+            deferred=self.deferred,
         )
         return bound
 
-    def _create_params_model(self, func: Callable) -> type[BaseModel]:
+    def _create_params_model(self, func: ToolCallable) -> type[BaseModel]:
         """Create Pydantic model from function signature."""
         sig = inspect.signature(func)
         type_hints = get_type_hints(func)
 
-        fields = {}
+        fields: dict[str, Any] = {}
         for param_name, param in sig.parameters.items():
             if param_name == "self":
                 continue
@@ -68,16 +90,23 @@ class Tool:
 
     def to_openai_schema(self) -> dict[str, Any]:
         """Convert tool to OpenAI function calling schema."""
+        function: dict[str, Any] = {
+            "name": self.name,
+            "description": self.description,
+            "parameters": self.params_model.model_json_schema(),
+        }
+        if self.strict_json is not None:
+            function["strict_json"] = self.strict_json
+        if self.grammar is not None:
+            function["grammar"] = dict(self.grammar)
+        if self.deferred:
+            function["defer_loading"] = True
         return {
             "type": "function",
-            "function": {
-                "name": self.name,
-                "description": self.description,
-                "parameters": self.params_model.model_json_schema(),
-            },
+            "function": function,
         }
 
-    def execute(self, **kwargs) -> Any:
+    def execute(self, **kwargs: Any) -> Any:
         """Execute the tool with given arguments."""
         try:
             # Validate parameters
@@ -87,7 +116,7 @@ class Tool:
         except Exception as e:
             raise RuntimeError(f"Tool {self.name} failed: {e}") from e
 
-    async def aexecute(self, **kwargs) -> Any:
+    async def aexecute(self, **kwargs: Any) -> Any:
         """Async execute the tool."""
         if inspect.iscoroutinefunction(self.func):
             validated = self.params_model(**kwargs)
@@ -95,18 +124,47 @@ class Tool:
         else:
             return self.execute(**kwargs)
 
-    def __call__(self, *args, **kwargs) -> Any:
+    def __call__(self, *args: Any, **kwargs: Any) -> Any:
         """Make tool callable."""
         return self.func(*args, **kwargs)
 
 
+@overload
 def tool(
-    func: Callable | None = None,
+    func: ToolCallable,
     *,
     name: str | None = None,
     description: str | None = None,
     params_model: type[BaseModel] | None = None,
-) -> Callable:
+    strict_json: str | None = None,
+    grammar: dict[str, str] | None = None,
+    deferred: bool = False,
+) -> Tool: ...
+
+
+@overload
+def tool(
+    func: None = None,
+    *,
+    name: str | None = None,
+    description: str | None = None,
+    params_model: type[BaseModel] | None = None,
+    strict_json: str | None = None,
+    grammar: dict[str, str] | None = None,
+    deferred: bool = False,
+) -> Callable[[ToolCallable], Tool]: ...
+
+
+def tool(
+    func: ToolCallable | None = None,
+    *,
+    name: str | None = None,
+    description: str | None = None,
+    params_model: type[BaseModel] | None = None,
+    strict_json: str | None = None,
+    grammar: dict[str, str] | None = None,
+    deferred: bool = False,
+) -> Tool | Callable[[ToolCallable], Tool]:
     """Decorator to create a tool from a function.
 
     Usage:
@@ -119,12 +177,15 @@ def tool(
             return x + y
     """
 
-    def decorator(f: Callable) -> Tool:
+    def decorator(f: ToolCallable) -> Tool:
         return Tool(
             func=f,
             name=name,
             description=description,
             params_model=params_model,
+            strict_json=strict_json,
+            grammar=grammar,
+            deferred=deferred,
         )
 
     if func is None:

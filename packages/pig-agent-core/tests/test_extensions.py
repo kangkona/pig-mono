@@ -1,5 +1,6 @@
 """Tests for extension system."""
 
+from typing import Any
 from unittest.mock import Mock
 
 import pytest
@@ -7,7 +8,7 @@ from pig_agent_core import ExtensionAPI, ExtensionManager, tool
 
 
 @pytest.fixture
-def mock_agent():
+def mock_agent() -> Any:
     """Create a mock agent."""
     agent = Mock()
     agent.add_tool = Mock()
@@ -16,13 +17,13 @@ def mock_agent():
     return agent
 
 
-def test_extension_api_creation(mock_agent):
+def test_extension_api_creation(mock_agent: Any) -> None:
     """Test creating extension API."""
     api = ExtensionAPI(mock_agent)
     assert api.agent == mock_agent
 
 
-def test_extension_api_register_tool(mock_agent):
+def test_extension_api_register_tool(mock_agent: Any) -> None:
     """Test registering a tool via API."""
     api = ExtensionAPI(mock_agent)
 
@@ -34,7 +35,7 @@ def test_extension_api_register_tool(mock_agent):
     mock_agent.add_tool.assert_called_once_with(my_tool)
 
 
-def test_extension_api_tool_decorator(mock_agent):
+def test_extension_api_tool_decorator(mock_agent: Any) -> None:
     """Test @api.tool decorator."""
     api = ExtensionAPI(mock_agent)
 
@@ -45,11 +46,11 @@ def test_extension_api_tool_decorator(mock_agent):
     mock_agent.add_tool.assert_called_once()
 
 
-def test_extension_api_register_command(mock_agent):
+def test_extension_api_register_command(mock_agent: Any) -> None:
     """Test registering a command."""
     api = ExtensionAPI(mock_agent)
 
-    def my_command():
+    def my_command() -> Any:
         return "Command executed"
 
     api.register_command("test", my_command, "Test command")
@@ -59,26 +60,26 @@ def test_extension_api_register_command(mock_agent):
     assert commands["test"]() == "Command executed"
 
 
-def test_extension_api_command_decorator(mock_agent):
+def test_extension_api_command_decorator(mock_agent: Any) -> None:
     """Test @api.command decorator."""
     api = ExtensionAPI(mock_agent)
 
     @api.command("stats", "Show stats")
-    def show_stats():
+    def show_stats() -> Any:
         return "Stats"
 
     commands = api.get_commands()
     assert "stats" in commands
 
 
-def test_extension_api_event_handler(mock_agent):
+def test_extension_api_event_handler(mock_agent: Any) -> None:
     """Test registering event handler."""
     api = ExtensionAPI(mock_agent)
 
     called = []
 
     @api.on("test_event")
-    def handler(event, context):
+    def handler(event: Any, context: Any) -> Any:
         called.append(event)
 
     api.emit("test_event", {"data": "test"})
@@ -87,18 +88,18 @@ def test_extension_api_event_handler(mock_agent):
     assert called[0]["data"] == "test"
 
 
-def test_extension_api_multiple_handlers(mock_agent):
+def test_extension_api_multiple_handlers(mock_agent: Any) -> None:
     """Test multiple handlers for same event."""
     api = ExtensionAPI(mock_agent)
 
     calls = []
 
     @api.on("event")
-    def handler1(event, ctx):
+    def handler1(event: Any, ctx: Any) -> Any:
         calls.append(1)
 
     @api.on("event")
-    def handler2(event, ctx):
+    def handler2(event: Any, ctx: Any) -> Any:
         calls.append(2)
 
     api.emit("event", {})
@@ -106,26 +107,26 @@ def test_extension_api_multiple_handlers(mock_agent):
     assert calls == [1, 2]
 
 
-def test_extension_manager_creation(mock_agent):
+def test_extension_manager_creation(mock_agent: Any) -> None:
     """Test creating extension manager."""
     manager = ExtensionManager(mock_agent)
     assert manager.agent == mock_agent
     assert isinstance(manager.api, ExtensionAPI)
 
 
-def test_extension_manager_handle_command(mock_agent):
+def test_extension_manager_handle_command(mock_agent: Any) -> None:
     """Test handling commands via manager."""
     manager = ExtensionManager(mock_agent)
 
     @manager.api.command("test")
-    def test_command():
+    def test_command() -> str:
         return "Test result"
 
     result = manager.handle_command("test")
     assert result == "Test result"
 
 
-def test_extension_manager_handle_unknown_command(mock_agent):
+def test_extension_manager_handle_unknown_command(mock_agent: Any) -> None:
     """Test handling unknown command."""
     manager = ExtensionManager(mock_agent)
 
@@ -133,14 +134,14 @@ def test_extension_manager_handle_unknown_command(mock_agent):
         manager.handle_command("unknown")
 
 
-def test_extension_manager_emit_event(mock_agent):
+def test_extension_manager_emit_event(mock_agent: Any) -> None:
     """Test emitting events via manager."""
     manager = ExtensionManager(mock_agent)
 
     called = []
 
     @manager.api.on("test")
-    def handler(event, ctx):
+    def handler(event: Any, ctx: Any) -> Any:
         called.append(event)
 
     manager.emit_event("test", {"data": "value"})
@@ -148,7 +149,7 @@ def test_extension_manager_emit_event(mock_agent):
     assert len(called) == 1
 
 
-def test_extension_manager_cleanup_clears_loaded_extensions(mock_agent):
+def test_extension_manager_cleanup_clears_loaded_extensions(mock_agent: Any) -> None:
     manager = ExtensionManager(mock_agent)
     manager.extensions = {"a.py": object(), "b.py": object()}
 
@@ -157,13 +158,13 @@ def test_extension_manager_cleanup_clears_loaded_extensions(mock_agent):
     assert manager.extensions == {}
 
 
-def test_extension_manager_cleanup_emits_session_shutdown_event():
+def test_extension_manager_cleanup_emits_session_shutdown_event() -> None:
     agent = Mock()
     manager = ExtensionManager(agent)
     calls = []
 
     @manager.api.on("session_shutdown")
-    def on_shutdown(event, ctx):
+    def on_shutdown(event: Any, ctx: Any) -> Any:
         calls.append(event)
 
     manager.cleanup(reason="normal")
@@ -171,7 +172,31 @@ def test_extension_manager_cleanup_emits_session_shutdown_event():
     assert calls == [{"reason": "normal"}]
 
 
-def test_extension_manager_load_extension(mock_agent, tmp_path):
+def test_extension_manager_cleanup_includes_target_entry_id_when_provided() -> None:
+    agent = Mock()
+    manager = ExtensionManager(agent)
+    calls = []
+
+    @manager.api.on("session_shutdown")
+    def on_shutdown(event: Any, ctx: Any) -> Any:
+        calls.append(event)
+
+    manager.cleanup(
+        reason="tree",
+        target_session_file="/tmp/session.jsonl",
+        target_entry_id="entry-123",
+    )
+
+    assert calls == [
+        {
+            "reason": "tree",
+            "targetSessionFile": "/tmp/session.jsonl",
+            "targetEntryId": "entry-123",
+        }
+    ]
+
+
+def test_extension_manager_load_extension(mock_agent: Any, tmp_path: Any) -> None:
     """Test loading extension from file."""
     manager = ExtensionManager(mock_agent)
 
@@ -199,7 +224,7 @@ def extension(api):
     assert "hello" in commands
 
 
-def test_extension_manager_discover(mock_agent, tmp_path):
+def test_extension_manager_discover(mock_agent: Any, tmp_path: Any) -> None:
     """Test discovering extensions."""
     manager = ExtensionManager(mock_agent)
 

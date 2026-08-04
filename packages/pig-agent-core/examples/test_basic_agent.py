@@ -4,6 +4,7 @@
 import asyncio
 import os
 import sys
+from typing import Any, cast
 from unittest.mock import Mock, patch
 
 # Add parent directory to path
@@ -14,7 +15,7 @@ from pig_agent_core.tools import HANDLERS, TOOL_SCHEMAS
 from pig_agent_core.tools.registry import ToolRegistry
 
 
-def test_setup_agent():
+def test_setup_agent() -> Agent:
     """Test agent setup"""
     print("Test 1: Agent setup...")
 
@@ -55,7 +56,7 @@ def test_setup_agent():
     return agent
 
 
-async def test_respond():
+async def test_respond() -> None:
     """Test respond() method"""
     print("\nTest 2: respond() method...")
 
@@ -66,20 +67,20 @@ async def test_respond():
     mock_response.content = "Test response"
 
     with patch.object(agent, "respond", return_value=mock_response):
-        response = await agent.respond("Test question")
+        response = cast(Any, await agent.respond("Test question"))
         assert response.content == "Test response"
 
     print("✓ respond() works")
 
 
-async def test_respond_stream():
+async def test_respond_stream() -> None:
     """Test respond_stream() method"""
     print("\nTest 3: respond_stream() method...")
 
     agent = test_setup_agent()
 
     # Mock the respond_stream method
-    async def mock_stream(*args, **kwargs):
+    async def mock_stream(*args: Any, **kwargs: Any) -> Any:
         mock_chunk = Mock()
         mock_chunk.type = "text"
         mock_chunk.content = "Test"
@@ -88,7 +89,7 @@ async def test_respond_stream():
     with patch.object(agent, "respond_stream", side_effect=mock_stream):
         chunks = []
         async for chunk in agent.respond_stream("Test question"):
-            chunks.append(chunk)
+            chunks.append(cast(Any, chunk))
 
         assert len(chunks) > 0
         assert chunks[0].type == "text"
@@ -96,7 +97,7 @@ async def test_respond_stream():
     print("✓ respond_stream() works")
 
 
-async def test_cancellation():
+async def test_cancellation() -> None:
     """Test cancellation support"""
     print("\nTest 4: Cancellation support...")
 
@@ -105,7 +106,7 @@ async def test_cancellation():
     cancel_event = asyncio.Event()
 
     # Mock respond_stream to check cancel parameter
-    async def mock_stream(*args, cancel=None, **kwargs):
+    async def mock_stream(*args: Any, cancel: Any = None, **kwargs: Any) -> Any:
         assert cancel is not None, "Cancel event should be passed"
         mock_chunk = Mock()
         mock_chunk.type = "text"
@@ -119,7 +120,7 @@ async def test_cancellation():
     print("✓ Cancellation support works")
 
 
-async def test_error_handling():
+async def test_error_handling() -> None:
     """Test error handling"""
     print("\nTest 5: Error handling...")
 
@@ -128,7 +129,7 @@ async def test_error_handling():
         agent = test_setup_agent()
 
         # Mock respond to raise an error
-        async def mock_error(*args, **kwargs):
+        async def mock_error(*args: Any, **kwargs: Any) -> Any:
             raise ValueError("Test error")
 
         with patch.object(agent, "respond", side_effect=mock_error):
@@ -145,7 +146,7 @@ async def test_error_handling():
         raise
 
 
-async def main():
+async def main() -> Any:
     """Run all tests"""
     print("=" * 60)
     print("Testing basic_agent.py example")

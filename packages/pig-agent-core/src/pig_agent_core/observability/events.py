@@ -3,8 +3,9 @@
 Extracted from sophia-pro LiteAgent's observability system.
 """
 
+import hashlib
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from enum import Enum
@@ -63,6 +64,12 @@ class AgentEvent:
 
 # Type alias for event callbacks
 AgentEventCallback = Callable[[AgentEvent], None]
+
+
+def credential_fingerprint(credential: str) -> str:
+    """Return a stable one-way identifier safe for telemetry."""
+    digest = hashlib.sha256(credential.encode("utf-8")).hexdigest()[:12]
+    return f"sha256:{digest}"
 
 
 class BillingHook(Protocol):
@@ -142,7 +149,7 @@ def span(
     attrs: dict[str, Any] | None = None,
     span_id: str | None = None,
     parent_span_id: str | None = None,
-):
+) -> Iterator[str]:
     """Context manager for tracing spans.
 
     Emits span_start and span_end events with timing information.
@@ -396,8 +403,8 @@ def emit_profile_rotated(
 
     Args:
         callback: Optional callback for event
-        from_key: Previous API key (truncated for security)
-        to_key: New API key (truncated for security)
+        from_key: Previous credential. Only a one-way fingerprint is emitted.
+        to_key: New credential. Only a one-way fingerprint is emitted.
         reason: Optional reason for rotation
         **kwargs: Additional event data
     """
@@ -406,8 +413,10 @@ def emit_profile_rotated(
         AgentEvent(
             type=AgentEventType.PROFILE_ROTATED,
             data={
-                "from_key": from_key,
-                "to_key": to_key,
+                # Field names are retained for compatibility, but raw secrets
+                # and reversible prefixes never cross the event boundary.
+                "from_key": credential_fingerprint(from_key) if from_key else None,
+                "to_key": credential_fingerprint(to_key),
                 "reason": reason,
                 **kwargs,
             },

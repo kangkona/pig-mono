@@ -1,20 +1,25 @@
 """CLI entry point for py-coding-agent."""
 
+import asyncio
 import json
 import os
 import signal
 import sys
+from collections.abc import Callable
 from io import UnsupportedOperation
 from pathlib import Path
-from typing import Any, TypeVar
+from types import FrameType
+from typing import Any, TextIO, TypeVar
 
 import typer
 from pig_agent_core import assert_valid_session_id
-from pig_llm import LLM
+from pig_llm import LLM, TurnOutcome
 from rich.console import Console
 
 from .agent import CodingAgent
 from .config import ConfigManager
+from .permissions import PermissionPolicy
+from .project_trust import ProjectTrustRequest, ProjectTrustResponse, resolve_project_trust
 
 app = typer.Typer(
     name="pig",
@@ -36,21 +41,23 @@ def _available_cleanup_signals() -> tuple[int, ...]:
 
 
 def _read_piped_stdin() -> str | None:
-    """Return piped stdin content when available in non-protocol modes."""
-    import select
-
+    """Read non-TTY stdin through EOF for non-protocol modes."""
     try:
-        ready = select.select([sys.stdin], [], [], 0.0)[0]
+        data = sys.stdin.read()
     except (OSError, ValueError, UnsupportedOperation):
         return None
 
-    if not ready:
-        return None
-
-    data = sys.stdin.read()
     if not data:
         return None
     return data.rstrip("\n")
+
+
+def _stdin_is_interactive() -> bool:
+    """Return whether stdin is attached to an interactive terminal."""
+    try:
+        return bool(sys.stdin.isatty())
+    except (AttributeError, OSError, ValueError, UnsupportedOperation):
+        return False
 
 
 def _resolve_option_value(value: T) -> T | None:
@@ -63,7 +70,7 @@ def _resolve_option_value(value: T) -> T | None:
 class JsonLineWriter:
     """Strict JSONL protocol writer for non-interactive modes."""
 
-    def __init__(self, output=None):
+    def __init__(self, output: TextIO | None = None) -> None:
         self.output = output or sys.stdout
 
     def write(self, payload: dict[str, Any]) -> None:
@@ -71,7 +78,7 @@ class JsonLineWriter:
         self.output.flush()
 
 
-def _shutdown_extensions(agent: Any, reason: str) -> None:
+def _shutdown_extensions(agent: CodingAgent, reason: str) -> None:
     """Forward protocol shutdown reasons into extension cleanup."""
     extension_manager = getattr(agent, "extension_manager", None)
     if extension_manager is None:
@@ -82,12 +89,12 @@ def _shutdown_extensions(agent: Any, reason: str) -> None:
     extension_manager.cleanup(reason=reason)
 
 
-def _run_with_signal_cleanup(agent: Any, runner) -> None:
+def _run_with_signal_cleanup(agent: CodingAgent, runner: Callable[[], None]) -> None:
     """Run a callable while ensuring SIGTERM/SIGHUP trigger extension cleanup."""
     previous_handlers: dict[int, Any] = {}
     sighup = getattr(signal, "SIGHUP", None)
 
-    def _handle_signal(sig, frame) -> None:
+    def _handle_signal(sig: int, frame: FrameType | None) -> None:
         reason = "sighup" if sighup is not None and sig == sighup else "sigterm"
         shutdown = vars(agent).get("_protocol_shutdown") if hasattr(agent, "__dict__") else None
         if callable(shutdown):
@@ -214,7 +221,12 @@ def main(
         "--web-search/--no-web-search",
         help="Enable the model provider's native web search (Anthropic)",
     ),
-):
+    approve: bool | None = typer.Option(
+        None,
+        "--approve/--no-approve",
+        help="Allow or deny project-local settings, instructions, and extensions",
+    ),
+) -> None:
     """Start interactive coding agent."""
     if ctx.invoked_subcommand is not None:
         return
@@ -233,6 +245,31 @@ def main(
     resolved_base_url = _resolve_option_value(base_url)
     resolved_compat_mode = _resolve_option_value(compat_mode)
     resolved_web_search = bool(_resolve_option_value(web_search))
+    resolved_approve = _resolve_option_value(approve)
+
+    unattended_stdin = False
+    piped_input = None
+    if not protocol_mode:
+        unattended_stdin = not _stdin_is_interactive()
+        if unattended_stdin:
+            piped_input = _read_piped_stdin()
+
+    def decide_project_trust(request: ProjectTrustRequest) -> ProjectTrustResponse:
+        console.print(
+            f"[yellow]Project-local agent resources found in {request.workspace}[/yellow]"
+        )
+        allow = typer.confirm(
+            "Trust this workspace and load its settings, instructions, and extensions?",
+            default=False,
+        )
+        return ProjectTrustResponse(allow=allow, remember=True)
+
+    project_trusted = resolve_project_trust(
+        workspace,
+        override=resolved_approve,
+        decider=None if protocol_mode or unattended_stdin else decide_project_trust,
+        unattended=protocol_mode or unattended_stdin,
+    )
 
     _validate_session_selector_flags(
         fork=resolved_fork,
@@ -244,7 +281,10 @@ def main(
     _validate_startup_name(resolved_name)
 
     if resolved_session_dir is None and os.environ.get("PIG_CODING_AGENT_SESSION_DIR") is None:
-        configured_session_dir = ConfigManager(workspace).get_session_dir()
+        configured_session_dir = ConfigManager(
+            workspace,
+            project_trusted=project_trusted,
+        ).get_session_dir()
         if configured_session_dir:
             resolved_session_dir = Path(configured_session_dir).expanduser()
 
@@ -342,6 +382,10 @@ def main(
                         console.print("[yellow]Starting new session[/yellow]")
 
     # Create and run agent
+    permission_policy = None
+    if protocol_mode or unattended_stdin:
+        permission_policy = PermissionPolicy.unattended()
+
     agent = CodingAgent(
         llm=llm,
         workspace=str(workspace),
@@ -356,11 +400,9 @@ def main(
         enable_resilience=not no_resilience,
         enable_cost_tracking=not no_cost_tracking,
         excluded_tools=_parse_excluded_tools(resolved_exclude_tools),
+        permission_policy=permission_policy,
+        project_trust=project_trusted,
     )
-
-    piped_input = None
-    if not protocol_mode:
-        piped_input = _read_piped_stdin()
 
     if not protocol_mode and piped_input is None:
         console.print("[green]✓ Coding Agent started[/green]")
@@ -392,12 +434,16 @@ def main(
     elif mode == "rpc":
         _run_with_signal_cleanup(agent, lambda: run_rpc_mode(agent))
     else:
-        if piped_input:
+        if unattended_stdin:
+            if not piped_input:
+                return
 
             def run_piped() -> None:
-                response = agent.agent.run(piped_input)
-                if response.content:
-                    print(response.content)
+                result = agent.run_once_result(piped_input)
+                if result.content:
+                    print(result.content)
+                if result.denied:
+                    raise typer.Exit(2)
 
             _run_with_signal_cleanup(agent, run_piped)
             return
@@ -407,7 +453,7 @@ def main(
         _run_with_signal_cleanup(agent, agent.run_interactive)
 
 
-def run_json_mode(agent):
+def run_json_mode(agent: CodingAgent) -> None:
     """Run agent in JSON output mode.
 
     Args:
@@ -418,7 +464,7 @@ def run_json_mode(agent):
     json_out = JSONOutputMode()
 
     def emit_shutdown(reason: str) -> None:
-        if getattr(agent, "_protocol_shutdown_emitted", False):
+        if agent._protocol_shutdown_emitted:
             return
         agent._protocol_shutdown_emitted = True
         _shutdown_extensions(agent, reason)
@@ -452,11 +498,17 @@ def run_json_mode(agent):
                         json_out.message("user", message)
 
                         # Get response
-                        response = agent.agent.run(message)
+                        result = agent.run_once_result(message)
 
                         # Send response
-                        json_out.message("assistant", response.content)
-                        json_out.done(response.content)
+                        for denial in result.permission_denials:
+                            json_out.emit_event("permission_denied", denial)
+                        json_out.message("assistant", result.content)
+                        json_out.done(
+                            result.content,
+                            outcome=result.outcome.value,
+                            finish_reason=result.raw_finish_reason,
+                        )
 
                     except json.JSONDecodeError as e:
                         json_out.error(f"Invalid JSON: {e}")
@@ -479,9 +531,15 @@ def run_json_mode(agent):
                         continue
 
                     json_out.message("user", user_input)
-                    response = agent.agent.run(user_input)
-                    json_out.message("assistant", response.content)
-                    json_out.done()
+                    result = agent.run_once_result(user_input)
+                    for denial in result.permission_denials:
+                        json_out.emit_event("permission_denied", denial)
+                    json_out.message("assistant", result.content)
+                    json_out.done(
+                        result.content,
+                        outcome=result.outcome.value,
+                        finish_reason=result.raw_finish_reason,
+                    )
 
                 except KeyboardInterrupt:
                     emit_shutdown("interrupt")
@@ -494,11 +552,11 @@ def run_json_mode(agent):
                     emit_shutdown("error")
                     break
     finally:
-        if getattr(agent, "_protocol_shutdown", None) is emit_shutdown:
+        if agent._protocol_shutdown is emit_shutdown:
             agent._protocol_shutdown = None
 
 
-def run_rpc_mode(agent):
+def run_rpc_mode(agent: CodingAgent) -> None:
     """Run agent in RPC mode.
 
     Args:
@@ -509,7 +567,7 @@ def run_rpc_mode(agent):
     rpc = RPCMode()
 
     def emit_shutdown(reason: str) -> None:
-        if getattr(agent, "_protocol_shutdown_emitted", False):
+        if agent._protocol_shutdown_emitted:
             return
         agent._protocol_shutdown_emitted = True
         _shutdown_extensions(agent, reason)
@@ -518,7 +576,7 @@ def run_rpc_mode(agent):
     agent._protocol_shutdown = emit_shutdown
     agent._protocol_shutdown_emitted = False
 
-    def handle_request(method: str, params: dict) -> Any:
+    def handle_request(method: str, params: dict[str, Any]) -> Any:
         """Handle RPC requests.
 
         Args:
@@ -533,19 +591,68 @@ def run_rpc_mode(agent):
             if not message:
                 raise ValueError("Missing 'message' parameter")
 
-            response = agent.agent.run(message)
-            return {"content": response.content, "model": agent.agent.llm.config.model}
+            result = agent.run_once_result(message)
+            return {
+                "content": result.content,
+                "model": agent.agent.llm.config.model,
+                "permissionDenials": list(result.permission_denials),
+                "completed": result.completed,
+                "outcome": result.outcome.value,
+                "finishReason": result.raw_finish_reason,
+            }
 
         elif method == "stream":
             message = params.get("message")
             if not message:
                 raise ValueError("Missing 'message' parameter")
 
-            # Stream tokens as events
-            for chunk in agent.agent.llm.stream(message):
-                rpc.send_event("token", {"content": chunk.content})
+            async def stream_agent_turn() -> tuple[
+                TurnOutcome, str | None, tuple[dict[str, str], ...]
+            ]:
+                cancel = asyncio.Event()
+                token = agent.turn_lifecycle.begin(cancel)
+                agent.permission_policy.consume_denials()
+                agent.agent.last_turn_outcome = None
+                agent.agent.last_finish_reason = None
+                content_parts: list[str] = []
+                assistant_persisted = False
+                outcome = TurnOutcome.INCOMPLETE
+                finish_reason: str | None = None
+                try:
+                    if agent.session:
+                        agent.session.add_message("user", message)
+                    async for content in agent.agent.respond_stream(message, cancel=cancel):
+                        content_parts.append(content)
+                        rpc.send_event("token", {"content": content})
+                    if agent.session and content_parts:
+                        agent.session.add_message("assistant", "".join(content_parts))
+                        assistant_persisted = True
+                    candidate_outcome = agent.agent.last_turn_outcome
+                    if isinstance(candidate_outcome, TurnOutcome):
+                        outcome = candidate_outcome
+                    candidate_finish_reason = agent.agent.last_finish_reason
+                    if isinstance(candidate_finish_reason, str):
+                        finish_reason = candidate_finish_reason
+                finally:
+                    try:
+                        denials = tuple(agent.permission_policy.consume_denials())
+                        for denial in denials:
+                            rpc.send_event("permission_denied", denial)
+                        if agent.session and content_parts and not assistant_persisted:
+                            agent.session.add_message("assistant", "".join(content_parts))
+                    finally:
+                        agent.turn_lifecycle.end(token)
+                return outcome, finish_reason, denials
 
-            return {"done": True}
+            terminal_outcome, raw_finish_reason, permission_denials = asyncio.run(
+                stream_agent_turn()
+            )
+            return {
+                "done": terminal_outcome is TurnOutcome.COMPLETED,
+                "outcome": terminal_outcome.value,
+                "finishReason": raw_finish_reason,
+                "permissionDenials": list(permission_denials),
+            }
 
         elif method == "bash":
             command = params.get("command")
@@ -554,15 +661,30 @@ def run_rpc_mode(agent):
 
             from .tools import ShellTools
 
+            permission_policy = getattr(agent, "permission_policy", None)
+            if not isinstance(permission_policy, PermissionPolicy):
+                permission_policy = PermissionPolicy.unattended()
+
             # RPC bash is a discrete request/response with no turn-level cancel;
             # use the synchronous helper directly.
-            output = ShellTools()._run_command_sync(
+            command_result = ShellTools(
+                permission_policy=permission_policy
+            )._run_command_sync_result(
                 command,
                 cwd=params.get("cwd"),
                 exclude_from_context=bool(params.get("excludeFromContext")),
             )
+            if not command_result.ok:
+                denial = command_result.meta.get("permission_denial")
+                if denial is not None:
+                    return {
+                        "output": None,
+                        "excludedFromContext": bool(params.get("excludeFromContext")),
+                        "error": denial,
+                    }
+                raise RuntimeError(command_result.error or "Command execution failed")
             return {
-                "output": output,
+                "output": command_result.data,
                 "excludedFromContext": bool(params.get("excludeFromContext")),
             }
 
@@ -584,7 +706,7 @@ def run_rpc_mode(agent):
         rpc.run_server(handle_request)
         emit_shutdown(getattr(rpc, "last_shutdown_reason", None) or "eof")
     finally:
-        if getattr(agent, "_protocol_shutdown", None) is emit_shutdown:
+        if agent._protocol_shutdown is emit_shutdown:
             agent._protocol_shutdown = None
 
 
@@ -593,7 +715,7 @@ def gen(
     description: str = typer.Argument(..., help="What to generate"),
     output: Path | None = typer.Option(None, "--output", "-o", help="Output file"),
     model: str | None = typer.Option(None, "--model", "-m", help="LLM model"),
-):
+) -> None:
     """Generate code from description."""
     api_key = os.getenv("OPENAI_API_KEY")
     if not api_key:
@@ -601,23 +723,31 @@ def gen(
         raise typer.Exit(1)
 
     llm = LLM(api_key=api_key, model=model or "gpt-3.5-turbo")
-    agent = CodingAgent(llm=llm, verbose=False)
+    agent = CodingAgent(
+        llm=llm,
+        verbose=False,
+        permission_policy=PermissionPolicy.unattended(),
+    )
 
     console.print(f"[cyan]Generating:[/cyan] {description}")
-    result = agent.run_once(f"Generate code for: {description}")
+    result = agent.run_once_result(f"Generate code for: {description}")
+
+    if result.denied:
+        console.print(f"[red]{result.content}[/red]")
+        raise typer.Exit(2)
 
     if output:
-        output.write_text(result)
+        output.write_text(result.content)
         console.print(f"[green]Saved to:[/green] {output}")
     else:
-        console.print(result)
+        console.print(result.content)
 
 
 @app.command()
 def analyze(
     path: Path = typer.Argument(..., help="File or directory to analyze"),
     model: str | None = typer.Option(None, "--model", "-m", help="LLM model"),
-):
+) -> None:
     """Analyze code and provide insights."""
     api_key = os.getenv("OPENAI_API_KEY")
     if not api_key:
@@ -629,11 +759,17 @@ def analyze(
         raise typer.Exit(1)
 
     llm = LLM(api_key=api_key, model=model or "gpt-3.5-turbo")
-    agent = CodingAgent(llm=llm, verbose=False)
+    agent = CodingAgent(
+        llm=llm,
+        verbose=False,
+        permission_policy=PermissionPolicy.unattended(),
+    )
 
     console.print(f"[cyan]Analyzing:[/cyan] {path}")
-    result = agent.run_once(f"Analyze the file {path} and provide insights")
-    console.print(result)
+    result = agent.run_once_result(f"Analyze the file {path} and provide insights")
+    console.print(f"[red]{result.content}[/red]" if result.denied else result.content)
+    if result.denied:
+        raise typer.Exit(2)
 
 
 if __name__ == "__main__":

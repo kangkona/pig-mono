@@ -48,10 +48,13 @@ from pig_web_ui import ChatServer
 from pig_llm import LLM
 from pig_agent_core import Agent, tool
 
+
 @tool(description="Get current time")
 def get_time() -> str:
     from datetime import datetime
+
     return datetime.now().strftime("%H:%M:%S")
+
 
 # Create agent
 agent = Agent(
@@ -73,9 +76,11 @@ from fastapi import Request
 
 server = ChatServer(llm=LLM())
 
+
 @server.app.get("/custom")
 async def custom_route():
     return {"message": "Custom endpoint"}
+
 
 server.run()
 ```
@@ -220,12 +225,12 @@ Main server class:
 from pig_web_ui import ChatServer
 
 server = ChatServer(
-    llm=None,           # LLM instance
-    agent=None,         # Or Agent instance
-    title="Chat",       # Page title
-    port=8000,         # Server port
+    llm=None,  # LLM instance
+    agent=None,  # Or Agent instance
+    title="Chat",  # Page title
+    port=8000,  # Server port
     host="127.0.0.1",  # Server host
-    cors=False,        # Enable CORS
+    cors=False,  # Enable CORS
 )
 ```
 

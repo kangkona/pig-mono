@@ -1,12 +1,14 @@
 """Test register_package convenience method."""
 
+from typing import Any
+
 import pytest
 from pig_agent_core.tools.base import ToolResult
 from pig_agent_core.tools.registry import ToolRegistry
 
 
 @pytest.fixture
-def mock_schemas():
+def mock_schemas() -> Any:
     """Create mock tool schemas."""
     return [
         {
@@ -37,16 +39,16 @@ def mock_schemas():
 
 
 @pytest.fixture
-def mock_handlers():
+def mock_handlers() -> Any:
     """Create mock tool handlers."""
 
-    async def handler1(args, user_id=None, meta=None, cancel=None):
+    async def handler1(args: Any, user_id: Any = None, meta: Any = None, cancel: Any = None) -> Any:
         return ToolResult(ok=True, data="result1")
 
-    async def handler2(args, user_id=None, meta=None, cancel=None):
+    async def handler2(args: Any, user_id: Any = None, meta: Any = None, cancel: Any = None) -> Any:
         return ToolResult(ok=True, data="result2")
 
-    async def handler3(args, user_id=None, meta=None, cancel=None):
+    async def handler3(args: Any, user_id: Any = None, meta: Any = None, cancel: Any = None) -> Any:
         return ToolResult(ok=True, data="result3")
 
     return {
@@ -56,7 +58,7 @@ def mock_handlers():
     }
 
 
-def test_register_package_basic(mock_schemas, mock_handlers):
+def test_register_package_basic(mock_schemas: Any, mock_handlers: Any) -> None:
     """Test basic register_package functionality."""
     registry = ToolRegistry()
 
@@ -74,7 +76,7 @@ def test_register_package_basic(mock_schemas, mock_handlers):
         assert "tool3" in registry._handlers
 
 
-def test_register_package_as_core(mock_schemas, mock_handlers):
+def test_register_package_as_core(mock_schemas: Any, mock_handlers: Any) -> None:
     """Test register_package with is_core=True."""
     registry = ToolRegistry()
 
@@ -89,7 +91,7 @@ def test_register_package_as_core(mock_schemas, mock_handlers):
         assert "tool3" in registry._core_tools
 
 
-def test_register_package_as_deferred(mock_schemas, mock_handlers):
+def test_register_package_as_deferred(mock_schemas: Any, mock_handlers: Any) -> None:
     """Test register_package with is_core=False."""
     registry = ToolRegistry()
 
@@ -104,7 +106,7 @@ def test_register_package_as_deferred(mock_schemas, mock_handlers):
         assert "tool3" not in registry._core_tools
 
 
-def test_register_package_with_timeout(mock_schemas, mock_handlers):
+def test_register_package_with_timeout(mock_schemas: Any, mock_handlers: Any) -> None:
     """Test register_package with custom timeout."""
     registry = ToolRegistry()
 
@@ -119,7 +121,7 @@ def test_register_package_with_timeout(mock_schemas, mock_handlers):
         assert registry._timeouts["tool3"] == 60.0
 
 
-def test_register_package_with_retries(mock_schemas, mock_handlers):
+def test_register_package_with_retries(mock_schemas: Any, mock_handlers: Any) -> None:
     """Test register_package with custom max_retries."""
     registry = ToolRegistry()
 
@@ -134,7 +136,7 @@ def test_register_package_with_retries(mock_schemas, mock_handlers):
         assert registry._retries["tool3"] == 3
 
 
-def test_register_package_missing_handler(mock_schemas, mock_handlers):
+def test_register_package_missing_handler(mock_schemas: Any, mock_handlers: Any) -> None:
     """Test register_package skips tools without handlers."""
     # Remove one handler
     handlers = mock_handlers.copy()
@@ -155,9 +157,9 @@ def test_register_package_missing_handler(mock_schemas, mock_handlers):
         assert "tool3" in registry._handlers
 
 
-def test_register_package_invalid_schema(mock_handlers):
+def test_register_package_invalid_schema(mock_handlers: Any) -> None:
     """Test register_package skips invalid schemas."""
-    invalid_schemas = [
+    invalid_schemas: list[dict[str, Any]] = [
         {"type": "function"},  # Missing function key
         {
             "type": "function",
@@ -181,7 +183,7 @@ def test_register_package_invalid_schema(mock_handlers):
     assert "tool1" in registered
 
 
-def test_register_package_empty_lists():
+def test_register_package_empty_lists() -> None:
     """Test register_package with empty lists."""
     registry = ToolRegistry()
 
@@ -190,7 +192,7 @@ def test_register_package_empty_lists():
     assert len(registered) == 0
 
 
-def test_register_package_returns_registered_names(mock_schemas, mock_handlers):
+def test_register_package_returns_registered_names(mock_schemas: Any, mock_handlers: Any) -> None:
     """Test register_package returns list of registered tool names."""
     registry = ToolRegistry()
 
@@ -202,7 +204,7 @@ def test_register_package_returns_registered_names(mock_schemas, mock_handlers):
 
 
 @pytest.mark.asyncio
-async def test_register_package_tools_are_executable(mock_schemas, mock_handlers):
+async def test_register_package_tools_are_executable(mock_schemas: Any, mock_handlers: Any) -> None:
     """Test that tools registered via register_package are executable."""
     registry = ToolRegistry()
 
@@ -222,7 +224,7 @@ async def test_register_package_tools_are_executable(mock_schemas, mock_handlers
     assert result.data == "result1"
 
 
-def test_register_package_with_real_schemas():
+def test_register_package_with_real_schemas() -> None:
     """Test register_package with real TOOL_SCHEMAS and HANDLERS."""
     from pig_agent_core.tools import HANDLERS, TOOL_SCHEMAS
 

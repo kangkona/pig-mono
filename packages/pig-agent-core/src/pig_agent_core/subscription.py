@@ -1,5 +1,7 @@
 """Subscription login helpers (Claude Pro, ChatGPT Plus, etc.)."""
 
+from typing import Any
+
 
 class SubscriptionAuth:
     """Authentication via subscription accounts."""
@@ -54,7 +56,7 @@ class SubscriptionAuth:
         )
 
     @staticmethod
-    def check_subscription_status(provider: str, token: str) -> dict:
+    def check_subscription_status(provider: str, token: str) -> dict[str, Any]:
         """Check subscription status.
 
         Args:
@@ -76,9 +78,9 @@ class SubscriptionAuth:
 class APIKeyManager:
     """Manage API keys for different providers."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize API key manager."""
-        self.keys = {}
+        self.keys: dict[str, str] = {}
 
     def set_key(self, provider: str, api_key: str) -> None:
         """Set API key for a provider.

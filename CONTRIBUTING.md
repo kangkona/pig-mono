@@ -6,8 +6,8 @@ Thank you for your interest in contributing to pig-mono!
 
 1. Fork the repository
 2. Clone your fork: `git clone <your-fork-url>`
-3. Install development dependencies: `pip install -e ".[dev]"`
-4. Install packages: `./scripts/install-dev.sh`
+3. Install the complete workspace development environment: `uv sync --all-packages`
+4. Install CLI entry points, if needed: `./scripts/install-dev.sh`
 
 ## Development Workflow
 
@@ -56,8 +56,8 @@ ruff format packages/
 # Lint code
 ruff check packages/
 
-# Type check
-mypy packages/
+# Type check production sources strictly, then tests/examples per package
+./scripts/typecheck.sh
 ```
 
 ## Project Structure

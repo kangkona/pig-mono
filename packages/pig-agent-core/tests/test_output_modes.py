@@ -6,7 +6,7 @@ from io import StringIO
 from pig_agent_core.output_modes import JSONOutputMode, OutputModeManager, RPCMode
 
 
-def test_json_output_creation():
+def test_json_output_creation() -> None:
     """Test creating JSON output mode."""
     output = StringIO()
     json_mode = JSONOutputMode(output)
@@ -14,7 +14,7 @@ def test_json_output_creation():
     assert json_mode.output == output
 
 
-def test_json_emit_event():
+def test_json_emit_event() -> None:
     """Test emitting JSON event."""
     output = StringIO()
     json_mode = JSONOutputMode(output)
@@ -30,7 +30,7 @@ def test_json_emit_event():
     assert "timestamp" in data
 
 
-def test_json_message():
+def test_json_message() -> None:
     """Test message event."""
     output = StringIO()
     json_mode = JSONOutputMode(output)
@@ -43,7 +43,7 @@ def test_json_message():
     assert data["content"] == "Hello"
 
 
-def test_json_tool_call_start():
+def test_json_tool_call_start() -> None:
     """Test tool call start event."""
     output = StringIO()
     json_mode = JSONOutputMode(output)
@@ -55,7 +55,7 @@ def test_json_tool_call_start():
     assert data["tool"] == "my_tool"
 
 
-def test_json_tool_call_end():
+def test_json_tool_call_end() -> None:
     """Test tool call end event."""
     output = StringIO()
     json_mode = JSONOutputMode(output)
@@ -67,7 +67,7 @@ def test_json_tool_call_end():
     assert data["success"] is True
 
 
-def test_json_token():
+def test_json_token() -> None:
     """Test token event."""
     output = StringIO()
     json_mode = JSONOutputMode(output)
@@ -79,7 +79,7 @@ def test_json_token():
     assert data["content"] == "Hello"
 
 
-def test_json_done():
+def test_json_done() -> None:
     """Test done event."""
     output = StringIO()
     json_mode = JSONOutputMode(output)
@@ -91,7 +91,21 @@ def test_json_done():
     assert data["content"] == "Final content"
 
 
-def test_json_error():
+def test_json_done_can_distinguish_terminal_failure_from_completion() -> None:
+    output = StringIO()
+    json_mode = JSONOutputMode(output)
+
+    json_mode.done("Partial", outcome="length", finish_reason="MAX_TOKENS")
+
+    data = json.loads(output.getvalue())
+    assert data["type"] == "done"
+    assert data["content"] == "Partial"
+    assert data["completed"] is False
+    assert data["outcome"] == "length"
+    assert data["finishReason"] == "MAX_TOKENS"
+
+
+def test_json_error() -> None:
     """Test error event."""
     output = StringIO()
     json_mode = JSONOutputMode(output)
@@ -103,13 +117,13 @@ def test_json_error():
     assert data["error"] == "Something failed"
 
 
-def test_rpc_mode_creation():
+def test_rpc_mode_creation() -> None:
     """Test creating RPC mode."""
     rpc = RPCMode()
     assert rpc.request_id == 0
 
 
-def test_rpc_send_response():
+def test_rpc_send_response() -> None:
     """Test sending RPC response."""
     import sys
     from io import StringIO
@@ -132,7 +146,7 @@ def test_rpc_send_response():
         sys.stdout = original_stdout
 
 
-def test_rpc_send_error():
+def test_rpc_send_error() -> None:
     """Test sending RPC error."""
     import sys
     from io import StringIO
@@ -155,7 +169,7 @@ def test_rpc_send_error():
         sys.stdout = original_stdout
 
 
-def test_output_mode_manager():
+def test_output_mode_manager() -> None:
     """Test output mode manager."""
     mgr = OutputModeManager("interactive")
 
@@ -164,7 +178,7 @@ def test_output_mode_manager():
     assert not mgr.is_rpc()
 
 
-def test_output_mode_manager_json():
+def test_output_mode_manager_json() -> None:
     """Test JSON mode manager."""
     mgr = OutputModeManager("json")
 
@@ -174,7 +188,7 @@ def test_output_mode_manager_json():
     assert mgr.json_mode is not None
 
 
-def test_output_mode_manager_rpc():
+def test_output_mode_manager_rpc() -> None:
     """Test RPC mode manager."""
     mgr = OutputModeManager("rpc")
 

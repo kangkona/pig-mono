@@ -1,13 +1,16 @@
 """Tests for messenger manager."""
 
 import asyncio
+from typing import Any, NoReturn
 
 import pytest
 from pig_messenger.base import (
+    BaseMessengerAdapter,
     IncomingMessage,
     MessengerCapabilities,
     MessengerType,
     MessengerUser,
+    WebhookRequest,
 )
 from pig_messenger.manager import (
     MessengerManager,
@@ -15,9 +18,10 @@ from pig_messenger.manager import (
     _post_with_retry,
     split_message,
 )
+from pig_messenger.state import MessengerState
 
 
-def test_split_message_short():
+def test_split_message_short() -> None:
     """Test split_message with short text."""
     text = "Hello world"
     chunks = split_message(text, 100)
@@ -25,7 +29,7 @@ def test_split_message_short():
     assert chunks[0] == text
 
 
-def test_split_message_paragraph_boundary():
+def test_split_message_paragraph_boundary() -> None:
     """Test split_message at paragraph boundary."""
     text = "First paragraph.\n\nSecond paragraph.\n\nThird paragraph."
     chunks = split_message(text, 30)
@@ -35,7 +39,7 @@ def test_split_message_paragraph_boundary():
     assert chunks[2] == "Third paragraph."
 
 
-def test_split_message_line_boundary():
+def test_split_message_line_boundary() -> None:
     """Test split_message at line boundary."""
     text = "Line 1\nLine 2\nLine 3\nLine 4"
     chunks = split_message(text, 20)
@@ -44,7 +48,7 @@ def test_split_message_line_boundary():
     assert chunks[1] == "Line 3\nLine 4"
 
 
-def test_split_message_sentence_boundary():
+def test_split_message_sentence_boundary() -> None:
     """Test split_message at sentence boundary."""
     text = "First sentence. Second sentence. Third sentence."
     chunks = split_message(text, 30)
@@ -54,7 +58,7 @@ def test_split_message_sentence_boundary():
     assert chunks[1] == "sentence. Third sentence."
 
 
-def test_split_message_word_boundary():
+def test_split_message_word_boundary() -> None:
     """Test split_message at word boundary."""
     text = "word " * 20
     chunks = split_message(text, 30)
@@ -62,37 +66,37 @@ def test_split_message_word_boundary():
     assert "".join(chunks) == text
 
 
-def test_is_transient_connection_error():
+def test_is_transient_connection_error() -> None:
     """Test _is_transient with ConnectionError."""
     assert _is_transient(ConnectionError("Connection failed"))
 
 
-def test_is_transient_timeout_error():
+def test_is_transient_timeout_error() -> None:
     """Test _is_transient with TimeoutError."""
     assert _is_transient(TimeoutError("Timeout"))
 
 
-def test_is_transient_http_429():
+def test_is_transient_http_429() -> None:
     """Test _is_transient with HTTP 429."""
     assert _is_transient(Exception("HTTP 429 Too Many Requests"))
 
 
-def test_is_transient_http_503():
+def test_is_transient_http_503() -> None:
     """Test _is_transient with HTTP 503."""
     assert _is_transient(Exception("503 Service Unavailable"))
 
 
-def test_is_transient_non_transient():
+def test_is_transient_non_transient() -> None:
     """Test _is_transient with non-transient error."""
     assert not _is_transient(ValueError("Invalid value"))
 
 
 @pytest.mark.asyncio
-async def test_post_with_retry_success():
+async def test_post_with_retry_success() -> None:
     """Test _post_with_retry with immediate success."""
     call_count = 0
 
-    async def fn():
+    async def fn() -> str:
         nonlocal call_count
         call_count += 1
         return "success"
@@ -103,11 +107,11 @@ async def test_post_with_retry_success():
 
 
 @pytest.mark.asyncio
-async def test_post_with_retry_transient_then_success():
+async def test_post_with_retry_transient_then_success() -> None:
     """Test _post_with_retry with transient error then success."""
     call_count = 0
 
-    async def fn():
+    async def fn() -> str:
         nonlocal call_count
         call_count += 1
         if call_count == 1:
@@ -120,11 +124,11 @@ async def test_post_with_retry_transient_then_success():
 
 
 @pytest.mark.asyncio
-async def test_post_with_retry_max_retries():
+async def test_post_with_retry_max_retries() -> None:
     """Test _post_with_retry exhausts retries."""
     call_count = 0
 
-    async def fn():
+    async def fn() -> NoReturn:
         nonlocal call_count
         call_count += 1
         raise ConnectionError("Always fails")
@@ -135,23 +139,25 @@ async def test_post_with_retry_max_retries():
     assert call_count == 3  # Initial + 2 retries
 
 
-class MockAdapter:
+class MockAdapter(BaseMessengerAdapter):
     """Mock messenger adapter."""
 
-    def __init__(self):
-        self.capabilities = MessengerCapabilities(
-            can_edit=False,
-            can_delete=False,
-            can_react=False,
-            can_thread=False,
-            can_upload_file=False,
-            supports_blocks=False,
-            supports_draft=False,
-            max_message_length=1000,
+    def __init__(self) -> None:
+        super().__init__(
+            MessengerCapabilities(
+                can_edit=False,
+                can_delete=False,
+                can_react=False,
+                can_thread=False,
+                can_upload_file=False,
+                supports_blocks=False,
+                supports_draft=False,
+                max_message_length=1000,
+            )
         )
-        self.sent_messages = []
+        self.sent_messages: list[str] = []
 
-    async def parse_event(self, raw_event):
+    async def parse_event(self, raw_event: Any) -> Any:
         """Parse event."""
         return IncomingMessage(
             message_id=raw_event["id"],
@@ -162,32 +168,43 @@ class MockAdapter:
             timestamp=0,
         )
 
-    async def send_message(self, channel_id, text, **kwargs):
+    async def send_message(self, channel_id: Any, text: Any, **kwargs: Any) -> Any:
         """Send message."""
         self.sent_messages.append(text)
         return {"message_id": "msg123"}
 
-    async def aclose(self):
+    async def update_message(
+        self, channel_id: Any, message_id: Any, text: Any, **kwargs: Any
+    ) -> None:
+        """Update a message."""
+        return None
+
+    async def verify_signature(self, request: WebhookRequest) -> bool:
+        """Accept synthetic test webhooks."""
+        return True
+
+    async def aclose(self) -> None:
         """Close adapter."""
         pass
 
 
-class MockState:
+class MockState(MessengerState):
     """Mock messenger state."""
 
-    def __init__(self):
-        self.dedup_events = set()
-        self.locks = {}
-        self.followups = {}
+    def __init__(self) -> None:
+        super().__init__()
+        self.dedup_events: set[Any] = set()
+        self.locks: dict[Any, Any] = {}
+        self.followups: dict[Any, list[Any]] = {}
 
-    async def check_event_dedup(self, event_id):
+    async def check_event_dedup(self, event_id: Any) -> bool:
         """Check event dedup."""
         if event_id in self.dedup_events:
             return True
         self.dedup_events.add(event_id)
         return False
 
-    async def acquire_agent_lock(self, key):
+    async def acquire_agent_lock(self, key: Any) -> Any:
         """Acquire agent lock."""
         if key in self.locks:
             return None
@@ -195,52 +212,55 @@ class MockState:
         self.locks[key] = token
         return token
 
-    async def release_agent_lock(self, key, token):
+    async def release_agent_lock(self, key: Any, token: Any) -> bool:
         """Release agent lock."""
         if self.locks.get(key) == token:
             del self.locks[key]
+            return True
+        return False
 
-    async def enqueue_followup(self, key, data):
+    async def enqueue_followup(self, key: Any, data: Any) -> bool:
         """Enqueue follow-up."""
         if key not in self.followups:
             self.followups[key] = []
         self.followups[key].append(data)
+        return True
 
-    async def drain_followups(self, key):
+    async def drain_followups(self, key: Any) -> Any:
         """Drain follow-ups."""
         items = self.followups.get(key, [])
         self.followups[key] = []
         return items
 
-    async def release_lock_if_queue_empty(self, key, token):
+    async def release_lock_if_queue_empty(self, key: Any, token: Any) -> bool:
         """Release lock if queue empty."""
         if not self.followups.get(key):
             await self.release_agent_lock(key, token)
             return True
         return False
 
-    async def record_dead_letter(self, data):
+    async def record_dead_letter(self, data: Any) -> None:
         """Record dead letter."""
         pass
 
-    async def list_dead_letters(self, count):
+    async def list_dead_letters(self, count: int = 50) -> list[dict[str, object]]:
         """List dead letters."""
         return []
 
-    async def replay_dead_letters(self, handler):
+    async def replay_dead_letters(self, handler: Any) -> int:
         """Replay dead letters."""
         return 0
 
 
 @pytest.mark.asyncio
-async def test_manager_handle_event():
+async def test_manager_handle_event() -> None:
     """Test MessengerManager.handle_event."""
     adapter = MockAdapter()
     state = MockState()
 
     responses = []
 
-    def agent_factory(message, thread):
+    def agent_factory(message: Any, thread: Any) -> str:
         responses.append(message.text)
         return "Response"
 
@@ -261,14 +281,14 @@ async def test_manager_handle_event():
 
 
 @pytest.mark.asyncio
-async def test_manager_dedup():
+async def test_manager_dedup() -> None:
     """Test MessengerManager event deduplication."""
     adapter = MockAdapter()
     state = MockState()
 
     call_count = 0
 
-    def agent_factory(message, thread):
+    def agent_factory(message: Any, thread: Any) -> str:
         nonlocal call_count
         call_count += 1
         return "Response"
@@ -287,11 +307,11 @@ async def test_manager_dedup():
 
 
 @pytest.mark.asyncio
-async def test_manager_shutdown():
+async def test_manager_shutdown() -> None:
     """Test MessengerManager.shutdown."""
     adapter = MockAdapter()
 
-    def agent_factory(message, thread):
+    def agent_factory(message: Any, thread: Any) -> str:
         return "Response"
 
     manager = MessengerManager(agent_factory=agent_factory)

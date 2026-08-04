@@ -1,17 +1,19 @@
 """Tests for tool registry."""
 
+from typing import Any
+
 import pytest
 from pig_agent_core.registry import ToolRegistry
 from pig_agent_core.tools import tool
 
 
-def test_registry_creation():
+def test_registry_creation() -> None:
     """Test creating a registry."""
     registry = ToolRegistry()
     assert len(registry) == 0
 
 
-def test_registry_register():
+def test_registry_register() -> None:
     """Test registering a tool."""
 
     @tool
@@ -25,7 +27,7 @@ def test_registry_register():
     assert "my_tool" in registry
 
 
-def test_registry_get():
+def test_registry_get() -> None:
     """Test getting a tool."""
 
     @tool
@@ -39,13 +41,13 @@ def test_registry_get():
     assert retrieved is my_tool
 
 
-def test_registry_get_missing():
+def test_registry_get_missing() -> None:
     """Test getting non-existent tool."""
     registry = ToolRegistry()
     assert registry.get("missing") is None
 
 
-def test_registry_unregister():
+def test_registry_unregister() -> None:
     """Test unregistering a tool."""
 
     @tool
@@ -60,7 +62,7 @@ def test_registry_unregister():
     assert len(registry) == 0
 
 
-def test_registry_list_tools():
+def test_registry_list_tools() -> None:
     """Test listing all tools."""
 
     @tool
@@ -81,7 +83,7 @@ def test_registry_list_tools():
     assert tool2 in tools
 
 
-def test_registry_execute():
+def test_registry_execute() -> None:
     """Test executing a tool by name."""
 
     @tool
@@ -95,7 +97,7 @@ def test_registry_execute():
     assert result == 8
 
 
-def test_registry_execute_missing():
+def test_registry_execute_missing() -> None:
     """Test executing non-existent tool."""
     registry = ToolRegistry()
 
@@ -103,7 +105,7 @@ def test_registry_execute_missing():
         registry.execute("missing", x=1)
 
 
-def test_registry_get_schemas():
+def test_registry_get_schemas() -> None:
     """Test getting OpenAI schemas."""
 
     @tool(description="Tool 1")
@@ -123,7 +125,7 @@ def test_registry_get_schemas():
     assert all(s["type"] == "function" for s in schemas)
 
 
-def test_registry_iteration():
+def test_registry_iteration() -> None:
     """Test iterating over registry."""
 
     @tool
@@ -147,7 +149,7 @@ def test_registry_iteration():
 # ---------------------------------------------------------------------------
 
 
-def test_registry_records_audit_entry_after_execute():
+def test_registry_records_audit_entry_after_execute() -> None:
     """ToolAuditLog passed to ToolRegistry is populated after execute()."""
     import asyncio
     import json
@@ -160,7 +162,7 @@ def test_registry_records_audit_entry_after_execute():
     audit = ToolAuditLog()
     registry = ToolRegistry(audit_log=audit)
 
-    def noop_handler(**kwargs):
+    def noop_handler(**kwargs: Any) -> Any:
         return ToolResult(ok=True, data="ok")
 
     registry.register(
@@ -182,7 +184,7 @@ def test_registry_records_audit_entry_after_execute():
     assert entries[0].success is True
 
 
-def test_registry_records_metrics_after_execute():
+def test_registry_records_metrics_after_execute() -> None:
     """ToolMetricsCollector passed to ToolRegistry is populated after execute()."""
     import asyncio
     import json
@@ -195,7 +197,7 @@ def test_registry_records_metrics_after_execute():
     metrics = ToolMetricsCollector()
     registry = ToolRegistry(metrics=metrics)
 
-    def noop_handler(**kwargs):
+    def noop_handler(**kwargs: Any) -> Any:
         return ToolResult(ok=True, data="ok")
 
     registry.register(
@@ -216,7 +218,7 @@ def test_registry_records_metrics_after_execute():
     assert summary.success_rate == 100.0
 
 
-def test_registry_without_audit_metrics_unchanged():
+def test_registry_without_audit_metrics_unchanged() -> None:
     """Registry with no audit/metrics (default) runs unaffected."""
     import asyncio
     import json
@@ -227,7 +229,7 @@ def test_registry_without_audit_metrics_unchanged():
 
     registry = ToolRegistry()  # no audit_log, no metrics
 
-    def noop_handler(**kwargs):
+    def noop_handler(**kwargs: Any) -> Any:
         return ToolResult(ok=True, data="ok")
 
     registry.register(

@@ -1,18 +1,19 @@
 """Tests for authentication system."""
 
 from datetime import datetime, timedelta
+from typing import Any
 
 import pytest
 from pig_agent_core.auth import AuthManager, OAuthFlow, OAuthProvider, TokenInfo
 
 
 @pytest.fixture
-def temp_auth_storage(tmp_path):
+def temp_auth_storage(tmp_path: Any) -> Any:
     """Create temporary auth storage."""
     return tmp_path / "auth.json"
 
 
-def test_token_info_creation():
+def test_token_info_creation() -> None:
     """Test creating token info."""
     token = TokenInfo(
         access_token="test-token",
@@ -23,7 +24,7 @@ def test_token_info_creation():
     assert token.token_type == "Bearer"
 
 
-def test_token_info_with_expiry():
+def test_token_info_with_expiry() -> None:
     """Test token info with expiration."""
     expires_at = datetime.utcnow() + timedelta(hours=1)
 
@@ -35,7 +36,7 @@ def test_token_info_with_expiry():
     assert token.expires_at == expires_at
 
 
-def test_oauth_provider_creation():
+def test_oauth_provider_creation() -> None:
     """Test creating OAuth provider."""
     provider = OAuthProvider(
         name="test",
@@ -48,7 +49,7 @@ def test_oauth_provider_creation():
     assert provider.client_id == "test-id"
 
 
-def test_auth_manager_creation(temp_auth_storage):
+def test_auth_manager_creation(temp_auth_storage: Any) -> None:
     """Test creating auth manager."""
     auth_mgr = AuthManager(temp_auth_storage)
 
@@ -56,7 +57,7 @@ def test_auth_manager_creation(temp_auth_storage):
     assert len(auth_mgr.tokens) == 0
 
 
-def test_auth_manager_save_load(temp_auth_storage):
+def test_auth_manager_save_load(temp_auth_storage: Any) -> None:
     """Test saving and loading tokens."""
     auth_mgr = AuthManager(temp_auth_storage)
 
@@ -72,7 +73,7 @@ def test_auth_manager_save_load(temp_auth_storage):
     assert auth_mgr2.tokens["test-provider"].access_token == "test-token"
 
 
-def test_auth_manager_get_token(temp_auth_storage):
+def test_auth_manager_get_token(temp_auth_storage: Any) -> None:
     """Test getting token."""
     auth_mgr = AuthManager(temp_auth_storage)
 
@@ -83,7 +84,7 @@ def test_auth_manager_get_token(temp_auth_storage):
     assert retrieved == "test-token"
 
 
-def test_auth_manager_get_missing_token(temp_auth_storage):
+def test_auth_manager_get_missing_token(temp_auth_storage: Any) -> None:
     """Test getting non-existent token."""
     auth_mgr = AuthManager(temp_auth_storage)
 
@@ -91,7 +92,7 @@ def test_auth_manager_get_missing_token(temp_auth_storage):
     assert retrieved is None
 
 
-def test_auth_manager_expired_token(temp_auth_storage):
+def test_auth_manager_expired_token(temp_auth_storage: Any) -> None:
     """Test expired token."""
     auth_mgr = AuthManager(temp_auth_storage)
 
@@ -104,7 +105,7 @@ def test_auth_manager_expired_token(temp_auth_storage):
     assert retrieved is None  # Should return None for expired
 
 
-def test_auth_manager_logout(temp_auth_storage):
+def test_auth_manager_logout(temp_auth_storage: Any) -> None:
     """Test logout."""
     auth_mgr = AuthManager(temp_auth_storage)
 
@@ -119,7 +120,7 @@ def test_auth_manager_logout(temp_auth_storage):
     assert "test" not in auth_mgr.tokens
 
 
-def test_auth_manager_is_logged_in(temp_auth_storage):
+def test_auth_manager_is_logged_in(temp_auth_storage: Any) -> None:
     """Test checking login status."""
     auth_mgr = AuthManager(temp_auth_storage)
 
@@ -131,7 +132,7 @@ def test_auth_manager_is_logged_in(temp_auth_storage):
     assert auth_mgr.is_logged_in("test")
 
 
-def test_auth_manager_list_providers(temp_auth_storage):
+def test_auth_manager_list_providers(temp_auth_storage: Any) -> None:
     """Test listing providers."""
     auth_mgr = AuthManager(temp_auth_storage)
 
@@ -145,7 +146,7 @@ def test_auth_manager_list_providers(temp_auth_storage):
     assert "provider2" in providers
 
 
-def test_oauth_flow_creation():
+def test_oauth_flow_creation() -> None:
     """Test creating OAuth flow."""
     provider = OAuthProvider(
         name="test",

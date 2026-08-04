@@ -1,9 +1,12 @@
 """Advanced TUI components."""
 
+from collections.abc import Iterator
 from pathlib import Path
+from typing import Any
 
 from prompt_toolkit import prompt as pt_prompt
-from prompt_toolkit.completion import Completer, Completion
+from prompt_toolkit.completion import CompleteEvent, Completer, Completion
+from prompt_toolkit.document import Document
 from rich.console import Console
 from rich.table import Table
 
@@ -29,7 +32,7 @@ _IGNORE_DIRS = {
 class AutoCompleter(Completer):
     """Autocomplete for prompts."""
 
-    def __init__(self, choices: list[str]):
+    def __init__(self, choices: list[str]) -> None:
         """Initialize autocompleter.
 
         Args:
@@ -37,7 +40,9 @@ class AutoCompleter(Completer):
         """
         self.choices = choices
 
-    def get_completions(self, document, complete_event):
+    def get_completions(
+        self, document: Document, complete_event: CompleteEvent
+    ) -> Iterator[Completion]:
         """Get completions for current text.
 
         Args:
@@ -61,7 +66,7 @@ class AutoCompleter(Completer):
 class FileCompleter(Completer):
     """File path autocomplete."""
 
-    def __init__(self, base_path: str = "."):
+    def __init__(self, base_path: str = ".") -> None:
         """Initialize file completer.
 
         Args:
@@ -71,7 +76,9 @@ class FileCompleter(Completer):
 
         self.base_path = Path(base_path)
 
-    def get_completions(self, document, complete_event):
+    def get_completions(
+        self, document: Document, complete_event: CompleteEvent
+    ) -> Iterator[Completion]:
         """Get file path completions."""
         from pathlib import Path
 
@@ -110,11 +117,11 @@ class PyCodeCompleter(Completer):
     - @file reference completion
     """
 
-    def __init__(self, commands: list[str], workspace: str = "."):
+    def __init__(self, commands: list[str], workspace: str = ".") -> None:
         self.commands = sorted(commands)
         self.workspace = Path(workspace)
 
-    def _iter_workspace_files(self, prefix: str = ""):
+    def _iter_workspace_files(self, prefix: str = "") -> Iterator[str]:
         """Yield relative file paths in workspace, skipping ignored dirs."""
         try:
             base = self.workspace / prefix if prefix else self.workspace
@@ -131,7 +138,9 @@ class PyCodeCompleter(Completer):
         except OSError:
             pass
 
-    def get_completions(self, document, complete_event):
+    def get_completions(
+        self, document: Document, complete_event: CompleteEvent
+    ) -> Iterator[Completion]:
         text = document.text_before_cursor
 
         # Slash command completion
@@ -167,7 +176,7 @@ class PyCodeCompleter(Completer):
 class MultiSelect:
     """Multi-select checkbox list."""
 
-    def __init__(self, title: str, choices: list[str]):
+    def __init__(self, title: str, choices: list[str]) -> None:
         """Initialize multi-select.
 
         Args:
@@ -176,7 +185,7 @@ class MultiSelect:
         """
         self.title = title
         self.choices = choices
-        self.selected = set()
+        self.selected: set[str] = set()
 
     def show(self) -> list[str]:
         """Show selection UI and get results.
@@ -216,7 +225,7 @@ class MultiSelect:
 class InteractiveTable:
     """Interactive table with selection."""
 
-    def __init__(self, title: str):
+    def __init__(self, title: str) -> None:
         """Initialize interactive table.
 
         Args:
@@ -224,9 +233,9 @@ class InteractiveTable:
         """
         self.title = title
         self.table = Table(title=title)
-        self.rows = []
+        self.rows: list[tuple[object, ...]] = []
 
-    def add_column(self, name: str, **kwargs):
+    def add_column(self, name: str, **kwargs: Any) -> None:
         """Add a column.
 
         Args:
@@ -235,7 +244,7 @@ class InteractiveTable:
         """
         self.table.add_column(name, **kwargs)
 
-    def add_row(self, *values):
+    def add_row(self, *values: object) -> None:
         """Add a row.
 
         Args:
@@ -293,7 +302,7 @@ def prompt_with_autocomplete(
     Returns:
         User input
     """
-    completer = None
+    completer: Completer | None = None
 
     if file_completion:
         completer = FileCompleter(base_path)

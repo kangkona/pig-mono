@@ -16,6 +16,7 @@ from pig_messenger.base import (
     MessengerCapabilities,
     MessengerType,
     MessengerUser,
+    WebhookRequest,
 )
 
 logger = logging.getLogger(__name__)
@@ -93,7 +94,7 @@ class TelegramMessengerAdapter(BaseMessengerAdapter):
         )
 
     async def send_message(
-        self, channel_id: str, text: str, *, thread_id: str | None = None, **kwargs
+        self, channel_id: str, text: str, *, thread_id: str | None = None, **kwargs: Any
     ) -> dict[str, Any]:
         """Send message to Telegram.
 
@@ -124,7 +125,7 @@ class TelegramMessengerAdapter(BaseMessengerAdapter):
         }
 
     async def update_message(
-        self, channel_id: str, message_id: str, text: str, **kwargs
+        self, channel_id: str, message_id: str, text: str, **kwargs: Any
     ) -> dict[str, Any]:
         """Update message in Telegram.
 
@@ -149,9 +150,10 @@ class TelegramMessengerAdapter(BaseMessengerAdapter):
             json=payload,
         )
         response.raise_for_status()
-        return response.json()
+        result: dict[str, Any] = response.json()
+        return result
 
-    async def delete_message(self, channel_id: str, message_id: str) -> bool:
+    async def delete_message(self, channel_id: str, message_id: str, **kwargs: Any) -> bool:
         """Delete message in Telegram.
 
         Args:
@@ -173,7 +175,7 @@ class TelegramMessengerAdapter(BaseMessengerAdapter):
         response.raise_for_status()
         return True
 
-    async def send_typing(self, channel_id: str) -> None:
+    async def send_typing(self, channel_id: str, **kwargs: Any) -> None:
         """Send typing indicator.
 
         Args:
@@ -190,7 +192,7 @@ class TelegramMessengerAdapter(BaseMessengerAdapter):
         )
 
     async def send_draft(
-        self, channel_id: str, text: str, *, draft_id: str | None = None, **kwargs
+        self, channel_id: str, text: str, *, draft_id: str | None = None, **kwargs: Any
     ) -> dict[str, Any]:
         """Send draft message (Bot API 9.5+).
 
@@ -207,7 +209,9 @@ class TelegramMessengerAdapter(BaseMessengerAdapter):
         # For now, use regular sendMessage
         return await self.send_message(channel_id, text, **kwargs)
 
-    async def send_file(self, channel_id: str, url: str, filename: str, **kwargs) -> dict[str, Any]:
+    async def send_file(
+        self, channel_id: str, url: str, filename: str, **kwargs: Any
+    ) -> dict[str, Any]:
         """Send file from URL.
 
         Args:
@@ -242,7 +246,7 @@ class TelegramMessengerAdapter(BaseMessengerAdapter):
         content: bytes,
         filename: str,
         content_type: str,
-        **kwargs,
+        **kwargs: Any,
     ) -> dict[str, Any]:
         """Send file from content.
 
@@ -276,12 +280,11 @@ class TelegramMessengerAdapter(BaseMessengerAdapter):
             "message_id": str(result["result"]["message_id"]),
         }
 
-    async def verify_signature(self, request_body: bytes, signature: str) -> bool:
+    async def verify_signature(self, request: WebhookRequest) -> bool:
         """Verify Telegram webhook signature.
 
         Args:
-            request_body: Raw request body
-            signature: Signature from X-Telegram-Bot-Api-Secret-Token header
+            request: Raw request data and Telegram secret-token header
 
         Returns:
             True if signature is valid
@@ -289,7 +292,7 @@ class TelegramMessengerAdapter(BaseMessengerAdapter):
         # Telegram uses secret token validation
         # The signature should match the secret token set in webhook
         expected = hashlib.sha256(self.bot_token.encode()).hexdigest()
-        return hmac.compare_digest(signature, expected)
+        return hmac.compare_digest(request.signature, expected)
 
     async def aclose(self) -> None:
         """Close HTTP client."""

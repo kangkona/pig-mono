@@ -1,8 +1,11 @@
 """Decorator-based adapter registry for platform adapters."""
 
-from typing import Any
+from collections.abc import Callable
+from typing import Any, TypeVar
 
 from .base import BaseMessengerAdapter, MessengerType
+
+AdapterT = TypeVar("AdapterT", bound=type[BaseMessengerAdapter])
 
 
 class MessengerRegistry:
@@ -11,7 +14,7 @@ class MessengerRegistry:
     _adapters: dict[MessengerType, type[BaseMessengerAdapter]] = {}
 
     @classmethod
-    def register(cls, messenger_type: MessengerType):
+    def register(cls, messenger_type: MessengerType) -> Callable[[AdapterT], AdapterT]:
         """Decorator to register an adapter class.
 
         Args:
@@ -26,7 +29,7 @@ class MessengerRegistry:
                 pass
         """
 
-        def decorator(adapter_class: type[BaseMessengerAdapter]):
+        def decorator(adapter_class: AdapterT) -> AdapterT:
             cls._adapters[messenger_type] = adapter_class
             return adapter_class
 

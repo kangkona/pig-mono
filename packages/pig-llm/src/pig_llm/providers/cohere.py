@@ -1,6 +1,7 @@
 """Cohere provider implementation."""
 
 from collections.abc import AsyncIterator, Iterator
+from typing import Any
 
 try:
     from cohere import AsyncClient, Client
@@ -19,18 +20,18 @@ class CohereProvider(Provider):
         """Initialize Cohere provider."""
         self.config = config
 
-        self.client = Client(
+        self.client: Any = Client(
             api_key=config.api_key,
             timeout=config.timeout,
             max_retries=config.max_retries,
         )
-        self.async_client = AsyncClient(
+        self.async_client: Any = AsyncClient(
             api_key=config.api_key,
             timeout=config.timeout,
             max_retries=config.max_retries,
         )
 
-    def _convert_messages(self, messages: list[Message]) -> tuple[str, str, list[dict]]:
+    def _convert_messages(self, messages: list[Message]) -> tuple[str, str, list[dict[str, Any]]]:
         """Convert internal messages to Cohere format.
 
         Returns:
@@ -60,7 +61,7 @@ class CohereProvider(Provider):
         model: str,
         temperature: float = 0.7,
         max_tokens: int | None = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> Response:
         """Generate a completion."""
         preamble, message, chat_history = self._convert_messages(messages)
@@ -104,7 +105,7 @@ class CohereProvider(Provider):
         model: str,
         temperature: float = 0.7,
         max_tokens: int | None = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> Iterator[StreamChunk]:
         """Stream a completion."""
         preamble, message, chat_history = self._convert_messages(messages)
@@ -160,7 +161,7 @@ class CohereProvider(Provider):
         model: str,
         temperature: float = 0.7,
         max_tokens: int | None = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> Response:
         """Async generate a completion."""
         preamble, message, chat_history = self._convert_messages(messages)
@@ -204,7 +205,7 @@ class CohereProvider(Provider):
         model: str,
         temperature: float = 0.7,
         max_tokens: int | None = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> AsyncIterator[StreamChunk]:
         """Async stream a completion."""
         preamble, message, chat_history = self._convert_messages(messages)

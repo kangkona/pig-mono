@@ -3,6 +3,9 @@
 import logging
 from typing import Any
 
+from cryptography.exceptions import InvalidSignature
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+
 try:
     import httpx
 except ImportError:
@@ -14,6 +17,7 @@ from pig_messenger.base import (
     MessengerCapabilities,
     MessengerType,
     MessengerUser,
+    WebhookRequest,
 )
 
 logger = logging.getLogger(__name__)
@@ -94,7 +98,7 @@ class DiscordMessengerAdapter(BaseMessengerAdapter):
         return None
 
     async def send_message(
-        self, channel_id: str, text: str, *, thread_id: str | None = None, **kwargs
+        self, channel_id: str, text: str, *, thread_id: str | None = None, **kwargs: Any
     ) -> dict[str, Any]:
         """Send message to Discord.
 
@@ -126,7 +130,7 @@ class DiscordMessengerAdapter(BaseMessengerAdapter):
         }
 
     async def update_message(
-        self, channel_id: str, message_id: str, text: str, **kwargs
+        self, channel_id: str, message_id: str, text: str, **kwargs: Any
     ) -> dict[str, Any]:
         """Update message in Discord.
 
@@ -149,9 +153,10 @@ class DiscordMessengerAdapter(BaseMessengerAdapter):
             json=payload,
         )
         response.raise_for_status()
-        return response.json()
+        result: dict[str, Any] = response.json()
+        return result
 
-    async def delete_message(self, channel_id: str, message_id: str) -> bool:
+    async def delete_message(self, channel_id: str, message_id: str, **kwargs: Any) -> bool:
         """Delete message in Discord.
 
         Args:
@@ -167,7 +172,9 @@ class DiscordMessengerAdapter(BaseMessengerAdapter):
         response.raise_for_status()
         return True
 
-    async def send_reaction(self, channel_id: str, message_id: str, emoji: str) -> None:
+    async def send_reaction(
+        self, channel_id: str, message_id: str, emoji: str, **kwargs: Any
+    ) -> None:
         """Add reaction to message.
 
         Args:
@@ -184,7 +191,9 @@ class DiscordMessengerAdapter(BaseMessengerAdapter):
             f"{self.api_url}/channels/{channel_id}/messages/{message_id}/reactions/{encoded_emoji}/@me"
         )
 
-    async def send_file(self, channel_id: str, url: str, filename: str, **kwargs) -> dict[str, Any]:
+    async def send_file(
+        self, channel_id: str, url: str, filename: str, **kwargs: Any
+    ) -> dict[str, Any]:
         """Send file from URL.
 
         Args:
@@ -204,7 +213,7 @@ class DiscordMessengerAdapter(BaseMessengerAdapter):
         content: bytes,
         filename: str,
         content_type: str,
-        **kwargs,
+        **kwargs: Any,
     ) -> dict[str, Any]:
         """Send file from content.
 
@@ -233,22 +242,28 @@ class DiscordMessengerAdapter(BaseMessengerAdapter):
             "message_id": result["id"],
         }
 
-    async def verify_signature(self, request_body: bytes, signature: str, timestamp: str) -> bool:
+    async def verify_signature(self, request: WebhookRequest) -> bool:
         """Verify Discord interaction signature.
 
         Args:
-            request_body: Raw request body
-            signature: X-Signature-Ed25519 header
-            timestamp: X-Signature-Timestamp header
+            request: Raw request data and Discord signature headers
 
         Returns:
             True if signature is valid
         """
         if not self.public_key:
-            return True
+            return False
+        if request.timestamp is None:
+            return False
 
-        # Discord uses Ed25519 signature verification
-        # This is a placeholder - actual implementation would use nacl library
+        try:
+            public_key = Ed25519PublicKey.from_public_bytes(bytes.fromhex(self.public_key))
+            public_key.verify(
+                bytes.fromhex(request.signature),
+                request.timestamp.encode() + request.body,
+            )
+        except (InvalidSignature, ValueError):
+            return False
         return True
 
     async def aclose(self) -> None:

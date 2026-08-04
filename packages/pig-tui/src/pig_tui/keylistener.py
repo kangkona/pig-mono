@@ -16,12 +16,34 @@ is not an interactive TTY (piped input, json/rpc modes, unsupported platforms).
 from __future__ import annotations
 
 import asyncio
+import importlib
 import sys
+import threading
 from collections.abc import Callable
+from types import TracebackType
+from typing import Any, Protocol, cast
 
 _ESC = b"\x1b"
 _ENTER = (b"\r", b"\n")
 _BACKSPACE = (b"\x7f", b"\x08")
+
+
+class _WindowsConsole(Protocol):
+    def kbhit(self) -> bool: ...
+
+    def getwch(self) -> str: ...
+
+
+class _UnixTermios(Protocol):
+    TCSADRAIN: int
+
+    def tcgetattr(self, fd: int) -> list[Any]: ...
+
+    def tcsetattr(self, fd: int, when: int, attributes: list[Any]) -> None: ...
+
+
+class _UnixTTY(Protocol):
+    def setcbreak(self, fd: int) -> None: ...
 
 
 def _longest_common_prefix(items: list[str]) -> str:
@@ -68,22 +90,26 @@ class LiveInputListener:
         self._completions = completions or []
         self._echo = echo
         self._loop: asyncio.AbstractEventLoop | None = None
-        self._thread = None
-        self._stop = None
+        self._thread: threading.Thread | None = None
+        self._stop: threading.Event | None = None
         self._line: list[str] = []
         self._cursor = 0  # insertion index into _line
         # Platform backend, resolved on enter.
         self._fd: int | None = None
-        self._old_termios = None
+        self._old_termios: list[Any] | None = None
         self._active = False
+        self._resume_after_suspend = False
 
     async def __aenter__(self) -> LiveInputListener:
         if not _stdin_is_interactive():
             return self  # no-op fallback (Ctrl-C still aborts via Stage-4 handler)
 
         self._loop = asyncio.get_running_loop()
-        import threading
+        self._activate()
+        return self
 
+    def _activate(self) -> None:
+        """Start the platform reader when terminal input is available."""
         self._stop = threading.Event()
 
         if sys.platform == "win32":
@@ -95,9 +121,18 @@ class LiveInputListener:
             self._active = True
             self._thread = threading.Thread(target=self._reader, daemon=True)
             self._thread.start()
-        return self
 
-    async def __aexit__(self, *exc) -> None:
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None:
+        self._resume_after_suspend = False
+        self._deactivate()
+
+    def _deactivate(self) -> None:
+        """Stop the platform reader and restore the terminal mode."""
         if not self._active:
             return
         if self._stop is not None:
@@ -106,13 +141,27 @@ class LiveInputListener:
             self._thread.join(timeout=1.0)
         self._restore()
         self._active = False
+        self._thread = None
+        self._stop = None
+
+    def suspend(self) -> None:
+        """Release stdin so a nested confirmation prompt can read it exclusively."""
+        self._resume_after_suspend = self._active
+        self._deactivate()
+
+    def resume(self) -> None:
+        """Resume listening after a nested prompt releases stdin."""
+        if not self._resume_after_suspend:
+            return
+        self._resume_after_suspend = False
+        self._activate()
 
     # -- platform setup -----------------------------------------------------
 
     def _start_unix(self) -> bool:
         try:
-            import termios
-            import tty
+            termios = cast(_UnixTermios, importlib.import_module("termios"))
+            tty = cast(_UnixTTY, importlib.import_module("tty"))
 
             self._fd = sys.stdin.fileno()
             self._old_termios = termios.tcgetattr(self._fd)
@@ -126,7 +175,7 @@ class LiveInputListener:
 
     def _start_windows(self) -> bool:
         try:
-            import msvcrt  # noqa: F401
+            importlib.import_module("msvcrt")
 
             return True
         except Exception:
@@ -135,7 +184,7 @@ class LiveInputListener:
     def _restore(self) -> None:
         if self._old_termios is not None and self._fd is not None:
             try:
-                import termios
+                termios = cast(_UnixTermios, importlib.import_module("termios"))
 
                 termios.tcsetattr(self._fd, termios.TCSADRAIN, self._old_termios)
             except Exception:
@@ -191,8 +240,9 @@ class LiveInputListener:
                 self._handle_char(char)
 
     def _reader_windows(self) -> None:
-        import msvcrt
         import time
+
+        msvcrt = cast(_WindowsConsole, importlib.import_module("msvcrt"))
 
         # Windows scan-code (after \x00/\xe0) -> navigation action.
         nav = {"K": "left", "M": "right", "G": "home", "O": "end", "S": "delete"}

@@ -4,23 +4,29 @@ import importlib.util
 import inspect
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any, cast, overload
 
 from .tools import Tool
+
+if TYPE_CHECKING:
+    from .agent import Agent
+
+CommandHandler = Callable[..., Any]
+EventHandler = Callable[[dict[str, Any], "ExtensionAPI"], Any]
 
 
 class ExtensionAPI:
     """API exposed to extensions."""
 
-    def __init__(self, agent):
+    def __init__(self, agent: "Agent") -> None:
         """Initialize extension API.
 
         Args:
             agent: Agent instance
         """
         self.agent = agent
-        self._event_handlers: dict[str, list[Callable]] = {}
-        self._commands: dict[str, Callable] = {}
+        self._event_handlers: dict[str, list[EventHandler]] = {}
+        self._commands: dict[str, CommandHandler] = {}
 
     def register_tool(self, tool: Tool) -> None:
         """Register a custom tool.
@@ -35,7 +41,7 @@ class ExtensionAPI:
         """
         self.agent.add_tool(tool)
 
-    def tool(self, **kwargs) -> Callable:
+    def tool(self, **kwargs: Any) -> Callable[[CommandHandler], Tool]:
         """Decorator to register a tool.
 
         Args:
@@ -51,14 +57,14 @@ class ExtensionAPI:
         """
         from .tools import tool as tool_decorator
 
-        def decorator(func: Callable) -> Tool:
-            t = tool_decorator(**kwargs)(func)
+        def decorator(func: CommandHandler) -> Tool:
+            t = cast(Tool, tool_decorator(**kwargs)(func))
             self.register_tool(t)
             return t
 
         return decorator
 
-    def register_command(self, name: str, handler: Callable, description: str = ""):
+    def register_command(self, name: str, handler: CommandHandler, description: str = "") -> None:
         """Register a slash command.
 
         Args:
@@ -73,7 +79,9 @@ class ExtensionAPI:
         """
         self._commands[name] = handler
 
-    def command(self, name: str, description: str = "") -> Callable:
+    def command(
+        self, name: str, description: str = ""
+    ) -> Callable[[CommandHandler], CommandHandler]:
         """Decorator to register a command.
 
         Args:
@@ -89,13 +97,21 @@ class ExtensionAPI:
                 return "Statistics..."
         """
 
-        def decorator(func: Callable) -> Callable:
+        def decorator(func: CommandHandler) -> CommandHandler:
             self.register_command(name, func, description)
             return func
 
         return decorator
 
-    def on(self, event: str, handler: Callable = None) -> None:
+    @overload
+    def on(self, event: str, handler: None = None) -> Callable[[EventHandler], EventHandler]: ...
+
+    @overload
+    def on(self, event: str, handler: EventHandler) -> None: ...
+
+    def on(
+        self, event: str, handler: EventHandler | None = None
+    ) -> Callable[[EventHandler], EventHandler] | None:
         """Register an event handler. Can be used as decorator or direct call.
 
         Args:
@@ -116,7 +132,7 @@ class ExtensionAPI:
                 print(f"Tool {event['tool_name']} starting")
         """
 
-        def _register(h: Callable) -> Callable:
+        def _register(h: EventHandler) -> EventHandler:
             if event not in self._event_handlers:
                 self._event_handlers[event] = []
             self._event_handlers[event].append(h)
@@ -124,6 +140,7 @@ class ExtensionAPI:
 
         if handler is not None:
             _register(handler)
+            return None
         else:
             return _register
 
@@ -141,7 +158,7 @@ class ExtensionAPI:
             except Exception as e:
                 print(f"Error in event handler for {event}: {e}")
 
-    def get_commands(self) -> dict[str, Callable]:
+    def get_commands(self) -> dict[str, CommandHandler]:
         """Get registered commands.
 
         Returns:
@@ -153,7 +170,7 @@ class ExtensionAPI:
 class ExtensionManager:
     """Manages extensions."""
 
-    def __init__(self, agent):
+    def __init__(self, agent: "Agent") -> None:
         """Initialize extension manager.
 
         Args:
@@ -238,7 +255,12 @@ class ExtensionManager:
 
         return extensions
 
-    def cleanup(self, reason: str = "normal", target_session_file: str | None = None) -> None:
+    def cleanup(
+        self,
+        reason: str = "normal",
+        target_session_file: str | None = None,
+        target_entry_id: str | None = None,
+    ) -> None:
         """Tear down loaded extensions for shutdown paths.
 
         Current extensions are plain Python modules without an explicit unload
@@ -248,6 +270,8 @@ class ExtensionManager:
         event = {"reason": reason}
         if target_session_file is not None:
             event["targetSessionFile"] = target_session_file
+        if target_entry_id is not None:
+            event["targetEntryId"] = target_entry_id
         self.emit_event("session_shutdown", event)
         self.extensions.clear()
         self.api._commands.clear()

@@ -1,6 +1,7 @@
 """Tests for MessengerBot streaming card flow."""
 
 import asyncio
+from typing import Any
 from unittest.mock import MagicMock
 
 from pig_messenger.bot import MessengerBot
@@ -13,74 +14,84 @@ from pig_messenger.platform import MessagePlatform
 
 
 class _FakeStreamChunk:
-    def __init__(self, content: str):
+    def __init__(self, content: str) -> None:
         self.content = content
 
 
 class _FakeCardPlatform(MessagePlatform):
     """Platform that supports card updates (overrides update_card)."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__("fake_card")
         self.sent_cards: list[tuple[str, str]] = []
         self.updated_cards: list[tuple[str, str]] = []
         self.sent_messages: list[tuple[str, str]] = []
 
-    async def send_message(self, channel_id, text, thread_id=None, **kwargs):
+    async def send_message(
+        self, channel_id: Any, text: Any, thread_id: Any = None, **kwargs: Any
+    ) -> str:
         self.sent_messages.append((channel_id, text))
         return "om_text_001"
 
-    async def send_card(self, channel_id, text, **kwargs):
+    async def send_card(self, channel_id: Any, text: Any, **kwargs: Any) -> str:
         self.sent_cards.append((channel_id, text))
         return "om_card_001"
 
-    async def update_card(self, message_id, text, **kwargs):
+    async def update_card(self, message_id: Any, text: Any, **kwargs: Any) -> None:
         self.updated_cards.append((message_id, text))
 
-    async def upload_file(self, channel_id, file_path, caption=None, thread_id=None):
+    async def upload_file(
+        self, channel_id: Any, file_path: Any, caption: Any = None, thread_id: Any = None
+    ) -> str:
         return "om_file_001"
 
-    async def get_history(self, channel_id, limit=100):
+    async def get_history(self, channel_id: Any, limit: Any = 100) -> Any:
         return []
 
-    async def download_file(self, attachment):
+    async def download_file(self, attachment: Any) -> bytes:
         return b""
 
-    def start(self):
+    def start(self) -> None:
         pass
 
-    def stop(self):
+    def stop(self) -> None:
         pass
 
 
 class _PlainPlatform(MessagePlatform):
     """Platform without card support (uses base class defaults)."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__("plain")
         self.sent_messages: list[tuple[str, str]] = []
 
-    async def send_message(self, channel_id, text, thread_id=None, **kwargs):
+    async def send_message(
+        self, channel_id: Any, text: Any, thread_id: Any = None, **kwargs: Any
+    ) -> str:
         self.sent_messages.append((channel_id, text))
         return "om_plain_001"
 
-    async def upload_file(self, channel_id, file_path, caption=None, thread_id=None):
+    async def upload_file(
+        self, channel_id: Any, file_path: Any, caption: Any = None, thread_id: Any = None
+    ) -> str:
         return "om_file_001"
 
-    async def get_history(self, channel_id, limit=100):
+    async def get_history(self, channel_id: Any, limit: Any = 100) -> Any:
         return []
 
-    async def download_file(self, attachment):
+    async def download_file(self, attachment: Any) -> bytes:
         return b""
 
-    def start(self):
+    def start(self) -> None:
         pass
 
-    def stop(self):
+    def stop(self) -> None:
         pass
 
 
-def _make_message(text="hello", platform="fake_card", channel_id="oc_test"):
+def _make_message(
+    text: Any = "hello", platform: Any = "fake_card", channel_id: Any = "oc_test"
+) -> Any:
     return UniversalMessage(
         id="om_in_001",
         platform=platform,
@@ -91,7 +102,7 @@ def _make_message(text="hello", platform="fake_card", channel_id="oc_test"):
     )
 
 
-def _run(coro):
+def _run(coro: Any) -> Any:
     return asyncio.run(coro)
 
 
@@ -101,7 +112,7 @@ def _run(coro):
 
 
 class TestStreamingFlow:
-    def _make_bot_with_streaming(self, platform, chunks):
+    def _make_bot_with_streaming(self, platform: Any, chunks: Any) -> Any:
         """Create a bot whose agent.llm.stream() yields the given chunks."""
         agent = MagicMock()
         agent.llm = MagicMock()
@@ -111,7 +122,7 @@ class TestStreamingFlow:
         bot.add_platform(platform)
         return bot
 
-    def test_streaming_sends_card_and_updates(self):
+    def test_streaming_sends_card_and_updates(self) -> None:
         platform = _FakeCardPlatform()
         bot = self._make_bot_with_streaming(platform, ["Hello", " world", "!"])
 
@@ -128,7 +139,7 @@ class TestStreamingFlow:
         assert final_text == "Hello world!"
         assert "生成中" not in final_text
 
-    def test_streaming_final_text_correct(self):
+    def test_streaming_final_text_correct(self) -> None:
         platform = _FakeCardPlatform()
         bot = self._make_bot_with_streaming(platform, ["A", "B", "C"])
 
@@ -137,7 +148,7 @@ class TestStreamingFlow:
         final = platform.updated_cards[-1][1]
         assert final == "ABC"
 
-    def test_fallback_to_standard_when_no_card_support(self):
+    def test_fallback_to_standard_when_no_card_support(self) -> None:
         """Plain platform should use standard send_message, not streaming."""
         platform = _PlainPlatform()
         agent = MagicMock()
@@ -158,7 +169,7 @@ class TestStreamingFlow:
         assert platform.sent_messages[0][1] == "standard reply"
         agent.llm.stream.assert_not_called()
 
-    def test_streaming_error_sends_error_message(self):
+    def test_streaming_error_sends_error_message(self) -> None:
         platform = _FakeCardPlatform()
         agent = MagicMock()
         agent.llm = MagicMock()

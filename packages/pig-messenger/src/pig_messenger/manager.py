@@ -2,7 +2,7 @@
 
 import asyncio
 import logging
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 from pig_messenger.base import (
@@ -11,6 +11,7 @@ from pig_messenger.base import (
     MessengerThread,
     MessengerType,
 )
+from pig_messenger.state import MessengerState
 
 logger = logging.getLogger(__name__)
 
@@ -71,7 +72,7 @@ def _is_transient(error: Exception) -> bool:
 
 
 async def _post_with_retry(
-    fn: Callable[[], Any],
+    fn: Callable[[], Awaitable[Any]],
     max_retries: int = 3,
     base_delay: float = 1.5,
 ) -> Any:
@@ -113,8 +114,8 @@ class MessengerManager:
     def __init__(
         self,
         agent_factory: Callable[[IncomingMessage, MessengerThread], Any],
-        state: Any | None = None,
-        conversation_factory: Callable[[str, str], Any] | None = None,
+        state: MessengerState | None = None,
+        conversation_factory: Callable[[str, str], Awaitable[Any]] | None = None,
         i18n: dict[str, str] | None = None,
         max_followup_rounds: int = 8,
         followup_ack_message: str | None = None,
@@ -202,7 +203,8 @@ class MessengerManager:
                     # Queue as follow-up
                     await self.state.enqueue_followup(lock_key, {"text": message.text})
                     if self.followup_ack_message:
-                        await _post_with_retry(lambda: thread.post(self.followup_ack_message))
+                        ack_message = self.followup_ack_message
+                        await _post_with_retry(lambda: thread.post(ack_message))
                     return
 
             # Process message with agent
@@ -259,15 +261,19 @@ class MessengerManager:
             thread: Messenger thread
             platform: Platform type
         """
+        state = self.state
+        if state is None:
+            return
+
         for round_num in range(self.max_followup_rounds):
             # Check if queue empty and release if so
-            released = await self.state.release_lock_if_queue_empty(lock_key, lock_token)
+            released = await state.release_lock_if_queue_empty(lock_key, lock_token)
             if released:
                 logger.debug(f"Queue empty, released lock: {lock_key}")
                 return
 
             # Drain follow-ups
-            followups = await self.state.drain_followups(lock_key)
+            followups = await state.drain_followups(lock_key)
             if not followups:
                 break
 
@@ -365,7 +371,9 @@ class MessengerManager:
             return []
         return await self.state.list_dead_letters(count)
 
-    async def replay_dead_letters(self, handler: Callable[[dict[str, Any]], Any]) -> int:
+    async def replay_dead_letters(
+        self, handler: Callable[[dict[str, Any]], Awaitable[None]]
+    ) -> int:
         """Replay dead letters with handler.
 
         Args:
@@ -376,7 +384,7 @@ class MessengerManager:
         """
         if not self.state:
             return 0
-        return await self.state.replay_dead_letters(handler)
+        return int(await self.state.replay_dead_letters(handler))
 
     async def shutdown(self) -> None:
         """Graceful shutdown."""

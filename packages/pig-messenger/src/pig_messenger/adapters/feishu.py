@@ -5,16 +5,14 @@ from __future__ import annotations
 import json
 import re
 from datetime import datetime
+from importlib import import_module
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import Any
 
 import httpx
 
 from ..message import Attachment, UniversalMessage
 from ..platform import MessagePlatform
-
-if TYPE_CHECKING:
-    import lark_oapi as lark
 
 
 class FeishuAdapter(MessagePlatform):
@@ -53,15 +51,15 @@ class FeishuAdapter(MessagePlatform):
         self.encrypt_key = encrypt_key
         self.use_ws = use_ws
 
-        self._ws_client: lark.ws.Client | None = None
-        self._lark_client: lark.Client | None = None
+        self._ws_client: Any | None = None
+        self._lark_client: Any | None = None
 
         if use_ws:
             self._init_sdk()
         else:
             self.api_base = "https://open.feishu.cn/open-apis"
             self.client = httpx.AsyncClient()
-            self.tenant_access_token = None
+            self.tenant_access_token: str | None = None
 
     # ------------------------------------------------------------------
     # SDK (WebSocket) helpers
@@ -69,7 +67,7 @@ class FeishuAdapter(MessagePlatform):
 
     def _init_sdk(self) -> None:
         """Build lark_oapi objects for WebSocket mode."""
-        import lark_oapi as lark
+        lark = import_module("lark_oapi")
 
         event_handler = (
             lark.EventDispatcherHandler.builder(
@@ -91,7 +89,7 @@ class FeishuAdapter(MessagePlatform):
             log_level=lark.LogLevel.INFO,
         )
 
-    def _on_sdk_message(self, data) -> None:
+    def _on_sdk_message(self, data: Any) -> None:
         """Handle incoming message from SDK long connection.
 
         ``data`` is a ``P2ImMessageReceiveV1`` instance from lark_oapi.
@@ -163,8 +161,8 @@ class FeishuAdapter(MessagePlatform):
         response = await self.client.post(url, json=payload)
         response.raise_for_status()
 
-        data = response.json()
-        self.tenant_access_token = data["tenant_access_token"]
+        data: dict[str, Any] = response.json()
+        self.tenant_access_token = str(data["tenant_access_token"])
 
         return self.tenant_access_token
 
@@ -173,7 +171,7 @@ class FeishuAdapter(MessagePlatform):
         channel_id: str,
         text: str,
         thread_id: str | None = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> str:
         """Send message to Feishu chat.
 
@@ -197,15 +195,14 @@ class FeishuAdapter(MessagePlatform):
         thread_id: str | None = None,
     ) -> str:
         """Send message via lark_oapi SDK client."""
-        from lark_oapi.api.im.v1 import (
-            CreateMessageRequest,
-            CreateMessageRequestBody,
-        )
+        im_api = import_module("lark_oapi.api.im.v1")
+        create_request = im_api.CreateMessageRequest
+        create_request_body = im_api.CreateMessageRequestBody
 
         receive_id_type = "open_id" if channel_id.startswith("ou_") else "chat_id"
 
         body = (
-            CreateMessageRequestBody.builder()
+            create_request_body.builder()
             .receive_id(channel_id)
             .msg_type("text")
             .content(json.dumps({"text": text}))
@@ -213,16 +210,14 @@ class FeishuAdapter(MessagePlatform):
         )
 
         request = (
-            CreateMessageRequest.builder()
-            .receive_id_type(receive_id_type)
-            .request_body(body)
-            .build()
+            create_request.builder().receive_id_type(receive_id_type).request_body(body).build()
         )
 
+        assert self._lark_client is not None
         response = self._lark_client.im.v1.message.create(request)
         if not response.success():
             raise RuntimeError(f"Feishu SDK send failed: code={response.code}, msg={response.msg}")
-        return response.data.message_id
+        return str(response.data.message_id)
 
     async def _send_message_http(
         self,
@@ -259,8 +254,8 @@ class FeishuAdapter(MessagePlatform):
         response = await self.client.post(url, headers=headers, params=params, json=payload)
         response.raise_for_status()
 
-        data = response.json()
-        return data["data"]["message_id"]
+        data: dict[str, Any] = response.json()
+        return str(data["data"]["message_id"])
 
     # ------------------------------------------------------------------
     # Card messages (streaming support)
@@ -284,7 +279,7 @@ class FeishuAdapter(MessagePlatform):
         self,
         channel_id: str,
         text: str,
-        **kwargs,
+        **kwargs: Any,
     ) -> str:
         """Send an interactive card message.
 
@@ -302,16 +297,15 @@ class FeishuAdapter(MessagePlatform):
 
     def _send_card_sdk(self, channel_id: str, text: str) -> str:
         """Send interactive card via lark_oapi SDK."""
-        from lark_oapi.api.im.v1 import (
-            CreateMessageRequest,
-            CreateMessageRequestBody,
-        )
+        im_api = import_module("lark_oapi.api.im.v1")
+        create_request = im_api.CreateMessageRequest
+        create_request_body = im_api.CreateMessageRequestBody
 
         receive_id_type = "open_id" if channel_id.startswith("ou_") else "chat_id"
         card_content = self._build_card_content(text)
 
         body = (
-            CreateMessageRequestBody.builder()
+            create_request_body.builder()
             .receive_id(channel_id)
             .msg_type("interactive")
             .content(json.dumps(card_content))
@@ -319,18 +313,16 @@ class FeishuAdapter(MessagePlatform):
         )
 
         request = (
-            CreateMessageRequest.builder()
-            .receive_id_type(receive_id_type)
-            .request_body(body)
-            .build()
+            create_request.builder().receive_id_type(receive_id_type).request_body(body).build()
         )
 
+        assert self._lark_client is not None
         response = self._lark_client.im.v1.message.create(request)
         if not response.success():
             raise RuntimeError(
                 f"Feishu SDK send_card failed: code={response.code}, msg={response.msg}"
             )
-        return response.data.message_id
+        return str(response.data.message_id)
 
     async def _send_card_http(self, channel_id: str, text: str) -> str:
         """Send interactive card via HTTP."""
@@ -352,13 +344,14 @@ class FeishuAdapter(MessagePlatform):
         response = await self.client.post(url, headers=headers, params=params, json=payload)
         response.raise_for_status()
 
-        return response.json()["data"]["message_id"]
+        data: dict[str, Any] = response.json()
+        return str(data["data"]["message_id"])
 
     async def update_card(
         self,
         message_id: str,
         text: str,
-        **kwargs,
+        **kwargs: Any,
     ) -> None:
         """Update an existing interactive card message.
 
@@ -374,17 +367,17 @@ class FeishuAdapter(MessagePlatform):
 
     def _update_card_sdk(self, message_id: str, text: str) -> None:
         """Update card via lark_oapi SDK (PATCH)."""
-        from lark_oapi.api.im.v1 import (
-            PatchMessageRequest,
-            PatchMessageRequestBody,
-        )
+        im_api = import_module("lark_oapi.api.im.v1")
+        patch_request = im_api.PatchMessageRequest
+        patch_request_body = im_api.PatchMessageRequestBody
 
         card_content = self._build_card_content(text)
 
-        body = PatchMessageRequestBody.builder().content(json.dumps(card_content)).build()
+        body = patch_request_body.builder().content(json.dumps(card_content)).build()
 
-        request = PatchMessageRequest.builder().message_id(message_id).request_body(body).build()
+        request = patch_request.builder().message_id(message_id).request_body(body).build()
 
+        assert self._lark_client is not None
         response = self._lark_client.im.v1.message.patch(request)
         if not response.success():
             raise RuntimeError(
@@ -462,7 +455,7 @@ class FeishuAdapter(MessagePlatform):
         if caption:
             await self.send_message(channel_id, caption, thread_id=message_id)
 
-        return message_id
+        return str(message_id)
 
     async def get_history(self, channel_id: str, limit: int = 100) -> list[UniversalMessage]:
         """Get Feishu chat history.
@@ -494,7 +487,7 @@ class FeishuAdapter(MessagePlatform):
         response = await self.client.get(url, headers=headers, params={"type": "file"})
         response.raise_for_status()
 
-        return response.content
+        return bytes(response.content)
 
     def handle_event(self, payload: dict) -> None:
         """Handle Feishu event callback.
@@ -539,6 +532,7 @@ class FeishuAdapter(MessagePlatform):
         In webhook mode, prints setup instructions.
         """
         if self.use_ws:
+            assert self._ws_client is not None
             self._ws_client.start()
         else:
             print("Feishu adapter ready")

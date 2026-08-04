@@ -2,6 +2,7 @@
 
 from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator, Iterator
+from typing import Any
 
 from ..models import Message, Response, StreamChunk
 
@@ -16,7 +17,7 @@ class Provider(ABC):
         model: str,
         temperature: float = 0.7,
         max_tokens: int | None = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> Response:
         """Generate a completion."""
         pass
@@ -28,7 +29,7 @@ class Provider(ABC):
         model: str,
         temperature: float = 0.7,
         max_tokens: int | None = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> Iterator[StreamChunk]:
         """Stream a completion."""
         pass
@@ -40,19 +41,19 @@ class Provider(ABC):
         model: str,
         temperature: float = 0.7,
         max_tokens: int | None = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> Response:
         """Async generate a completion."""
         pass
 
     @abstractmethod
-    async def astream(
+    def astream(
         self,
         messages: list[Message],
         model: str,
         temperature: float = 0.7,
         max_tokens: int | None = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> AsyncIterator[StreamChunk]:
         """Async stream a completion."""
         pass

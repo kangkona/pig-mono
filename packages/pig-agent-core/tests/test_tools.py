@@ -4,7 +4,7 @@ import pytest
 from pig_agent_core.tools import Tool, tool
 
 
-def test_tool_creation():
+def test_tool_creation() -> None:
     """Test creating a tool from function."""
 
     def my_func(x: int, y: int = 10) -> int:
@@ -16,7 +16,7 @@ def test_tool_creation():
     assert t.description == "Add numbers"
 
 
-def test_tool_execution():
+def test_tool_execution() -> None:
     """Test tool execution."""
 
     def add(x: int, y: int) -> int:
@@ -27,7 +27,7 @@ def test_tool_execution():
     assert result == 8
 
 
-def test_tool_validation():
+def test_tool_validation() -> None:
     """Test parameter validation."""
 
     def typed_func(x: int, y: str) -> str:
@@ -38,7 +38,7 @@ def test_tool_validation():
     assert result == "42: hello"
 
 
-def test_tool_error_handling():
+def test_tool_error_handling() -> None:
     """Test tool error handling."""
 
     def failing_func(x: int) -> int:
@@ -49,7 +49,7 @@ def test_tool_error_handling():
         t.execute(x=1)
 
 
-def test_tool_decorator():
+def test_tool_decorator() -> None:
     """Test @tool decorator."""
 
     @tool(description="Get greeting")
@@ -63,7 +63,7 @@ def test_tool_decorator():
     assert result == "Hello, Alice!"
 
 
-def test_tool_decorator_with_defaults():
+def test_tool_decorator_with_defaults() -> None:
     """Test @tool decorator with default arguments."""
 
     @tool
@@ -76,7 +76,7 @@ def test_tool_decorator_with_defaults():
     assert simple_func.execute(x=5) == 10
 
 
-def test_tool_openai_schema():
+def test_tool_openai_schema() -> None:
     """Test OpenAI schema generation."""
 
     @tool(description="Calculate sum")
@@ -90,7 +90,7 @@ def test_tool_openai_schema():
     assert "parameters" in schema["function"]
 
 
-def test_tool_callable():
+def test_tool_callable() -> None:
     """Test that tool is callable."""
 
     @tool

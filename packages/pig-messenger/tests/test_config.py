@@ -1,5 +1,7 @@
 """Tests for messenger config dataclasses."""
 
+from typing import Any
+
 from pig_messenger.config import (
     DiscordConfig,
     EnvSecretProvider,
@@ -9,7 +11,7 @@ from pig_messenger.config import (
 )
 
 
-def test_slack_config_from_env(monkeypatch):
+def test_slack_config_from_env(monkeypatch: Any) -> None:
     """Test SlackConfig.from_env()."""
     monkeypatch.setenv("SLACK_CLIENT_ID", "client_123")
     monkeypatch.setenv("SLACK_CLIENT_SECRET", "secret_456")
@@ -25,7 +27,7 @@ def test_slack_config_from_env(monkeypatch):
     assert config.app_token == "xapp-token"
 
 
-def test_slack_config_custom_prefix(monkeypatch):
+def test_slack_config_custom_prefix(monkeypatch: Any) -> None:
     """Test SlackConfig with custom prefix."""
     monkeypatch.setenv("CUSTOM_CLIENT_ID", "custom_123")
     monkeypatch.setenv("CUSTOM_CLIENT_SECRET", "custom_secret")
@@ -38,7 +40,7 @@ def test_slack_config_custom_prefix(monkeypatch):
     assert config.client_secret == "custom_secret"
 
 
-def test_discord_config_from_env(monkeypatch):
+def test_discord_config_from_env(monkeypatch: Any) -> None:
     """Test DiscordConfig.from_env()."""
     monkeypatch.setenv("DISCORD_BOT_TOKEN", "discord_token")
     monkeypatch.setenv("DISCORD_CLIENT_ID", "discord_client")
@@ -52,7 +54,7 @@ def test_discord_config_from_env(monkeypatch):
     assert config.public_key == "discord_key"
 
 
-def test_telegram_config_from_env(monkeypatch):
+def test_telegram_config_from_env(monkeypatch: Any) -> None:
     """Test TelegramConfig.from_env()."""
     monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "telegram_token")
     monkeypatch.setenv("TELEGRAM_WEBHOOK_SECRET", "webhook_secret")
@@ -62,7 +64,7 @@ def test_telegram_config_from_env(monkeypatch):
     assert config.webhook_secret == "webhook_secret"
 
 
-def test_whatsapp_config_from_env(monkeypatch):
+def test_whatsapp_config_from_env(monkeypatch: Any) -> None:
     """Test WhatsAppConfig.from_env()."""
     monkeypatch.setenv("WHATSAPP_ACCOUNT_SID", "account_sid")
     monkeypatch.setenv("WHATSAPP_AUTH_TOKEN", "auth_token")
@@ -76,7 +78,7 @@ def test_whatsapp_config_from_env(monkeypatch):
     assert config.webhook_url == "https://example.com/webhook"
 
 
-def test_config_defaults():
+def test_config_defaults() -> None:
     """Test config defaults when env vars not set."""
     config = SlackConfig.from_env(prefix="NONEXISTENT_")
     assert config.client_id == ""
@@ -86,7 +88,7 @@ def test_config_defaults():
     assert config.app_token == ""
 
 
-def test_env_secret_provider():
+def test_env_secret_provider() -> None:
     """Test EnvSecretProvider."""
     provider = EnvSecretProvider()
     result = provider.get_secret("any/path")

@@ -1,6 +1,6 @@
 """Layout system for terminal UI."""
 
-from rich.console import Console
+from rich.console import Console, RenderableType
 from rich.layout import Layout as RichLayout
 from rich.live import Live
 from rich.panel import Panel
@@ -9,7 +9,7 @@ from rich.panel import Panel
 class LayoutManager:
     """Manage terminal layout with multiple regions."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize layout manager."""
         self.layout = RichLayout()
         self.console = Console()
@@ -32,7 +32,7 @@ class LayoutManager:
         """
         self.layout[name].split_row(*[RichLayout(name=r) for r in regions])
 
-    def update(self, region: str, content) -> None:
+    def update(self, region: str, content: RenderableType) -> None:
         """Update a region with new content.
 
         Args:
@@ -45,7 +45,7 @@ class LayoutManager:
         """Render the layout once."""
         self.console.print(self.layout)
 
-    def live_update(self):
+    def live_update(self) -> Live:
         """Create a live-updating context.
 
         Returns:
@@ -57,9 +57,9 @@ class LayoutManager:
 class StatusLine:
     """Status line display."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize status line."""
-        self.items = {}
+        self.items: dict[str, str] = {}
 
     def set(self, key: str, value: str) -> None:
         """Set a status item.
@@ -94,7 +94,7 @@ class StatusLine:
 class Overlay:
     """Overlay panel for temporary content."""
 
-    def __init__(self, title: str = ""):
+    def __init__(self, title: str = "") -> None:
         """Initialize overlay.
 
         Args:

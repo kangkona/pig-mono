@@ -96,6 +96,13 @@ class APIProfile:
     model: str
     cooldown_until: float = 0.0
     metadata: dict[str, Any] = field(default_factory=dict)
+    provider: str | None = None
+
+    @property
+    def provider_id(self) -> str | None:
+        """Provider identity, including the legacy metadata representation."""
+        value = self.provider or self.metadata.get("provider")
+        return str(value) if value else None
 
     def is_available(self) -> bool:
         """Check if profile is available (not in cooldown).
@@ -127,6 +134,7 @@ class ProfileManager:
         fallback_models: list[str] | None = None,
         default_cooldown: float = 60.0,
         cooldown_overrides: dict[FailoverReason, float] | None = None,
+        provider_fallback_models: dict[str, list[str]] | None = None,
     ):
         """Initialize profile manager.
 
@@ -140,6 +148,11 @@ class ProfileManager:
         self.fallback_models = fallback_models or []
         self.default_cooldown = default_cooldown
         self._current_index = 0
+        self._active_profile: APIProfile | None = None
+        self._active_client: Any | None = None
+        self.provider_fallback_models = {
+            provider: list(models) for provider, models in (provider_fallback_models or {}).items()
+        }
 
         # Merge default cooldowns with overrides
         self.cooldowns = DEFAULT_COOLDOWNS.copy()
@@ -152,6 +165,7 @@ class ProfileManager:
         env_prefix: str = "OPENAI_API_KEY",
         model: str = "gpt-4",
         fallback_models: list[str] | None = None,
+        provider: str | None = None,
     ) -> "ProfileManager":
         """Create profile manager from environment variables.
 
@@ -172,19 +186,28 @@ class ProfileManager:
             ProfileManager with loaded profiles
         """
         profiles = []
+        profile_provider = provider or {
+            "OPENAI_API_KEY": "openai",
+            "ANTHROPIC_API_KEY": "anthropic",
+            "GOOGLE_API_KEY": "google",
+        }.get(env_prefix)
 
         # Try PIG_AGENT_* and LITE_AGENT_* aliases first
         for alias_prefix in ["PIG_AGENT_API_KEY", "LITE_AGENT_API_KEY"]:
             single_key = os.getenv(alias_prefix)
             if single_key:
-                profiles.append(APIProfile(api_key=single_key, model=model))
+                profiles.append(
+                    APIProfile(api_key=single_key, model=model, provider=profile_provider)
+                )
                 break  # Use first found
 
         # Try single key with custom prefix
         if not profiles:
             single_key = os.getenv(env_prefix)
             if single_key:
-                profiles.append(APIProfile(api_key=single_key, model=model))
+                profiles.append(
+                    APIProfile(api_key=single_key, model=model, provider=profile_provider)
+                )
 
         # Try numbered keys with all prefixes
         index = 1
@@ -199,7 +222,7 @@ class ProfileManager:
             if not key:
                 break
 
-            profiles.append(APIProfile(api_key=key, model=model))
+            profiles.append(APIProfile(api_key=key, model=model, provider=profile_provider))
             index += 1
 
         return cls(profiles=profiles, fallback_models=fallback_models)
@@ -220,11 +243,77 @@ class ProfileManager:
             self._current_index = (self._current_index + 1) % len(self.profiles)
 
             if profile.is_available():
+                self.set_active(profile)
                 return profile
 
             attempts += 1
 
         # All profiles are in cooldown
+        return None
+
+    @property
+    def active_profile(self) -> APIProfile | None:
+        """Identity of the last profile used, independent of its availability."""
+        return self._active_profile
+
+    @property
+    def active_client(self) -> Any | None:
+        """Client bound to :attr:`active_profile` across agent rounds."""
+        profile = self._active_profile
+        return self._active_client if profile is not None and profile.is_available() else None
+
+    def set_active(self, profile: APIProfile, client: Any | None = None) -> None:
+        """Explicitly set the profile/client pair used for subsequent calls."""
+        if profile not in self.profiles:
+            raise ValueError("Active profile must belong to this manager")
+        changed = self._active_profile is not profile
+        self._active_profile = profile
+        if client is not None:
+            self._active_client = client
+        elif changed:
+            self._active_client = None
+
+    def bind_active_client(self, client: Any) -> None:
+        """Bind the initial or reconstructed client to the current profile."""
+        if self.active_profile is not None:
+            self._active_client = client
+
+    def get_failover_profile(self, failed_profile: APIProfile) -> APIProfile | None:
+        """Return an available profile after ``failed_profile`` without guessing it.
+
+        Unlike ``get_next_profile``, this method does not mutate active state.
+        The caller activates the candidate only after constructing a client that
+        is actually bound to it.
+        """
+        if not self.profiles:
+            return None
+        try:
+            start = self.profiles.index(failed_profile)
+        except ValueError:
+            start = self._current_index - 1
+        for offset in range(1, len(self.profiles) + 1):
+            candidate = self.profiles[(start + offset) % len(self.profiles)]
+            if (
+                candidate is not failed_profile
+                and candidate.provider_id == failed_profile.provider_id
+                and candidate.is_available()
+            ):
+                return candidate
+        return None
+
+    def find_profile(
+        self,
+        *,
+        provider: str | None,
+        api_key: str | None,
+    ) -> APIProfile | None:
+        """Find the exact profile represented by an LLM configuration."""
+        if not api_key:
+            return None
+        for profile in self.profiles:
+            provider_matches = profile.provider_id in {None, provider}
+            if provider_matches and profile.api_key == api_key:
+                return profile
         return None
 
     def mark_profile_failed(
@@ -251,6 +340,8 @@ class ProfileManager:
             cooldown_duration = self.default_cooldown
 
         profile.set_cooldown(cooldown_duration)
+        if profile is self._active_profile:
+            self._active_client = None
 
     def mark_profile_failed_with_error(
         self,
@@ -270,7 +361,7 @@ class ProfileManager:
         self.mark_profile_failed(profile, reason=reason)
         return reason
 
-    def get_fallback_model(self, current_model: str) -> str | None:
+    def get_fallback_model(self, current_model: str, provider: str | None = None) -> str | None:
         """Get fallback model for the current model.
 
         Args:
@@ -279,17 +370,22 @@ class ProfileManager:
         Returns:
             Fallback model name, or None if no fallback available
         """
-        if not self.fallback_models:
+        fallback_models = (
+            self.provider_fallback_models.get(provider, [])
+            if provider is not None and self.provider_fallback_models
+            else self.fallback_models
+        )
+        if not fallback_models:
             return None
 
         # If current model is in fallback list, try next one
         try:
-            current_index = self.fallback_models.index(current_model)
-            if current_index + 1 < len(self.fallback_models):
-                return self.fallback_models[current_index + 1]
+            current_index = fallback_models.index(current_model)
+            if current_index + 1 < len(fallback_models):
+                return fallback_models[current_index + 1]
         except ValueError:
             # Current model not in fallback list, return first fallback
-            return self.fallback_models[0]
+            return fallback_models[0]
 
         return None
 
@@ -313,6 +409,9 @@ class ProfileManager:
         for i, profile in enumerate(self.profiles):
             if profile.api_key == api_key:
                 self.profiles.pop(i)
+                if profile is self._active_profile:
+                    self._active_profile = None
+                    self._active_client = None
                 # If we removed an element before the current pointer, shift it down
                 # so the next call to get_next_profile continues from the right position
                 if i < self._current_index:

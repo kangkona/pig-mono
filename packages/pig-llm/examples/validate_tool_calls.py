@@ -9,7 +9,7 @@ import json
 from pig_llm.models import Message, Response
 
 
-def test_tool_calls_format():
+def test_tool_calls_format() -> None:
     """Test that tool_calls have the correct format."""
     print("Testing tool_calls format...")
 
@@ -45,7 +45,7 @@ def test_tool_calls_format():
     print("✓ Tool calls format is correct")
 
 
-def test_message_with_tool_calls():
+def test_message_with_tool_calls() -> None:
     """Test Message model with tool_calls metadata."""
     print("\nTesting Message with tool_calls metadata...")
 
@@ -73,7 +73,7 @@ def test_message_with_tool_calls():
     print("✓ Message with tool_calls metadata works correctly")
 
 
-def test_tool_result_message():
+def test_tool_result_message() -> None:
     """Test tool result message format."""
     print("\nTesting tool result message...")
 
@@ -84,13 +84,14 @@ def test_tool_result_message():
     )
 
     assert message.role == "tool", "Role should be 'tool'"
+    assert message.metadata is not None, "Metadata should not be None"
     assert message.metadata["tool_call_id"] == "call_789", "Tool call ID mismatch"
     assert message.metadata["function_name"] == "get_weather", "Function name mismatch"
 
     print("✓ Tool result message format is correct")
 
 
-def test_providers_import():
+def test_providers_import() -> None:
     """Test that all providers can be imported."""
     print("\nTesting provider imports...")
 
@@ -122,7 +123,7 @@ def test_providers_import():
     print("✓ All providers can be imported")
 
 
-def test_tool_definition():
+def test_tool_definition() -> None:
     """Test tool definition format."""
     print("\nTesting tool definition format...")
 
@@ -146,7 +147,7 @@ def test_tool_definition():
     print("✓ Tool definition format is correct")
 
 
-def main():
+def main() -> int:
     """Run all validation tests."""
     print("=" * 60)
     print("pig-llm Tool Calls Validation")

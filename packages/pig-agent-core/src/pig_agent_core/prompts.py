@@ -2,6 +2,7 @@
 
 import re
 from pathlib import Path
+from typing import Any
 
 
 class PromptTemplate:
@@ -31,7 +32,7 @@ class PromptTemplate:
         matches = re.findall(pattern, self.content)
         return list(set(matches))
 
-    def render(self, **kwargs) -> str:
+    def render(self, **kwargs: Any) -> str:
         """Render template with variables.
 
         Args:
@@ -56,7 +57,7 @@ class PromptTemplate:
 class PromptManager:
     """Manages prompt templates."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize prompt manager."""
         self.templates: dict[str, PromptTemplate] = {}
 
@@ -140,7 +141,7 @@ class PromptManager:
         """
         return list(self.templates.values())
 
-    def render_template(self, name: str, **kwargs) -> str | None:
+    def render_template(self, name: str, **kwargs: Any) -> str | None:
         """Render a template with variables.
 
         Args:

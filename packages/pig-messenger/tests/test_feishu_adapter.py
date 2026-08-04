@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -13,7 +14,7 @@ from pig_messenger.message import Attachment, UniversalMessage
 # ---------------------------------------------------------------------------
 
 
-def _make_adapter(**kwargs):
+def _make_adapter(**kwargs: Any) -> Any:
     """Create a FeishuAdapter in webhook mode with mocked httpx client."""
     adapter = FeishuAdapter(
         app_id=kwargs.get("app_id", "cli_test_app_id"),
@@ -27,7 +28,7 @@ def _make_adapter(**kwargs):
     return adapter, mock_client
 
 
-def _run(coro):
+def _run(coro: Any) -> Any:
     try:
         loop = asyncio.get_running_loop()
     except RuntimeError:
@@ -36,7 +37,7 @@ def _run(coro):
     return loop.run_until_complete(coro)
 
 
-def _mock_response(data: dict, status_code: int = 200):
+def _mock_response(data: dict, status_code: int = 200) -> Any:
     resp = MagicMock()
     resp.json.return_value = data
     resp.status_code = status_code
@@ -51,7 +52,7 @@ def _mock_response(data: dict, status_code: int = 200):
 
 
 @pytest.fixture
-def feishu_event_text():
+def feishu_event_text() -> Any:
     """A Feishu text message event."""
     return {
         "type": "message",
@@ -72,7 +73,7 @@ def feishu_event_text():
 
 
 @pytest.fixture
-def feishu_event_mention():
+def feishu_event_mention() -> Any:
     """A Feishu message event with @mention."""
     return {
         "type": "message",
@@ -98,16 +99,16 @@ def feishu_event_mention():
 
 
 class TestFeishuAdapterInit:
-    def test_platform_name(self):
+    def test_platform_name(self) -> None:
         adapter, _ = _make_adapter()
         assert adapter.name == "feishu"
 
-    def test_stores_credentials(self):
+    def test_stores_credentials(self) -> None:
         adapter, _ = _make_adapter(app_id="my_id", app_secret="my_secret")
         assert adapter.app_id == "my_id"
         assert adapter.app_secret == "my_secret"
 
-    def test_token_initially_none(self):
+    def test_token_initially_none(self) -> None:
         adapter, _ = _make_adapter()
         assert adapter.tenant_access_token is None
 
@@ -118,7 +119,7 @@ class TestFeishuAdapterInit:
 
 
 class TestGetTenantAccessToken:
-    def test_fetches_token(self):
+    def test_fetches_token(self) -> None:
         adapter, client = _make_adapter()
         client.post.return_value = _mock_response({"tenant_access_token": "t-token123"})
 
@@ -130,7 +131,7 @@ class TestGetTenantAccessToken:
         call_kwargs = client.post.call_args
         assert "auth/v3/tenant_access_token/internal" in call_kwargs[0][0]
 
-    def test_caches_token(self):
+    def test_caches_token(self) -> None:
         adapter, client = _make_adapter()
         adapter.tenant_access_token = "cached-token"
 
@@ -146,12 +147,12 @@ class TestGetTenantAccessToken:
 
 
 class TestSendMessage:
-    def _setup(self):
+    def _setup(self) -> Any:
         adapter, client = _make_adapter()
         adapter.tenant_access_token = "t-token"
         return adapter, client
 
-    def test_send_to_chat_id(self):
+    def test_send_to_chat_id(self) -> None:
         adapter, client = self._setup()
         client.post.return_value = _mock_response({"data": {"message_id": "om_resp001"}})
 
@@ -166,7 +167,7 @@ class TestSendMessage:
         assert json.loads(payload["content"]) == {"text": "hello"}
         assert "root_id" not in payload
 
-    def test_send_to_open_id(self):
+    def test_send_to_open_id(self) -> None:
         adapter, client = self._setup()
         client.post.return_value = _mock_response({"data": {"message_id": "om_resp002"}})
 
@@ -175,7 +176,7 @@ class TestSendMessage:
         call_kwargs = client.post.call_args
         assert call_kwargs[1]["params"]["receive_id_type"] == "open_id"
 
-    def test_send_with_thread_id(self):
+    def test_send_with_thread_id(self) -> None:
         adapter, client = self._setup()
         client.post.return_value = _mock_response({"data": {"message_id": "om_resp003"}})
 
@@ -184,7 +185,7 @@ class TestSendMessage:
         payload = client.post.call_args[1]["json"]
         assert payload["root_id"] == "om_parent"
 
-    def test_auth_header(self):
+    def test_auth_header(self) -> None:
         adapter, client = self._setup()
         client.post.return_value = _mock_response({"data": {"message_id": "om_resp004"}})
 
@@ -200,7 +201,7 @@ class TestSendMessage:
 
 
 class TestUploadFile:
-    def test_upload_sends_file_then_message(self, tmp_path):
+    def test_upload_sends_file_then_message(self, tmp_path: Any) -> None:
         adapter, client = _make_adapter()
         adapter.tenant_access_token = "t-token"
 
@@ -222,7 +223,7 @@ class TestUploadFile:
         assert payload["msg_type"] == "file"
         assert json.loads(payload["content"]) == {"file_key": "fk_abc123"}
 
-    def test_upload_with_caption(self, tmp_path):
+    def test_upload_with_caption(self, tmp_path: Any) -> None:
         adapter, client = _make_adapter()
         adapter.tenant_access_token = "t-token"
 
@@ -246,7 +247,7 @@ class TestUploadFile:
 
 
 class TestGetHistory:
-    def test_returns_empty(self):
+    def test_returns_empty(self) -> None:
         adapter, _ = _make_adapter()
         result = _run(adapter.get_history("oc_chat001"))
         assert result == []
@@ -258,7 +259,7 @@ class TestGetHistory:
 
 
 class TestDownloadFile:
-    def test_download(self):
+    def test_download(self) -> None:
         adapter, client = _make_adapter()
         adapter.tenant_access_token = "t-token"
 
@@ -288,7 +289,7 @@ class TestDownloadFile:
 
 
 class TestHandleEvent:
-    def test_convert_text_message(self, feishu_event_text):
+    def test_convert_text_message(self, feishu_event_text: Any) -> None:
         adapter, _ = _make_adapter()
         msg = adapter._convert_feishu_message(feishu_event_text)
 
@@ -301,7 +302,7 @@ class TestHandleEvent:
         assert msg.text == "hello bot"
         assert msg.is_mention is False
 
-    def test_convert_mention_message(self, feishu_event_mention):
+    def test_convert_mention_message(self, feishu_event_mention: Any) -> None:
         adapter, _ = _make_adapter()
         msg = adapter._convert_feishu_message(feishu_event_mention)
 
@@ -309,17 +310,17 @@ class TestHandleEvent:
         assert msg.is_mention is True
         assert msg.channel_id == "oc_chat002"
 
-    def test_handle_event_emits_message(self, feishu_event_text):
+    def test_handle_event_emits_message(self, feishu_event_text: Any) -> None:
         adapter, _ = _make_adapter()
         captured = []
 
-        async def handler(msg):
+        async def handler(msg: Any) -> None:
             captured.append(msg)
 
         adapter.set_message_handler(handler)
 
         # handle_event uses asyncio.create_task, need a running loop
-        async def run():
+        async def run() -> None:
             adapter.handle_event({"event": feishu_event_text})
             await asyncio.sleep(0.05)
 
@@ -327,11 +328,11 @@ class TestHandleEvent:
         assert len(captured) == 1
         assert captured[0].text == "hello bot"
 
-    def test_handle_event_ignores_non_message(self):
+    def test_handle_event_ignores_non_message(self) -> None:
         adapter, _ = _make_adapter()
         captured = []
 
-        async def handler(msg):
+        async def handler(msg: Any) -> None:
             captured.append(msg)
 
         adapter.set_message_handler(handler)
@@ -339,7 +340,7 @@ class TestHandleEvent:
         adapter.handle_event({"event": {"type": "url_verification"}})
         assert len(captured) == 0
 
-    def test_empty_content_fallback(self):
+    def test_empty_content_fallback(self) -> None:
         adapter, _ = _make_adapter()
         event = {
             "type": "message",
@@ -357,13 +358,13 @@ class TestHandleEvent:
 
 
 class TestStartStop:
-    def test_start(self, capsys):
+    def test_start(self, capsys: Any) -> None:
         adapter, _ = _make_adapter()
         adapter.start()
         out = capsys.readouterr().out
         assert "Feishu adapter ready" in out
 
-    def test_stop_no_error(self):
+    def test_stop_no_error(self) -> None:
         adapter, _ = _make_adapter()
         adapter.stop()  # should not raise
 
@@ -373,7 +374,7 @@ class TestStartStop:
 # ---------------------------------------------------------------------------
 
 
-def _mock_lark_module():
+def _mock_lark_module() -> Any:
     """Build a mock lark_oapi module tree sufficient for FeishuAdapter._init_sdk."""
     lark = MagicMock()
     # LogLevel enum
@@ -397,7 +398,7 @@ def _mock_lark_module():
 class TestFeishuSDKMode:
     """Tests for use_ws=True (SDK long-connection mode)."""
 
-    def _make_sdk_adapter(self):
+    def _make_sdk_adapter(self) -> Any:
         """Create adapter in SDK mode with mocked lark_oapi."""
         import sys
 
@@ -418,29 +419,29 @@ class TestFeishuSDKMode:
                 sys.modules["lark_oapi"] = saved
         return adapter, mock_lark
 
-    def test_init_creates_ws_client(self):
+    def test_init_creates_ws_client(self) -> None:
         adapter, mock_lark = self._make_sdk_adapter()
         assert adapter._ws_client is not None
         assert adapter._lark_client is not None
         mock_lark.ws.Client.assert_called_once()
 
-    def test_start_calls_ws_client_start(self):
+    def test_start_calls_ws_client_start(self) -> None:
         adapter, _ = self._make_sdk_adapter()
         adapter.start()
         adapter._ws_client.start.assert_called_once()
 
-    def test_stop_calls_ws_client_disconnect(self):
+    def test_stop_calls_ws_client_disconnect(self) -> None:
         adapter, _ = self._make_sdk_adapter()
         adapter._ws_client._disconnect = AsyncMock()
         adapter.stop()
         adapter._ws_client._disconnect.assert_called_once()
 
-    def test_stop_noop_when_no_ws_client(self):
+    def test_stop_noop_when_no_ws_client(self) -> None:
         adapter, _ = self._make_sdk_adapter()
         adapter._ws_client = None
         adapter.stop()  # should not raise
 
-    def test_send_message_sdk(self):
+    def test_send_message_sdk(self) -> None:
         adapter, _ = self._make_sdk_adapter()
         # Mock the SDK response
         mock_resp = MagicMock()
@@ -477,7 +478,7 @@ class TestFeishuSDKMode:
         assert msg_id == "om_sdk_001"
         adapter._lark_client.im.v1.message.create.assert_called_once()
 
-    def test_send_message_sdk_failure_raises(self):
+    def test_send_message_sdk_failure_raises(self) -> None:
         adapter, _ = self._make_sdk_adapter()
         mock_resp = MagicMock()
         mock_resp.success.return_value = False
@@ -512,11 +513,11 @@ class TestFeishuSDKMode:
             else:
                 sys.modules["lark_oapi.api.im.v1"] = saved
 
-    def test_on_sdk_message_emits(self):
+    def test_on_sdk_message_emits(self) -> None:
         adapter, _ = self._make_sdk_adapter()
         captured = []
 
-        async def handler(msg):
+        async def handler(msg: Any) -> None:
             captured.append(msg)
 
         adapter.set_message_handler(handler)
@@ -540,11 +541,11 @@ class TestFeishuSDKMode:
         assert msg.user_id == "ou_sdk_sender"
         assert msg.is_mention is False
 
-    def test_on_sdk_message_with_mentions(self):
+    def test_on_sdk_message_with_mentions(self) -> None:
         adapter, _ = self._make_sdk_adapter()
         captured = []
 
-        async def handler(msg):
+        async def handler(msg: Any) -> None:
             captured.append(msg)
 
         adapter.set_message_handler(handler)
@@ -571,7 +572,7 @@ class TestFeishuSDKMode:
 
 
 class TestBuildCardContent:
-    def test_structure(self):
+    def test_structure(self) -> None:
         adapter, _ = _make_adapter()
         card = adapter._build_card_content("hello **world**")
         assert card == {
@@ -580,12 +581,12 @@ class TestBuildCardContent:
 
 
 class TestSendCard:
-    def _setup(self):
+    def _setup(self) -> Any:
         adapter, client = _make_adapter()
         adapter.tenant_access_token = "t-token"
         return adapter, client
 
-    def test_send_card_http(self):
+    def test_send_card_http(self) -> None:
         adapter, client = self._setup()
         client.post.return_value = _mock_response({"data": {"message_id": "om_card001"}})
 
@@ -599,7 +600,7 @@ class TestSendCard:
         assert content["elements"][0]["tag"] == "markdown"
         assert content["elements"][0]["content"] == "hello card"
 
-    def test_send_card_http_open_id(self):
+    def test_send_card_http_open_id(self) -> None:
         adapter, client = self._setup()
         client.post.return_value = _mock_response({"data": {"message_id": "om_card002"}})
 
@@ -610,12 +611,12 @@ class TestSendCard:
 
 
 class TestUpdateCard:
-    def _setup(self):
+    def _setup(self) -> Any:
         adapter, client = _make_adapter()
         adapter.tenant_access_token = "t-token"
         return adapter, client
 
-    def test_update_card_http(self):
+    def test_update_card_http(self) -> None:
         adapter, client = self._setup()
         client.patch.return_value = _mock_response({})
 
@@ -633,7 +634,7 @@ class TestUpdateCard:
 class TestCardSDKMode:
     """Tests for card operations in SDK mode."""
 
-    def _make_sdk_adapter(self):
+    def _make_sdk_adapter(self) -> Any:
         import sys
 
         mock_lark = _mock_lark_module()
@@ -652,7 +653,7 @@ class TestCardSDKMode:
                 sys.modules["lark_oapi"] = saved
         return adapter, mock_lark
 
-    def test_send_card_sdk(self):
+    def test_send_card_sdk(self) -> None:
         adapter, _ = self._make_sdk_adapter()
         mock_resp = MagicMock()
         mock_resp.success.return_value = True
@@ -689,7 +690,7 @@ class TestCardSDKMode:
         # Verify msg_type was set to "interactive"
         body_builder.msg_type.assert_called_with("interactive")
 
-    def test_update_card_sdk(self):
+    def test_update_card_sdk(self) -> None:
         adapter, _ = self._make_sdk_adapter()
         mock_resp = MagicMock()
         mock_resp.success.return_value = True

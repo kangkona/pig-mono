@@ -4,6 +4,7 @@
 import sys
 import time
 from pathlib import Path
+from typing import Any
 
 # Add src to path
 src_path = Path(__file__).parent.parent / "src"
@@ -13,7 +14,7 @@ sys.path.insert(0, str(src_path))
 from pig_agent_core.resilience.profile import APIProfile, ProfileManager  # noqa: E402
 
 
-def test_api_profile_creation():
+def test_api_profile_creation() -> None:
     """Test APIProfile creation."""
     profile = APIProfile(api_key="test-key", model="gpt-4")
     assert profile.api_key == "test-key"
@@ -22,7 +23,7 @@ def test_api_profile_creation():
     print("✓ test_api_profile_creation passed")
 
 
-def test_api_profile_is_available():
+def test_api_profile_is_available() -> None:
     """Test profile availability check."""
     profile = APIProfile(api_key="test-key", model="gpt-4")
     assert profile.is_available()
@@ -35,7 +36,7 @@ def test_api_profile_is_available():
     print("✓ test_api_profile_is_available passed")
 
 
-def test_profile_manager_creation():
+def test_profile_manager_creation() -> None:
     """Test ProfileManager creation."""
     profiles = [
         APIProfile(api_key="key1", model="gpt-4"),
@@ -48,7 +49,7 @@ def test_profile_manager_creation():
     print("✓ test_profile_manager_creation passed")
 
 
-def test_profile_manager_rotation():
+def test_profile_manager_rotation() -> None:
     """Test profile rotation."""
     profiles = [
         APIProfile(api_key="key1", model="gpt-4"),
@@ -58,21 +59,25 @@ def test_profile_manager_rotation():
     manager = ProfileManager(profiles=profiles)
 
     p1 = manager.get_next_profile()
+    assert p1 is not None
     assert p1.api_key == "key1"
 
     p2 = manager.get_next_profile()
+    assert p2 is not None
     assert p2.api_key == "key2"
 
     p3 = manager.get_next_profile()
+    assert p3 is not None
     assert p3.api_key == "key3"
 
     # Wrap around
     p4 = manager.get_next_profile()
+    assert p4 is not None
     assert p4.api_key == "key1"
     print("✓ test_profile_manager_rotation passed")
 
 
-def test_profile_manager_skip_cooldown():
+def test_profile_manager_skip_cooldown() -> None:
     """Test skipping profiles in cooldown."""
     profiles = [
         APIProfile(api_key="key1", model="gpt-4"),
@@ -82,15 +87,17 @@ def test_profile_manager_skip_cooldown():
     manager = ProfileManager(profiles=profiles)
 
     p1 = manager.get_next_profile()
+    assert p1 is not None
     assert p1.api_key == "key1"
     manager.mark_profile_failed(p1, cooldown=10.0)
 
     p2 = manager.get_next_profile()
+    assert p2 is not None
     assert p2.api_key == "key2"
     print("✓ test_profile_manager_skip_cooldown passed")
 
 
-def test_profile_manager_fallback():
+def test_profile_manager_fallback() -> None:
     """Test fallback model selection."""
     manager = ProfileManager(
         profiles=[],
@@ -108,7 +115,7 @@ def test_profile_manager_fallback():
     print("✓ test_profile_manager_fallback passed")
 
 
-def main():
+def main() -> Any:
     """Run all tests."""
     print("Running ProfileManager tests...")
     print()

@@ -6,7 +6,7 @@ import pytest
 from pig_agent_core.tools import CancelledError, ToolResult
 
 
-def test_tool_result_success():
+def test_tool_result_success() -> None:
     """Test successful tool result."""
     result = ToolResult(ok=True, data={"message": "success"})
     assert result.ok is True
@@ -14,7 +14,7 @@ def test_tool_result_success():
     assert result.error is None
 
 
-def test_tool_result_error():
+def test_tool_result_error() -> None:
     """Test error tool result."""
     result = ToolResult(ok=False, error="Something went wrong")
     assert result.ok is False
@@ -22,13 +22,13 @@ def test_tool_result_error():
     assert result.error == "Something went wrong"
 
 
-def test_tool_result_with_meta():
+def test_tool_result_with_meta() -> None:
     """Test tool result with metadata."""
     result = ToolResult(ok=True, data="test", meta={"duration_ms": 100})
     assert result.meta == {"duration_ms": 100}
 
 
-def test_tool_result_serialize_simple():
+def test_tool_result_serialize_simple() -> None:
     """Test serialization of simple result."""
     result = ToolResult(ok=True, data="Hello world")
     serialized = result.serialize()
@@ -36,7 +36,7 @@ def test_tool_result_serialize_simple():
     assert parsed == {"ok": True, "data": "Hello world"}
 
 
-def test_tool_result_serialize_error():
+def test_tool_result_serialize_error() -> None:
     """Test serialization of error result."""
     result = ToolResult(ok=False, error="Failed")
     serialized = result.serialize()
@@ -44,7 +44,7 @@ def test_tool_result_serialize_error():
     assert parsed == {"ok": False, "error": "Failed"}
 
 
-def test_tool_result_serialize_truncation():
+def test_tool_result_serialize_truncation() -> None:
     """Test serialization with truncation."""
     # Create a large data payload
     large_data = "x" * 5000
@@ -60,7 +60,7 @@ def test_tool_result_serialize_truncation():
     assert "truncated" in parsed or "data_preview" in parsed
 
 
-def test_tool_result_serialize_list():
+def test_tool_result_serialize_list() -> None:
     """Test serialization of list data."""
     data = [{"id": 1, "name": "Item 1"}, {"id": 2, "name": "Item 2"}, {"id": 3, "name": "Item 3"}]
     result = ToolResult(ok=True, data=data)
@@ -71,7 +71,7 @@ def test_tool_result_serialize_list():
     assert parsed["data"] == data
 
 
-def test_tool_result_serialize_list_truncation():
+def test_tool_result_serialize_list_truncation() -> None:
     """Test serialization of list with truncation."""
     # Create list with many items
     data = [{"id": i, "text": "x" * 100} for i in range(100)]
@@ -88,7 +88,7 @@ def test_tool_result_serialize_list_truncation():
         assert len(parsed["data"]) < len(data)
 
 
-def test_tool_result_serialize_dict_with_text_fields():
+def test_tool_result_serialize_dict_with_text_fields() -> None:
     """Test serialization of dict with text fields."""
     data = [
         {"id": 1, "content": "x" * 500, "title": "Item 1"},
@@ -108,7 +108,7 @@ def test_tool_result_serialize_dict_with_text_fields():
                 assert len(item["content"]) <= 201  # 200 + ellipsis
 
 
-def test_tool_result_serialize_nested_structure():
+def test_tool_result_serialize_nested_structure() -> None:
     """Test serialization of nested structure."""
     data = {
         "posts": [
@@ -124,13 +124,13 @@ def test_tool_result_serialize_nested_structure():
     assert "data" in parsed
 
 
-def test_cancelled_error():
+def test_cancelled_error() -> None:
     """Test CancelledError exception."""
     with pytest.raises(CancelledError):
         raise CancelledError("Operation cancelled")
 
 
-def test_tool_result_serialize_preserves_structure():
+def test_tool_result_serialize_preserves_structure() -> None:
     """Test that serialization preserves structure when possible."""
     data = {"count": 5, "items": ["a", "b", "c"]}
     result = ToolResult(ok=True, data=data)

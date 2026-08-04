@@ -17,6 +17,7 @@ Usage:
 """
 
 import os
+from typing import Any
 
 import uvicorn
 from fastapi import FastAPI, Request
@@ -33,7 +34,7 @@ adapter = FeishuAdapter(
 )
 
 
-async def on_message(msg):
+async def on_message(msg: Any) -> None:
     """Handle incoming messages — echo back."""
     print(f"\n[Received] {msg.username}: {msg.text}")
     print(f"  channel={msg.channel_id}, mention={msg.is_mention}")
@@ -48,7 +49,7 @@ adapter.set_message_handler(on_message)
 
 
 @app.post("/webhook/event")
-async def handle_event(request: Request):
+async def handle_event(request: Request) -> Any:
     """Handle Feishu event callbacks."""
     payload = await request.json()
 

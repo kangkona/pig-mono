@@ -3,7 +3,9 @@
 
 import asyncio
 import sys
+from collections.abc import AsyncIterator
 from pathlib import Path
+from typing import Any, cast
 from unittest.mock import AsyncMock, Mock
 
 import pytest
@@ -16,12 +18,30 @@ from pig_agent_core.resilience.retry import (  # noqa: E402
     _is_context_overflow,
     _is_error_type,
     _should_rotate_profile,
-    resilient_call,
-    resilient_streaming_call,
 )
+from pig_agent_core.resilience.retry import (  # noqa: E402
+    resilient_call as _resilient_call,
+)
+from pig_agent_core.resilience.retry import (  # noqa: E402
+    resilient_streaming_call as _resilient_streaming_call,
+)
+from pig_llm import LLM, Message  # noqa: E402
 
 
-def test_is_error_type():
+async def resilient_streaming_call(
+    llm: object, messages: object, *args: Any, **kwargs: Any
+) -> AsyncIterator[Any]:
+    async for chunk in _resilient_streaming_call(
+        cast(LLM, llm), cast(list[Message], messages), *args, **kwargs
+    ):
+        yield chunk
+
+
+async def resilient_call(llm: object, messages: object, *args: Any, **kwargs: Any) -> Any:
+    return await _resilient_call(cast(LLM, llm), cast(list[Message], messages), *args, **kwargs)
+
+
+def test_is_error_type() -> None:
     """Test error type matching."""
     error = Exception("Rate limit exceeded")
     assert _is_error_type(error, ("rate limit", "quota"))
@@ -34,7 +54,7 @@ def test_is_error_type():
     print("✓ test_is_error_type passed")
 
 
-def test_should_rotate_profile():
+def test_should_rotate_profile() -> None:
     """Test profile rotation detection."""
     assert _should_rotate_profile(Exception("Rate limit exceeded"))
     assert _should_rotate_profile(Exception("429 Too Many Requests"))
@@ -43,7 +63,7 @@ def test_should_rotate_profile():
     print("✓ test_should_rotate_profile passed")
 
 
-def test_is_context_overflow():
+def test_is_context_overflow() -> None:
     """Test context overflow detection."""
     assert _is_context_overflow(Exception("Context length exceeded"))
     assert _is_context_overflow(Exception("Maximum context length"))
@@ -52,16 +72,16 @@ def test_is_context_overflow():
 
 
 @pytest.mark.asyncio
-async def test_resilient_streaming_call_success():
+async def test_resilient_streaming_call_success() -> None:
     """Test successful streaming call."""
     llm = Mock()
     llm.config = Mock(model="gpt-4")
 
-    async def mock_stream(*args, **kwargs):
+    async def mock_stream(*args: Any, **kwargs: Any) -> Any:
         yield {"content": "Hello"}
         yield {"content": " world"}
 
-    llm.astream = mock_stream
+    llm.achat_stream = mock_stream
 
     messages = [{"role": "user", "content": "Hi"}]
     chunks = []
@@ -74,21 +94,21 @@ async def test_resilient_streaming_call_success():
 
 
 @pytest.mark.asyncio
-async def test_resilient_streaming_call_retry():
+async def test_resilient_streaming_call_retry() -> None:
     """Test retry on transient error."""
     llm = Mock()
     llm.config = Mock(model="gpt-4")
 
     call_count = 0
 
-    async def mock_stream(*args, **kwargs):
+    async def mock_stream(*args: Any, **kwargs: Any) -> Any:
         nonlocal call_count
         call_count += 1
         if call_count == 1:
             raise Exception("Network timeout")
         yield {"content": "Success"}
 
-    llm.astream = mock_stream
+    llm.achat_stream = mock_stream
 
     messages = [{"role": "user", "content": "Hi"}]
     chunks = []
@@ -101,17 +121,17 @@ async def test_resilient_streaming_call_retry():
 
 
 @pytest.mark.asyncio
-async def test_resilient_streaming_call_context_compression():
+async def test_resilient_streaming_call_context_compression() -> None:
     """Test context compression on overflow."""
     llm = Mock()
     llm.config = Mock(model="gpt-4")
 
-    def compress_fn(messages):
+    def compress_fn(messages: Any) -> Any:
         return messages[1:]
 
     call_count = 0
 
-    async def mock_stream(*args, **kwargs):
+    async def mock_stream(*args: Any, **kwargs: Any) -> Any:
         nonlocal call_count
         call_count += 1
         messages = kwargs.get("messages", [])
@@ -120,7 +140,7 @@ async def test_resilient_streaming_call_context_compression():
         assert len(messages) == 1
         yield {"content": "Success"}
 
-    llm.astream = mock_stream
+    llm.achat_stream = mock_stream
 
     messages = [
         {"role": "user", "content": "First"},
@@ -137,7 +157,7 @@ async def test_resilient_streaming_call_context_compression():
 
 
 @pytest.mark.asyncio
-async def test_resilient_call_success():
+async def test_resilient_call_success() -> None:
     """Test successful non-streaming call."""
     llm = Mock()
     llm.config = Mock(model="gpt-4")
@@ -154,14 +174,14 @@ async def test_resilient_call_success():
 
 
 @pytest.mark.asyncio
-async def test_resilient_call_retry():
+async def test_resilient_call_retry() -> None:
     """Test retry on transient error."""
     llm = Mock()
     llm.config = Mock(model="gpt-4")
 
     call_count = 0
 
-    async def mock_achat(*args, **kwargs):
+    async def mock_achat(*args: Any, **kwargs: Any) -> Any:
         nonlocal call_count
         call_count += 1
         if call_count == 1:
@@ -180,7 +200,7 @@ async def test_resilient_call_retry():
     print("✓ test_resilient_call_retry passed")
 
 
-async def main():
+async def main() -> Any:
     """Run all tests."""
     print("Running resilient retry tests...")
     print()

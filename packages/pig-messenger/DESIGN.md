@@ -39,6 +39,7 @@ Platform SDKs (各平台SDK)
 ```python
 from abc import ABC, abstractmethod
 
+
 class MessagePlatform(ABC):
     """消息平台抽象接口"""
 
@@ -83,8 +84,10 @@ class UniversalMessage:
 class SlackAdapter(MessagePlatform):
     """Slack平台适配器"""
 
+
 class DiscordAdapter(MessagePlatform):
     """Discord平台适配器"""
+
 
 class WhatsAppAdapter(MessagePlatform):
     """WhatsApp平台适配器"""
@@ -106,10 +109,7 @@ class MessengerBot:
     async def handle_message(self, msg: UniversalMessage):
         """处理消息(平台无关)"""
         response = self.agent.run(msg.text)
-        await self.platforms[msg.platform].send_message(
-            msg.channel_id,
-            response.content
-        )
+        await self.platforms[msg.platform].send_message(msg.channel_id, response.content)
 ```
 
 ---
@@ -156,19 +156,13 @@ from pig_agent_core import Agent
 from pig_llm import LLM
 
 # 创建agent
-agent = Agent(
-    llm=LLM(provider='anthropic'),
-    tools=[...]
-)
+agent = Agent(llm=LLM(provider="anthropic"), tools=[...])
 
 # 创建bot
 bot = MessengerBot(agent)
 
 # 添加Slack支持
-slack = SlackAdapter(
-    app_token='xapp-...',
-    bot_token='xoxb-...'
-)
+slack = SlackAdapter(app_token="xapp-...", bot_token="xoxb-...")
 bot.add_platform(slack)
 
 # 启动
@@ -185,13 +179,13 @@ bot = MessengerBot(agent)
 bot.add_platform(SlackAdapter(...))
 
 # Discord
-bot.add_platform(DiscordAdapter(token='...'))
+bot.add_platform(DiscordAdapter(token="..."))
 
 # WhatsApp
 bot.add_platform(WhatsAppAdapter(...))
 
 # Telegram
-bot.add_platform(TelegramAdapter(token='...'))
+bot.add_platform(TelegramAdapter(token="..."))
 
 # 启动 - 所有平台同时工作!
 bot.start()
@@ -201,6 +195,7 @@ bot.start()
 
 ```python
 from pig_messenger import MessagePlatform, UniversalMessage
+
 
 class MyPlatformAdapter(MessagePlatform):
     """自定义平台适配器"""
@@ -216,6 +211,7 @@ class MyPlatformAdapter(MessagePlatform):
     def start(self):
         # 启动监听
         pass
+
 
 # 使用
 bot.add_platform(MyPlatformAdapter())

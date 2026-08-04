@@ -1,5 +1,6 @@
 """Tool registry for managing agent tools."""
 
+from collections.abc import Iterator
 from typing import Any
 
 from .tools import Tool
@@ -8,7 +9,7 @@ from .tools import Tool
 class ToolRegistry:
     """Registry for managing agent tools."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize tool registry."""
         self._tools: dict[str, Tool] = {}
 
@@ -55,7 +56,7 @@ class ToolRegistry:
         """
         return [tool.to_openai_schema() for tool in self._tools.values()]
 
-    def execute(self, name: str, **kwargs) -> Any:
+    def execute(self, name: str, **kwargs: Any) -> Any:
         """Execute a tool by name.
 
         Args:
@@ -73,7 +74,7 @@ class ToolRegistry:
             raise KeyError(f"Tool '{name}' not found in registry")
         return tool.execute(**kwargs)
 
-    async def aexecute(self, name: str, **kwargs) -> Any:
+    async def aexecute(self, name: str, **kwargs: Any) -> Any:
         """Async execute a tool by name.
 
         Args:
@@ -99,6 +100,6 @@ class ToolRegistry:
         """Check if tool is registered."""
         return name in self._tools
 
-    def __iter__(self):
+    def __iter__(self) -> Iterator[Tool]:
         """Iterate over tools."""
         return iter(self._tools.values())

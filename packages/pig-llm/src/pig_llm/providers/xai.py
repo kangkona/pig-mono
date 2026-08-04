@@ -1,6 +1,7 @@
 """xAI (Grok) provider implementation."""
 
 from collections.abc import AsyncIterator, Iterator
+from typing import Any
 
 import openai
 
@@ -12,8 +13,8 @@ from ..compat import (
     astream_openai_tool_aware,
     build_token_limit_param,
     extract_openai_usage,
-    iter_openai_stream_choices,
     normalize_messages,
+    stream_openai_tool_aware,
 )
 from ..config import Config
 from ..models import Message, Response, StreamChunk
@@ -31,20 +32,20 @@ class XAIProvider(Provider):
         self.config = config
         base_url = config.base_url or "https://api.x.ai/v1"
 
-        self.client = openai.OpenAI(
+        self.client: Any = openai.OpenAI(
             api_key=config.api_key,
             base_url=base_url,
             timeout=config.timeout,
             max_retries=config.max_retries,
         )
-        self.async_client = openai.AsyncOpenAI(
+        self.async_client: Any = openai.AsyncOpenAI(
             api_key=config.api_key,
             base_url=base_url,
             timeout=config.timeout,
             max_retries=config.max_retries,
         )
 
-    def _convert_messages(self, messages: list[Message]) -> list[dict]:
+    def _convert_messages(self, messages: list[Message]) -> list[dict[str, Any]]:
         """Convert internal messages to xAI format."""
         result = []
         for msg in messages:
@@ -69,7 +70,7 @@ class XAIProvider(Provider):
         return result
 
     @staticmethod
-    def _extract_tool_calls(message) -> list[dict] | None:
+    def _extract_tool_calls(message: Any) -> list[dict[str, Any]] | None:
         """Extract tool_calls from OpenAI response message."""
         if not hasattr(message, "tool_calls") or not message.tool_calls:
             return None
@@ -91,7 +92,7 @@ class XAIProvider(Provider):
         model: str,
         temperature: float = 0.7,
         max_tokens: int | None = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> Response:
         """Generate a completion."""
         kwargs = apply_thinking_level(kwargs, OPENAI_COMPAT)
@@ -132,7 +133,7 @@ class XAIProvider(Provider):
         model: str,
         temperature: float = 0.7,
         max_tokens: int | None = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> Iterator[StreamChunk]:
         """Stream a completion."""
         kwargs = apply_thinking_level(kwargs, OPENAI_COMPAT)
@@ -157,13 +158,7 @@ class XAIProvider(Provider):
             **kwargs,
         )
 
-        for chunk, choice in iter_openai_stream_choices(stream):
-            if choice.delta.content:
-                yield StreamChunk(
-                    content=choice.delta.content,
-                    finish_reason=choice.finish_reason,
-                    metadata={"id": chunk.id},
-                )
+        yield from stream_openai_tool_aware(stream)
 
     async def acomplete(
         self,
@@ -171,7 +166,7 @@ class XAIProvider(Provider):
         model: str,
         temperature: float = 0.7,
         max_tokens: int | None = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> Response:
         """Async generate a completion."""
         kwargs = apply_thinking_level(kwargs, OPENAI_COMPAT)
@@ -212,7 +207,7 @@ class XAIProvider(Provider):
         model: str,
         temperature: float = 0.7,
         max_tokens: int | None = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> AsyncIterator[StreamChunk]:
         """Async stream a completion."""
         kwargs = apply_thinking_level(kwargs, OPENAI_COMPAT)

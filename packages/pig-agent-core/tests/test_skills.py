@@ -1,11 +1,13 @@
 """Tests for skills system."""
 
+from typing import Any
+
 import pytest
 from pig_agent_core.skills import Skill, SkillManager
 
 
 @pytest.fixture
-def sample_skill_content():
+def sample_skill_content() -> Any:
     """Sample skill content."""
     return """# Code Review
 
@@ -26,7 +28,7 @@ Check for errors.
 
 
 @pytest.fixture
-def sample_skill_file(tmp_path, sample_skill_content):
+def sample_skill_file(tmp_path: Any, sample_skill_content: Any) -> Any:
     """Create a sample skill file."""
     skill_dir = tmp_path / "test-skill"
     skill_dir.mkdir()
@@ -37,7 +39,7 @@ def sample_skill_file(tmp_path, sample_skill_content):
     return skill_file
 
 
-def test_skill_creation(sample_skill_file, sample_skill_content):
+def test_skill_creation(sample_skill_file: Any, sample_skill_content: Any) -> None:
     """Test creating a skill."""
     skill = Skill(
         name="test-skill",
@@ -49,7 +51,7 @@ def test_skill_creation(sample_skill_file, sample_skill_content):
     assert skill.path == sample_skill_file
 
 
-def test_skill_extract_description(sample_skill_file, sample_skill_content):
+def test_skill_extract_description(sample_skill_file: Any, sample_skill_content: Any) -> None:
     """Test extracting skill description."""
     skill = Skill("test", sample_skill_file, sample_skill_content)
 
@@ -57,7 +59,7 @@ def test_skill_extract_description(sample_skill_file, sample_skill_content):
     assert "analyze code quality" in skill.description.lower()
 
 
-def test_skill_extract_steps(sample_skill_file, sample_skill_content):
+def test_skill_extract_steps(sample_skill_file: Any, sample_skill_content: Any) -> None:
     """Test extracting skill steps."""
     skill = Skill("test", sample_skill_file, sample_skill_content)
 
@@ -67,7 +69,7 @@ def test_skill_extract_steps(sample_skill_file, sample_skill_content):
     assert "Suggest improvements" in skill.steps[2]
 
 
-def test_skill_to_prompt(sample_skill_file, sample_skill_content):
+def test_skill_to_prompt(sample_skill_file: Any, sample_skill_content: Any) -> None:
     """Test converting skill to prompt."""
     skill = Skill("test", sample_skill_file, sample_skill_content)
 
@@ -77,13 +79,13 @@ def test_skill_to_prompt(sample_skill_file, sample_skill_content):
     assert "1. Read the code" in prompt
 
 
-def test_skill_manager_creation():
+def test_skill_manager_creation() -> None:
     """Test creating skill manager."""
     manager = SkillManager()
     assert len(manager) == 0
 
 
-def test_skill_manager_load_skill(sample_skill_file):
+def test_skill_manager_load_skill(sample_skill_file: Any) -> None:
     """Test loading a skill."""
     manager = SkillManager()
 
@@ -92,7 +94,7 @@ def test_skill_manager_load_skill(sample_skill_file):
     assert len(manager) == 1
 
 
-def test_skill_manager_get_skill(sample_skill_file):
+def test_skill_manager_get_skill(sample_skill_file: Any) -> None:
     """Test getting a skill by name."""
     manager = SkillManager()
     manager.load_skill(sample_skill_file)
@@ -102,7 +104,7 @@ def test_skill_manager_get_skill(sample_skill_file):
     assert skill.name == "test-skill"
 
 
-def test_skill_manager_get_missing_skill():
+def test_skill_manager_get_missing_skill() -> None:
     """Test getting non-existent skill."""
     manager = SkillManager()
 
@@ -110,7 +112,7 @@ def test_skill_manager_get_missing_skill():
     assert skill is None
 
 
-def test_skill_manager_list_skills(sample_skill_file):
+def test_skill_manager_list_skills(sample_skill_file: Any) -> None:
     """Test listing skills."""
     manager = SkillManager()
     manager.load_skill(sample_skill_file)
@@ -120,7 +122,7 @@ def test_skill_manager_list_skills(sample_skill_file):
     assert skills[0].name == "test-skill"
 
 
-def test_skill_manager_get_skill_prompt(sample_skill_file):
+def test_skill_manager_get_skill_prompt(sample_skill_file: Any) -> None:
     """Test getting skill prompt."""
     manager = SkillManager()
     manager.load_skill(sample_skill_file)
@@ -130,7 +132,7 @@ def test_skill_manager_get_skill_prompt(sample_skill_file):
     assert "Code Review" in prompt
 
 
-def test_skill_manager_get_all_skills_prompt(sample_skill_file):
+def test_skill_manager_get_all_skills_prompt(sample_skill_file: Any) -> None:
     """Test getting all skills prompt."""
     manager = SkillManager()
     manager.load_skill(sample_skill_file)
@@ -140,7 +142,7 @@ def test_skill_manager_get_all_skills_prompt(sample_skill_file):
     assert "test-skill" in prompt
 
 
-def test_skill_manager_contains(sample_skill_file):
+def test_skill_manager_contains(sample_skill_file: Any) -> None:
     """Test checking if skill exists."""
     manager = SkillManager()
 
@@ -151,7 +153,7 @@ def test_skill_manager_contains(sample_skill_file):
     assert "test-skill" in manager
 
 
-def test_skill_manager_discover_skills(tmp_path):
+def test_skill_manager_discover_skills(tmp_path: Any) -> None:
     """Test discovering skills."""
     # Create skills directory
     skills_dir = tmp_path / ".agents" / "skills"

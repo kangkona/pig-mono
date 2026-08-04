@@ -29,7 +29,7 @@ class FileMemoryProvider:
     In production, you might use Redis, PostgreSQL, or another database.
     """
 
-    def __init__(self, storage_dir: str = "./memory"):
+    def __init__(self, storage_dir: str = "./memory") -> None:
         """Initialize file-based memory provider.
 
         Args:
@@ -108,7 +108,7 @@ class DetailedCostTracker:
         "gpt-3.5-turbo": {"input": 0.001, "output": 0.002},
     }
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize cost tracker."""
         self.llm_calls: list[dict] = []
         self.tool_calls: list[dict] = []
@@ -296,7 +296,7 @@ class MockContextLoader:
     In production, this would query a real database.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize with mock user data."""
         self.users = {
             "user123": {
@@ -346,7 +346,7 @@ class MockContextLoader:
 # ============================================================================
 
 
-async def example_custom_memory():
+async def example_custom_memory() -> Any:
     """Example: Using custom FileMemoryProvider."""
     print("\n" + "=" * 60)
     print("EXAMPLE 1: Custom Memory Provider")
@@ -374,7 +374,7 @@ async def example_custom_memory():
     print("\n✓ Custom memory provider working correctly")
 
 
-async def example_billing_hook():
+async def example_billing_hook() -> Any:
     """Example: Using DetailedCostTracker."""
     print("\n" + "=" * 60)
     print("EXAMPLE 2: Billing Hook for Cost Tracking")
@@ -398,7 +398,7 @@ async def example_billing_hook():
     print("✓ Billing hook tracking costs correctly")
 
 
-async def example_prompt_builder():
+async def example_prompt_builder() -> Any:
     """Example: Using PersonalizedPromptBuilder."""
     print("\n" + "=" * 60)
     print("EXAMPLE 3: System Prompt Builder")
@@ -423,7 +423,7 @@ async def example_prompt_builder():
     print("✓ Prompt builder personalizing correctly")
 
 
-async def example_integrated_agent():
+async def example_integrated_agent() -> Any:
     """Example: Agent with all custom extensions."""
     print("\n" + "=" * 60)
     print("EXAMPLE 4: Integrated Agent with Custom Extensions")
@@ -466,7 +466,7 @@ async def example_integrated_agent():
     """)
 
 
-async def main():
+async def main() -> Any:
     """Run all examples."""
     print("\n" + "=" * 60)
     print("CUSTOM EXTENSIONS EXAMPLES")

@@ -1,5 +1,6 @@
 """Tests for newly added providers."""
 
+from collections.abc import AsyncIterator
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
 
@@ -11,49 +12,72 @@ from pig_llm.models import Message
 class TestNewProviders:
     """Test that new providers can be imported and initialized."""
 
-    def test_bedrock_import(self):
+    def test_bedrock_import(self) -> None:
         """Test Bedrock provider import."""
         pytest.importorskip("boto3")
         from pig_llm.providers.bedrock import BedrockProvider
 
         assert BedrockProvider is not None
 
-    def test_xai_import(self):
+    def test_xai_import(self) -> None:
         """Test xAI provider import."""
         from pig_llm.providers.xai import XAIProvider
 
         assert XAIProvider is not None
 
-    def test_cerebras_import(self):
+    def test_cerebras_import(self) -> None:
         """Test Cerebras provider import."""
         from pig_llm.providers.cerebras import CerebrasProvider
 
         assert CerebrasProvider is not None
 
-    def test_cohere_import(self):
+    def test_cohere_import(self) -> None:
         """Test Cohere provider import."""
         pytest.importorskip("cohere")
         from pig_llm.providers.cohere import CohereProvider
 
         assert CohereProvider is not None
 
-    def test_perplexity_import(self):
+    def test_perplexity_import(self) -> None:
         """Test Perplexity provider import."""
         from pig_llm.providers.perplexity import PerplexityProvider
 
         assert PerplexityProvider is not None
 
-    def test_deepseek_import(self):
+    def test_deepseek_import(self) -> None:
         """Test DeepSeek provider import."""
         from pig_llm.providers.deepseek import DeepSeekProvider
 
         assert DeepSeekProvider is not None
 
-    def test_together_import(self):
+    def test_together_import(self) -> None:
         """Test Together AI provider import."""
         from pig_llm.providers.together import TogetherProvider
 
         assert TogetherProvider is not None
+
+
+def test_cohere_provider_forwards_retry_configuration() -> None:
+    """Cohere 7.x supports retry configuration on both client variants."""
+    sync_client = object()
+    async_client = object()
+
+    with (
+        patch("pig_llm.providers.cohere.Client", return_value=sync_client) as client_class,
+        patch(
+            "pig_llm.providers.cohere.AsyncClient", return_value=async_client
+        ) as async_client_class,
+    ):
+        from pig_llm.providers.cohere import CohereProvider
+
+        provider = CohereProvider(
+            Config(provider="cohere", api_key="test", timeout=17, max_retries=6)
+        )
+
+    assert provider.client is sync_client
+    assert provider.async_client is async_client
+    client_class.assert_called_once_with(api_key="test", timeout=17, max_retries=6)
+    async_client_class.assert_called_once_with(api_key="test", timeout=17, max_retries=6)
 
 
 def test_bedrock_provider_forwards_custom_request_headers() -> None:
@@ -78,7 +102,7 @@ def test_bedrock_provider_forwards_custom_request_headers() -> None:
         provider = BedrockProvider(Config(provider="bedrock", api_key="us-east-1"))
 
     provider.complete(
-        [SimpleNamespace(role="user", content="hello", metadata=None)],
+        [Message(role="user", content="hello")],
         model="anthropic.claude-opus-4-1",
         headers={"X-Test": "1"},
     )
@@ -108,7 +132,7 @@ def test_bedrock_provider_ignores_reserved_request_headers() -> None:
         provider = BedrockProvider(Config(provider="bedrock", api_key="us-east-1"))
 
     provider.complete(
-        [SimpleNamespace(role="user", content="hello", metadata=None)],
+        [Message(role="user", content="hello")],
         model="anthropic.claude-opus-4-1",
         headers={
             "X-Test": "1",
@@ -145,7 +169,7 @@ def test_bedrock_provider_uses_model_output_cap_by_default() -> None:
         )
 
     provider.complete(
-        [SimpleNamespace(role="user", content="hello", metadata=None)],
+        [Message(role="user", content="hello")],
         model="anthropic.claude-opus-4-1",
     )
 
@@ -211,7 +235,7 @@ def test_bedrock_provider_uses_adaptive_thinking_for_claude_opus_48() -> None:
         )
 
     provider.complete(
-        [SimpleNamespace(role="user", content="hello", metadata=None)],
+        [Message(role="user", content="hello")],
         model="anthropic.claude-opus-4-8",
         thinking_level="high",
     )
@@ -245,7 +269,7 @@ def test_bedrock_provider_maps_xhigh_reasoning_to_output_config() -> None:
         )
 
     provider.complete(
-        [SimpleNamespace(role="user", content="hello", metadata=None)],
+        [Message(role="user", content="hello")],
         model="anthropic.claude-opus-4-8",
         thinking_level="xhigh",
     )
@@ -258,15 +282,12 @@ def test_bedrock_provider_maps_xhigh_reasoning_to_output_config() -> None:
 class TestProviderRegistration:
     """Test that providers are registered in client."""
 
-    def test_all_providers_in_config(self):
+    def test_all_providers_in_config(self) -> None:
         """Test that all providers are in config literal."""
 
         from pig_llm.config import Config
 
-        # Get the Literal type from Config.provider
-        Config.__fields__["provider"]
-        # Check that new providers are included
-        # This is a basic sanity check
+        assert "provider" in Config.model_fields
 
     @pytest.mark.parametrize(
         "provider_name",
@@ -280,7 +301,7 @@ class TestProviderRegistration:
             "together",
         ],
     )
-    def test_provider_initialization(self, provider_name):
+    def test_provider_initialization(self, provider_name: str) -> None:
         """Test that each provider can be initialized via LLM client."""
         # This test requires dependencies to be installed
         # Mark as integration test if needed
@@ -301,7 +322,7 @@ def test_openai_compatible_providers_send_session_affinity_headers(
     module_name: str,
     class_name: str,
     base_url: str,
-):
+) -> None:
     create = Mock(
         return_value=SimpleNamespace(
             id="resp-1",
@@ -332,7 +353,7 @@ def test_openai_compatible_providers_send_session_affinity_headers(
         provider = provider_cls(Config(provider=module_name, api_key="test", base_url=base_url))
 
     provider.complete(
-        [SimpleNamespace(role="user", content="hello", metadata=None)],
+        [Message(role="user", content="hello")],
         model="test-model",
         session_id="session-42",
     )
@@ -368,7 +389,7 @@ def test_xai_provider_uses_prompt_cache_for_long_retention() -> None:
         provider = XAIProvider(Config(provider="xai", api_key="test"))
 
     provider.complete(
-        [SimpleNamespace(role="user", content="hello", metadata=None)],
+        [Message(role="user", content="hello")],
         model="test-model",
         session_id="session-xai",
         cache_retention="long",
@@ -390,7 +411,7 @@ def test_openai_compatible_providers_use_prompt_cache_for_long_retention(
     module_name: str,
     class_name: str,
     base_url: str,
-):
+) -> None:
     create = Mock(
         return_value=SimpleNamespace(
             id="resp-1",
@@ -421,7 +442,7 @@ def test_openai_compatible_providers_use_prompt_cache_for_long_retention(
         provider = provider_cls(Config(provider=module_name, api_key="test", base_url=base_url))
 
     provider.complete(
-        [SimpleNamespace(role="user", content="hello", metadata=None)],
+        [Message(role="user", content="hello")],
         model="test-model",
         session_id="session-42",
         cache_retention="long",
@@ -444,7 +465,7 @@ def test_openai_compatible_provider_wrappers_promote_developer_instruction_role(
     module_name: str,
     class_name: str,
     base_url: str,
-):
+) -> None:
     create = Mock(
         return_value=SimpleNamespace(
             id="resp-1",
@@ -513,7 +534,7 @@ def test_deepseek_provider_sends_explicit_thinking_disabled_payload() -> None:
         provider = DeepSeekProvider(Config(provider="deepseek", api_key="test"))
 
     provider.complete(
-        [SimpleNamespace(role="user", content="hello", metadata=None)],
+        [Message(role="user", content="hello")],
         model="deepseek-reasoner",
         thinking_level="off",
     )
@@ -550,7 +571,7 @@ def test_deepseek_provider_sends_explicit_thinking_enabled_payload() -> None:
         provider = DeepSeekProvider(Config(provider="deepseek", api_key="test"))
 
     provider.complete(
-        [SimpleNamespace(role="user", content="hello", metadata=None)],
+        [Message(role="user", content="hello")],
         model="deepseek-reasoner",
         thinking_level="high",
     )
@@ -587,7 +608,7 @@ def test_deepseek_v4_flash_omits_unsupported_medium_thinking() -> None:
         provider = DeepSeekProvider(Config(provider="deepseek", api_key="test"))
 
     provider.complete(
-        [SimpleNamespace(role="user", content="hello", metadata=None)],
+        [Message(role="user", content="hello")],
         model="deepseek-v4-flash",
         thinking_level="medium",
     )
@@ -624,7 +645,7 @@ def test_deepseek_v4_flash_sends_high_reasoning_effort() -> None:
         provider = DeepSeekProvider(Config(provider="deepseek", api_key="test"))
 
     provider.complete(
-        [SimpleNamespace(role="user", content="hello", metadata=None)],
+        [Message(role="user", content="hello")],
         model="deepseek-v4-flash",
         thinking_level="high",
     )
@@ -661,7 +682,7 @@ def test_deepseek_v4_flash_maps_xhigh_reasoning_to_max() -> None:
         provider = DeepSeekProvider(Config(provider="deepseek", api_key="test"))
 
     provider.complete(
-        [SimpleNamespace(role="user", content="hello", metadata=None)],
+        [Message(role="user", content="hello")],
         model="deepseek-v4-flash",
         thinking_level="xhigh",
     )
@@ -698,7 +719,7 @@ def test_deepseek_provider_uses_prompt_cache_and_affinity_headers() -> None:
         provider = DeepSeekProvider(Config(provider="deepseek", api_key="test"))
 
     provider.complete(
-        [SimpleNamespace(role="user", content="hello", metadata=None)],
+        [Message(role="user", content="hello")],
         model="deepseek-reasoner",
         session_id="session-deepseek",
         cache_retention="long",
@@ -777,7 +798,7 @@ def test_together_provider_sends_explicit_reasoning_disabled_payload() -> None:
         provider = TogetherProvider(Config(provider="together", api_key="test"))
 
     provider.complete(
-        [SimpleNamespace(role="user", content="hello", metadata=None)],
+        [Message(role="user", content="hello")],
         model="moonshotai/Kimi-K2.6",
         thinking_level="off",
     )
@@ -852,7 +873,7 @@ def test_together_provider_sends_explicit_reasoning_enabled_payload() -> None:
         provider = TogetherProvider(Config(provider="together", api_key="test"))
 
     provider.complete(
-        [SimpleNamespace(role="user", content="hello", metadata=None)],
+        [Message(role="user", content="hello")],
         model="moonshotai/Kimi-K2.6",
         thinking_level="high",
     )
@@ -889,7 +910,7 @@ def test_together_kimi_k26_omits_unsupported_medium_reasoning() -> None:
         provider = TogetherProvider(Config(provider="together", api_key="test"))
 
     provider.complete(
-        [SimpleNamespace(role="user", content="hello", metadata=None)],
+        [Message(role="user", content="hello")],
         model="moonshotai/Kimi-K2.6",
         thinking_level="medium",
     )
@@ -926,7 +947,7 @@ def test_together_deepseek_v4_pro_sends_reasoning_effort() -> None:
         provider = TogetherProvider(Config(provider="together", api_key="test"))
 
     provider.complete(
-        [SimpleNamespace(role="user", content="hello", metadata=None)],
+        [Message(role="user", content="hello")],
         model="deepseek-ai/DeepSeek-V4-Pro",
         thinking_level="high",
     )
@@ -963,7 +984,7 @@ def test_together_deepseek_v4_pro_omits_reasoning_effort_for_unmapped_levels() -
         provider = TogetherProvider(Config(provider="together", api_key="test"))
 
     provider.complete(
-        [SimpleNamespace(role="user", content="hello", metadata=None)],
+        [Message(role="user", content="hello")],
         model="deepseek-ai/DeepSeek-V4-Pro",
         thinking_level="medium",
     )
@@ -1000,7 +1021,7 @@ def test_together_gpt_oss_20b_uses_openai_reasoning_effort_payload() -> None:
         provider = TogetherProvider(Config(provider="together", api_key="test"))
 
     provider.complete(
-        [SimpleNamespace(role="user", content="hello", metadata=None)],
+        [Message(role="user", content="hello")],
         model="openai/gpt-oss-20b",
         thinking_level="high",
     )
@@ -1037,7 +1058,7 @@ def test_together_provider_uses_affinity_headers_but_omits_long_prompt_cache() -
         provider = TogetherProvider(Config(provider="together", api_key="test"))
 
     provider.complete(
-        [SimpleNamespace(role="user", content="hello", metadata=None)],
+        [Message(role="user", content="hello")],
         model="moonshotai/Kimi-K2.6",
         session_id="session-together",
         cache_retention="long",
@@ -1078,7 +1099,7 @@ def test_together_minimax_m27_omits_unsupported_off_reasoning() -> None:
         provider = TogetherProvider(Config(provider="together", api_key="test"))
 
     provider.complete(
-        [SimpleNamespace(role="user", content="hello", metadata=None)],
+        [Message(role="user", content="hello")],
         model="MiniMaxAI/MiniMax-M2.7",
         thinking_level="off",
     )
@@ -1115,7 +1136,7 @@ def test_together_kimi_k25_omits_unsupported_off_reasoning() -> None:
         provider = TogetherProvider(Config(provider="together", api_key="test"))
 
     provider.complete(
-        [SimpleNamespace(role="user", content="hello", metadata=None)],
+        [Message(role="user", content="hello")],
         model="moonshotai/Kimi-K2.5",
         thinking_level="off",
     )
@@ -1152,7 +1173,7 @@ def test_together_qwen36_plus_omits_unsupported_medium_reasoning() -> None:
         provider = TogetherProvider(Config(provider="together", api_key="test"))
 
     provider.complete(
-        [SimpleNamespace(role="user", content="hello", metadata=None)],
+        [Message(role="user", content="hello")],
         model="Qwen/Qwen3.6-Plus",
         thinking_level="medium",
     )
@@ -1195,7 +1216,7 @@ def test_azure_openai_provider_uses_session_affinity_headers() -> None:
         )
 
     provider.complete(
-        [SimpleNamespace(role="user", content="hello", metadata=None)],
+        [Message(role="user", content="hello")],
         model="test-model",
         session_id="session-99",
     )
@@ -1204,6 +1225,28 @@ def test_azure_openai_provider_uses_session_affinity_headers() -> None:
     assert create.call_args.kwargs["extra_headers"]["x-client-request-id"] == "session-99"
     assert create.call_args.kwargs["extra_headers"]["x-session-affinity"] == "session-99"
     assert create.call_args.kwargs["extra_headers"]["session-id"] == "session-99"
+
+
+def test_azure_openai_provider_defers_missing_endpoint_to_sdk_environment() -> None:
+    """Omitting base_url lets the OpenAI SDK read AZURE_OPENAI_ENDPOINT."""
+    sync_client = object()
+    async_client = object()
+
+    with (
+        patch("pig_llm.providers.azure.openai.AzureOpenAI", return_value=sync_client) as sync_class,
+        patch(
+            "pig_llm.providers.azure.openai.AsyncAzureOpenAI", return_value=async_client
+        ) as async_class,
+        patch.dict("os.environ", {"AZURE_OPENAI_ENDPOINT": "https://env.azure.test"}),
+    ):
+        from pig_llm.providers.azure import AzureOpenAIProvider
+
+        provider = AzureOpenAIProvider(Config(provider="azure", api_key="test", base_url=None))
+
+    assert provider.client is sync_client
+    assert provider.async_client is async_client
+    assert "azure_endpoint" not in sync_class.call_args.kwargs
+    assert "azure_endpoint" not in async_class.call_args.kwargs
 
 
 def test_azure_openai_provider_uses_prompt_cache_for_long_retention() -> None:
@@ -1240,7 +1283,7 @@ def test_azure_openai_provider_uses_prompt_cache_for_long_retention() -> None:
         )
 
     provider.complete(
-        [SimpleNamespace(role="user", content="hello", metadata=None)],
+        [Message(role="user", content="hello")],
         model="test-model",
         session_id="session-99",
         cache_retention="long",
@@ -1328,7 +1371,7 @@ def test_azure_openai_provider_preserves_explicit_max_tokens() -> None:
         )
 
     provider.complete(
-        [SimpleNamespace(role="user", content="hello", metadata=None)],
+        [Message(role="user", content="hello")],
         model="test-model",
         max_tokens=321,
     )
@@ -1365,7 +1408,7 @@ def test_groq_provider_uses_session_affinity_headers() -> None:
         provider = GroqProvider(Config(provider="groq", api_key="test"))
 
     provider.complete(
-        [SimpleNamespace(role="user", content="hello", metadata=None)],
+        [Message(role="user", content="hello")],
         model="test-model",
         session_id="session-groq",
     )
@@ -1444,7 +1487,7 @@ def test_groq_provider_uses_prompt_cache_for_long_retention() -> None:
         provider = GroqProvider(Config(provider="groq", api_key="test"))
 
     provider.complete(
-        [SimpleNamespace(role="user", content="hello", metadata=None)],
+        [Message(role="user", content="hello")],
         model="test-model",
         session_id="session-groq",
         cache_retention="long",
@@ -1483,7 +1526,7 @@ def test_groq_qwen3_maps_medium_reasoning_to_default() -> None:
         provider = GroqProvider(Config(provider="groq", api_key="test"))
 
     provider.complete(
-        [SimpleNamespace(role="user", content="hello", metadata=None)],
+        [Message(role="user", content="hello")],
         model="qwen/qwen3-32b",
         thinking_level="medium",
     )
@@ -1520,7 +1563,7 @@ def test_groq_qwq_keeps_reasoning_effort_value() -> None:
         provider = GroqProvider(Config(provider="groq", api_key="test"))
 
     provider.complete(
-        [SimpleNamespace(role="user", content="hello", metadata=None)],
+        [Message(role="user", content="hello")],
         model="qwen-qwq-32b",
         thinking_level="medium",
     )
@@ -1557,7 +1600,7 @@ def test_groq_non_qwen_model_keeps_reasoning_effort_value() -> None:
         provider = GroqProvider(Config(provider="groq", api_key="test"))
 
     provider.complete(
-        [SimpleNamespace(role="user", content="hello", metadata=None)],
+        [Message(role="user", content="hello")],
         model="openai/gpt-oss-20b",
         thinking_level="medium",
     )
@@ -1594,7 +1637,7 @@ def test_groq_provider_preserves_explicit_max_tokens() -> None:
         provider = GroqProvider(Config(provider="groq", api_key="test"))
 
     provider.complete(
-        [SimpleNamespace(role="user", content="hello", metadata=None)],
+        [Message(role="user", content="hello")],
         model="test-model",
         max_tokens=222,
     )
@@ -1658,7 +1701,9 @@ async def test_bedrock_astream_captures_tool_use_and_usage() -> None:
 
     assert "".join(c.content for c in chunks if c.content) == "checking"
     tool_chunks = [c for c in chunks if c.tool_calls]
-    tc = tool_chunks[-1].tool_calls[0]
+    tool_calls = tool_chunks[-1].tool_calls
+    assert tool_calls is not None
+    tc = tool_calls[0]
     assert tc["function"]["name"] == "get_weather"
     assert tc["function"]["arguments"] == '{"city":"Tokyo"}'
     usages = [c.usage for c in chunks if c.usage]
@@ -1671,8 +1716,8 @@ async def test_mistral_astream_emits_usage() -> None:
     pytest.importorskip("mistralai.models.chat_completion")
 
     class _Stream:
-        def __aiter__(self):
-            async def gen():
+        def __aiter__(self) -> AsyncIterator[SimpleNamespace]:
+            async def gen() -> AsyncIterator[SimpleNamespace]:
                 yield SimpleNamespace(
                     choices=[
                         SimpleNamespace(delta=SimpleNamespace(content="ok"), finish_reason=None)
@@ -1693,6 +1738,7 @@ async def test_mistral_astream_emits_usage() -> None:
     provider = MistralProvider.__new__(MistralProvider)
     provider.config = Config(provider="mistral", api_key="t")
     provider.async_client = SimpleNamespace(chat_stream=AsyncMock(return_value=_Stream()))
+    provider._uses_modern_client = False
     if True:
         chunks = [
             c
@@ -1706,13 +1752,95 @@ async def test_mistral_astream_emits_usage() -> None:
     assert usages[-1] == {"input_tokens": 50, "output_tokens": 8, "total_tokens": 58}
 
 
+def test_mistral_stream_preserves_terminal_reason_and_usage() -> None:
+    pytest.importorskip("mistralai.models.chat_completion")
+    from pig_llm.providers.mistral import MistralProvider
+
+    stream = iter(
+        [
+            SimpleNamespace(
+                choices=[SimpleNamespace(delta=SimpleNamespace(content="ok"), finish_reason=None)],
+                usage=None,
+            ),
+            SimpleNamespace(
+                choices=[
+                    SimpleNamespace(
+                        delta=SimpleNamespace(content=None),
+                        finish_reason="stop",
+                    )
+                ],
+                usage=SimpleNamespace(prompt_tokens=9, completion_tokens=2, total_tokens=11),
+            ),
+        ]
+    )
+    provider = MistralProvider.__new__(MistralProvider)
+    provider.config = Config(provider="mistral", api_key="t")
+    provider.client = SimpleNamespace(chat_stream=Mock(return_value=stream))
+    provider._uses_modern_client = False
+
+    chunks = list(provider.stream([Message(role="user", content="hi")], model="mistral-small"))
+
+    assert "".join(chunk.content for chunk in chunks) == "ok"
+    assert chunks[-1].finish_reason == "stop"
+    assert chunks[-1].usage == {"input_tokens": 9, "output_tokens": 2, "total_tokens": 11}
+
+
+def test_anthropic_stream_preserves_terminal_reason_and_usage() -> None:
+    pytest.importorskip("anthropic")
+    from pig_llm.providers.anthropic import AnthropicProvider
+
+    final = SimpleNamespace(
+        content=[],
+        stop_reason="end_turn",
+        usage=SimpleNamespace(input_tokens=14, output_tokens=4),
+    )
+
+    class MessageStream:
+        text_stream = iter(["ok"])
+
+        def __enter__(self) -> "MessageStream":
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            del args
+
+        def get_final_message(self) -> SimpleNamespace:
+            return final
+
+    provider = AnthropicProvider.__new__(AnthropicProvider)
+    provider.config = Config(provider="anthropic", api_key="t")
+    provider.client = SimpleNamespace(
+        messages=SimpleNamespace(stream=Mock(return_value=MessageStream()))
+    )
+
+    chunks = list(provider.stream([Message(role="user", content="hi")], model="claude-sonnet-4"))
+
+    assert "".join(chunk.content for chunk in chunks) == "ok"
+    assert chunks[-1].finish_reason == "end_turn"
+    assert chunks[-1].usage == {
+        "input_tokens": 14,
+        "output_tokens": 4,
+        "total_tokens": 18,
+    }
+
+
+def test_mistral_provider_imports_and_constructs_with_current_sdk() -> None:
+    """The adapter follows the current SDK export instead of removed client modules."""
+    from pig_llm.providers.mistral import MistralProvider
+
+    provider = MistralProvider(Config(provider="mistral", api_key="test-key"))
+
+    assert provider._uses_modern_client is True
+    assert provider.async_client is provider.client
+
+
 @pytest.mark.asyncio
 async def test_cohere_astream_emits_usage() -> None:
     pytest.importorskip("cohere")
 
     class _Stream:
-        def __aiter__(self):
-            async def gen():
+        def __aiter__(self) -> AsyncIterator[SimpleNamespace]:
+            async def gen() -> AsyncIterator[SimpleNamespace]:
                 yield SimpleNamespace(event_type="text-generation", text="ok")
                 yield SimpleNamespace(
                     event_type="stream-end",

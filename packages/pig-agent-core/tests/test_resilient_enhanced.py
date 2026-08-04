@@ -1,5 +1,6 @@
 """Tests for enhanced resilient calls with events and custom exceptions."""
 
+from typing import Any
 from unittest.mock import AsyncMock, Mock
 
 import pytest
@@ -15,7 +16,7 @@ from pig_agent_core.resilience.retry import (
 class TestResilienceExhaustedError:
     """Test ResilienceExhaustedError custom exception."""
 
-    def test_exception_attributes(self):
+    def test_exception_attributes(self) -> None:
         """Test that exception has expected attributes."""
         original = ValueError("Original error")
         error = ResilienceExhaustedError(
@@ -30,7 +31,7 @@ class TestResilienceExhaustedError:
         assert error.attempts == 3
         assert error.strategies_tried == ["profile_rotation", "context_compression"]
 
-    def test_exception_default_strategies(self):
+    def test_exception_default_strategies(self) -> None:
         """Test that strategies_tried defaults to empty list."""
         original = ValueError("Original error")
         error = ResilienceExhaustedError(
@@ -41,7 +42,7 @@ class TestResilienceExhaustedError:
         assert error.strategies_tried == []
         assert error.attempts == 0
 
-    def test_exception_is_exception(self):
+    def test_exception_is_exception(self) -> None:
         """Test that ResilienceExhaustedError is an Exception."""
         error = ResilienceExhaustedError(
             "Failed",
@@ -55,11 +56,11 @@ class TestResilientCallWithEvents:
     """Test resilient_call with event emission."""
 
     @pytest.mark.asyncio
-    async def test_successful_call_no_events(self):
+    async def test_successful_call_no_events(self) -> None:
         """Test successful call emits no resilience events."""
         events = []
 
-        def callback(event: AgentEvent):
+        def callback(event: AgentEvent) -> Any:
             events.append(event)
 
         # Mock LLM that succeeds
@@ -80,11 +81,11 @@ class TestResilientCallWithEvents:
         assert len(events) == 0
 
     @pytest.mark.asyncio
-    async def test_retry_emits_event(self):
+    async def test_retry_emits_event(self) -> None:
         """Test that retry emits resilience_retry event."""
         events = []
 
-        def callback(event: AgentEvent):
+        def callback(event: AgentEvent) -> Any:
             events.append(event)
 
         # Mock LLM that fails once then succeeds
@@ -109,14 +110,14 @@ class TestResilientCallWithEvents:
         assert retry_events[0].data["attempt"] == 1
 
     @pytest.mark.asyncio
-    async def test_compression_emits_event(self):
+    async def test_compression_emits_event(self) -> None:
         """Test that context compression emits resilience_compact event."""
         events = []
 
-        def callback(event: AgentEvent):
+        def callback(event: AgentEvent) -> Any:
             events.append(event)
 
-        def compress_fn(messages):
+        def compress_fn(messages: Any) -> Any:
             return messages[:1]  # Compress to first message
 
         # Mock LLM that fails with context overflow then succeeds
@@ -142,11 +143,11 @@ class TestResilientCallWithEvents:
         assert compact_events[0].data["compressed_count"] == 1
 
     @pytest.mark.asyncio
-    async def test_fallback_emits_event(self):
+    async def test_fallback_emits_event(self) -> None:
         """Test that model fallback emits resilience_fallback event."""
         events = []
 
-        def callback(event: AgentEvent):
+        def callback(event: AgentEvent) -> Any:
             events.append(event)
 
         # Mock profile manager with fallback model
@@ -179,7 +180,7 @@ class TestResilientCallWithEvents:
         assert fallback_events[0].data["to_model"] == "gpt-3.5-turbo"
 
     @pytest.mark.asyncio
-    async def test_exhausted_raises_custom_exception(self):
+    async def test_exhausted_raises_custom_exception(self) -> None:
         """Test that exhausted retries raise ResilienceExhaustedError."""
         # Mock LLM that always fails
         llm = Mock()
@@ -194,15 +195,16 @@ class TestResilientCallWithEvents:
             )
 
         error = exc_info.value
-        assert error.attempts == 2
+        # max_retries is additional retries: one initial call + two retries.
+        assert error.attempts == 3
         assert isinstance(error.original_error, Exception)
         assert "Persistent error" in str(error.original_error)
 
     @pytest.mark.asyncio
-    async def test_exhausted_tracks_strategies(self):
+    async def test_exhausted_tracks_strategies(self) -> None:
         """Test that ResilienceExhaustedError tracks strategies tried."""
 
-        def compress_fn(messages):
+        def compress_fn(messages: Any) -> Any:
             return messages[:1]
 
         profile_manager = ProfileManager(
@@ -234,20 +236,20 @@ class TestResilientStreamingCallWithEvents:
     """Test resilient_streaming_call with event emission."""
 
     @pytest.mark.asyncio
-    async def test_successful_streaming_no_events(self):
+    async def test_successful_streaming_no_events(self) -> None:
         """Test successful streaming call emits no resilience events."""
         events = []
 
-        def callback(event: AgentEvent):
+        def callback(event: AgentEvent) -> Any:
             events.append(event)
 
         # Mock LLM that succeeds
-        async def mock_stream(*args, **kwargs):
+        async def mock_stream(*args: Any, **kwargs: Any) -> Any:
             yield Mock(content="chunk1")
             yield Mock(content="chunk2")
 
         llm = Mock()
-        llm.astream = mock_stream
+        llm.achat_stream = mock_stream
         llm.config.model = "gpt-4"
 
         chunks = []
@@ -263,17 +265,17 @@ class TestResilientStreamingCallWithEvents:
         assert len(events) == 0
 
     @pytest.mark.asyncio
-    async def test_streaming_retry_emits_event(self):
+    async def test_streaming_retry_emits_event(self) -> None:
         """Test that streaming retry emits resilience_retry event."""
         events = []
 
-        def callback(event: AgentEvent):
+        def callback(event: AgentEvent) -> Any:
             events.append(event)
 
         # Mock LLM that fails once then succeeds
         call_count = 0
 
-        async def mock_stream(*args, **kwargs):
+        async def mock_stream(*args: Any, **kwargs: Any) -> Any:
             nonlocal call_count
             call_count += 1
             if call_count == 1:
@@ -281,7 +283,7 @@ class TestResilientStreamingCallWithEvents:
             yield Mock(content="chunk1")
 
         llm = Mock()
-        llm.astream = mock_stream
+        llm.achat_stream = mock_stream
         llm.config.model = "gpt-4"
 
         chunks = []
@@ -299,16 +301,16 @@ class TestResilientStreamingCallWithEvents:
         assert len(retry_events) == 1
 
     @pytest.mark.asyncio
-    async def test_streaming_exhausted_raises_custom_exception(self):
+    async def test_streaming_exhausted_raises_custom_exception(self) -> None:
         """Test that exhausted streaming retries raise ResilienceExhaustedError."""
 
         # Mock LLM that always fails
-        async def mock_stream(*args, **kwargs):
+        async def mock_stream(*args: Any, **kwargs: Any) -> Any:
             raise Exception("Persistent error")
             yield  # Never reached
 
         llm = Mock()
-        llm.astream = mock_stream
+        llm.achat_stream = mock_stream
         llm.config.model = "gpt-4"
 
         with pytest.raises(ResilienceExhaustedError) as exc_info:
@@ -320,7 +322,8 @@ class TestResilientStreamingCallWithEvents:
                 pass
 
         error = exc_info.value
-        assert error.attempts == 2
+        # max_retries is additional retries: one initial call + two retries.
+        assert error.attempts == 3
         assert isinstance(error.original_error, Exception)
 
 
@@ -328,7 +331,7 @@ class TestBackwardCompatibility:
     """Test that enhanced features maintain backward compatibility."""
 
     @pytest.mark.asyncio
-    async def test_call_without_event_callback_still_works(self):
+    async def test_call_without_event_callback_still_works(self) -> None:
         """Test that resilient_call works without event_callback."""
         llm = Mock()
         response = Mock()
@@ -341,14 +344,14 @@ class TestBackwardCompatibility:
         assert result == "Success"
 
     @pytest.mark.asyncio
-    async def test_streaming_without_event_callback_still_works(self):
+    async def test_streaming_without_event_callback_still_works(self) -> None:
         """Test that resilient_streaming_call works without event_callback."""
 
-        async def mock_stream(*args, **kwargs):
+        async def mock_stream(*args: Any, **kwargs: Any) -> Any:
             yield Mock(content="chunk1")
 
         llm = Mock()
-        llm.astream = mock_stream
+        llm.achat_stream = mock_stream
         llm.config.model = "gpt-4"
 
         # Should work without event_callback
@@ -359,7 +362,7 @@ class TestBackwardCompatibility:
         assert len(chunks) == 1
 
     @pytest.mark.asyncio
-    async def test_old_exception_behavior_preserved(self):
+    async def test_old_exception_behavior_preserved(self) -> None:
         """Test that old exception behavior is preserved (raises from original)."""
         llm = Mock()
         llm.achat = AsyncMock(side_effect=ValueError("Test error"))

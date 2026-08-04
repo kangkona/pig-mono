@@ -1,6 +1,7 @@
 """Tests for core tool handlers."""
 
 import asyncio
+from typing import Any
 
 import pytest
 from pig_agent_core.tools.handlers_core import (
@@ -11,7 +12,7 @@ from pig_agent_core.tools.handlers_core import (
 )
 
 
-def test_handlers_registered():
+def test_handlers_registered() -> None:
     """Test that all handlers are registered."""
     assert "think" in HANDLERS
     assert "plan" in HANDLERS
@@ -19,7 +20,7 @@ def test_handlers_registered():
 
 
 @pytest.mark.asyncio
-async def test_handle_think_success():
+async def test_handle_think_success() -> None:
     """Test think handler with valid input."""
     args = {"thought": "I should search for information first"}
     result = await handle_think(args, "user123", {})
@@ -30,27 +31,29 @@ async def test_handle_think_success():
 
 
 @pytest.mark.asyncio
-async def test_handle_think_empty():
+async def test_handle_think_empty() -> None:
     """Test think handler with empty thought."""
     args = {"thought": ""}
     result = await handle_think(args, "user123", {})
 
     assert result.ok is False
+    assert result.error is not None
     assert "required" in result.error.lower()
 
 
 @pytest.mark.asyncio
-async def test_handle_think_missing():
+async def test_handle_think_missing() -> None:
     """Test think handler with missing thought."""
-    args = {}
+    args: dict[str, Any] = {}
     result = await handle_think(args, "user123", {})
 
     assert result.ok is False
+    assert result.error is not None
     assert "required" in result.error.lower()
 
 
 @pytest.mark.asyncio
-async def test_handle_plan_success():
+async def test_handle_plan_success() -> None:
     """Test plan handler with valid input."""
     args = {
         "goal": "Research competitors",
@@ -67,49 +70,53 @@ async def test_handle_plan_success():
 
 
 @pytest.mark.asyncio
-async def test_handle_plan_missing_goal():
+async def test_handle_plan_missing_goal() -> None:
     """Test plan handler with missing goal."""
     args = {"steps": ["Step 1", "Step 2"]}
     result = await handle_plan(args, "user123", {})
 
     assert result.ok is False
+    assert result.error is not None
     assert "goal" in result.error.lower()
 
 
 @pytest.mark.asyncio
-async def test_handle_plan_missing_steps():
+async def test_handle_plan_missing_steps() -> None:
     """Test plan handler with missing steps."""
     args = {"goal": "Do something"}
     result = await handle_plan(args, "user123", {})
 
     assert result.ok is False
+    assert result.error is not None
     assert "steps" in result.error.lower()
 
 
 @pytest.mark.asyncio
-async def test_handle_plan_empty_steps():
+async def test_handle_plan_empty_steps() -> None:
     """Test plan handler with empty steps list."""
     args = {"goal": "Do something", "steps": []}
     result = await handle_plan(args, "user123", {})
 
     assert result.ok is False
+    assert result.error is not None
     assert "step" in result.error.lower()
 
 
 @pytest.mark.asyncio
-async def test_handle_plan_invalid_step():
+async def test_handle_plan_invalid_step() -> None:
     """Test plan handler with invalid step."""
     args = {"goal": "Do something", "steps": ["Valid step", "", "Another step"]}
     result = await handle_plan(args, "user123", {})
 
     assert result.ok is False
+    assert result.error is not None
     assert "step" in result.error.lower()
 
 
 @pytest.mark.asyncio
-async def test_handle_discover_tools_no_query():
+async def test_handle_discover_tools_no_query() -> None:
     """Test discover_tools handler without query."""
-    args = {}
+    args: dict[str, Any] = {}
     result = await handle_discover_tools(args, "user123", {})
 
     assert result.ok is True
@@ -119,7 +126,7 @@ async def test_handle_discover_tools_no_query():
 
 
 @pytest.mark.asyncio
-async def test_handle_discover_tools_empty_query():
+async def test_handle_discover_tools_empty_query() -> None:
     """Test discover_tools handler with empty query."""
     args = {"query": ""}
     result = await handle_discover_tools(args, "user123", {})
@@ -130,7 +137,7 @@ async def test_handle_discover_tools_empty_query():
 
 
 @pytest.mark.asyncio
-async def test_handle_discover_tools_no_match():
+async def test_handle_discover_tools_no_match() -> None:
     """Test discover_tools handler with no matching tools."""
     args = {"query": "nonexistent_tool_xyz"}
     result = await handle_discover_tools(args, "user123", {})
@@ -142,7 +149,7 @@ async def test_handle_discover_tools_no_match():
 
 
 @pytest.mark.asyncio
-async def test_handle_discover_tools_with_match():
+async def test_handle_discover_tools_with_match() -> None:
     """Test discover_tools handler with matching query."""
     # Since we only have core tools registered, this will return empty
     # In a real scenario with web tools, this would match
@@ -155,7 +162,7 @@ async def test_handle_discover_tools_with_match():
 
 
 @pytest.mark.asyncio
-async def test_handle_think_with_cancellation():
+async def test_handle_think_with_cancellation() -> None:
     """Test think handler respects cancellation."""
     args = {"thought": "Testing cancellation"}
     cancel = asyncio.Event()
@@ -166,7 +173,7 @@ async def test_handle_think_with_cancellation():
 
 
 @pytest.mark.asyncio
-async def test_handle_plan_with_cancellation():
+async def test_handle_plan_with_cancellation() -> None:
     """Test plan handler respects cancellation."""
     args = {"goal": "Test", "steps": ["Step 1"]}
     cancel = asyncio.Event()
@@ -176,7 +183,7 @@ async def test_handle_plan_with_cancellation():
 
 
 @pytest.mark.asyncio
-async def test_handlers_are_async():
+async def test_handlers_are_async() -> None:
     """Test that all handlers are async functions."""
     import inspect
 
@@ -185,7 +192,7 @@ async def test_handlers_are_async():
 
 
 @pytest.mark.asyncio
-async def test_handle_plan_single_step():
+async def test_handle_plan_single_step() -> None:
     """Test plan handler with single step."""
     args = {"goal": "Simple task", "steps": ["Do it"]}
     result = await handle_plan(args, "user123", {})
@@ -195,7 +202,7 @@ async def test_handle_plan_single_step():
 
 
 @pytest.mark.asyncio
-async def test_handle_plan_many_steps():
+async def test_handle_plan_many_steps() -> None:
     """Test plan handler with many steps."""
     steps = [f"Step {i}" for i in range(10)]
     args = {"goal": "Complex task", "steps": steps}

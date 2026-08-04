@@ -10,7 +10,7 @@ from pig_llm import LLM
 
 
 # Define a sample tool
-def get_weather_tool():
+def get_weather_tool() -> dict[str, object]:
     """Returns a weather tool definition in OpenAI format."""
     return {
         "type": "function",
@@ -50,7 +50,7 @@ def simulate_weather_api(location: str, unit: str = "celsius") -> str:
 
 
 # Example 1: OpenAI Provider
-def example_openai():
+def example_openai() -> None:
     """Example using OpenAI provider with tool calling."""
     print("\n=== OpenAI Tool Calling Example ===\n")
 
@@ -82,7 +82,7 @@ def example_openai():
 
 
 # Example 2: Anthropic Provider
-def example_anthropic():
+def example_anthropic() -> None:
     """Example using Anthropic provider with tool calling."""
     print("\n=== Anthropic Tool Calling Example ===\n")
 
@@ -114,7 +114,7 @@ def example_anthropic():
 
 
 # Example 3: Google Gemini Provider
-def example_google():
+def example_google() -> None:
     """Example using Google Gemini provider with tool calling."""
     print("\n=== Google Gemini Tool Calling Example ===\n")
 
@@ -146,7 +146,7 @@ def example_google():
 
 
 # Example 4: Multiple Tools
-def example_multiple_tools():
+def example_multiple_tools() -> None:
     """Example with multiple tools."""
     print("\n=== Multiple Tools Example ===\n")
 
@@ -185,7 +185,7 @@ def example_multiple_tools():
 
 
 # Example 5: Custom Provider (OpenAI-compatible)
-def example_custom_provider():
+def example_custom_provider() -> None:
     """Example using a custom OpenAI-compatible provider."""
     print("\n=== Custom Provider Example ===\n")
 
@@ -206,7 +206,7 @@ def example_custom_provider():
 
 
 # Example 6: Checking Tool Call Details
-def example_tool_call_details():
+def example_tool_call_details() -> None:
     """Example showing how to inspect tool call details."""
     print("\n=== Tool Call Details Example ===\n")
 

@@ -4,6 +4,7 @@
 import sys
 import time
 from pathlib import Path
+from typing import Any
 
 # Add src to path
 src_path = Path(__file__).parent.parent / "src"
@@ -23,7 +24,7 @@ from pig_agent_core.observability.events import (  # noqa: E402
 )
 
 
-def test_agent_event_creation():
+def test_agent_event_creation() -> None:
     """Test AgentEvent creation."""
     event = AgentEvent(
         type=AgentEventType.AGENT_START,
@@ -36,7 +37,7 @@ def test_agent_event_creation():
     print("✓ test_agent_event_creation passed")
 
 
-def test_agent_event_to_dict():
+def test_agent_event_to_dict() -> None:
     """Test AgentEvent to_dict conversion."""
     event = AgentEvent(
         type=AgentEventType.TOOL_START,
@@ -53,11 +54,11 @@ def test_agent_event_to_dict():
     print("✓ test_agent_event_to_dict passed")
 
 
-def test_emit_with_callback():
+def test_emit_with_callback() -> None:
     """Test emit with callback."""
     events = []
 
-    def callback(event):
+    def callback(event: Any) -> Any:
         events.append(event)
 
     event = AgentEvent(type=AgentEventType.AGENT_START, data={"test": "data"})
@@ -68,17 +69,17 @@ def test_emit_with_callback():
     print("✓ test_emit_with_callback passed")
 
 
-def test_emit_without_callback():
+def test_emit_without_callback() -> None:
     """Test emit without callback (should not error)."""
     event = AgentEvent(type=AgentEventType.AGENT_START)
     emit(None, event)  # Should not raise
     print("✓ test_emit_without_callback passed")
 
 
-def test_emit_with_failing_callback():
+def test_emit_with_failing_callback() -> None:
     """Test emit with failing callback (should not raise)."""
 
-    def failing_callback(event):
+    def failing_callback(event: Any) -> Any:
         raise Exception("Callback error")
 
     event = AgentEvent(type=AgentEventType.AGENT_START)
@@ -86,11 +87,11 @@ def test_emit_with_failing_callback():
     print("✓ test_emit_with_failing_callback passed")
 
 
-def test_span_context_manager():
+def test_span_context_manager() -> None:
     """Test span context manager."""
     events = []
 
-    def callback(event):
+    def callback(event: Any) -> Any:
         events.append(event)
 
     with span("test_operation", callback=callback, attrs={"user": "123"}):
@@ -106,11 +107,11 @@ def test_span_context_manager():
     print("✓ test_span_context_manager passed")
 
 
-def test_span_with_span_id():
+def test_span_with_span_id() -> None:
     """Test span with custom span ID."""
     events = []
 
-    def callback(event):
+    def callback(event: Any) -> Any:
         events.append(event)
 
     with span(
@@ -126,11 +127,11 @@ def test_span_with_span_id():
     print("✓ test_span_with_span_id passed")
 
 
-def test_span_generates_id():
+def test_span_generates_id() -> None:
     """Test span generates ID if not provided."""
     events = []
 
-    def callback(event):
+    def callback(event: Any) -> Any:
         events.append(event)
 
     with span("test_op", callback=callback) as span_id:
@@ -141,11 +142,11 @@ def test_span_generates_id():
     print("✓ test_span_generates_id passed")
 
 
-def test_emit_agent_start():
+def test_emit_agent_start() -> None:
     """Test emit_agent_start helper."""
     events = []
 
-    def callback(event):
+    def callback(event: Any) -> Any:
         events.append(event)
 
     emit_agent_start(callback, agent_id="agent-1", user_id="user-1", extra="data")
@@ -158,11 +159,11 @@ def test_emit_agent_start():
     print("✓ test_emit_agent_start passed")
 
 
-def test_emit_agent_end():
+def test_emit_agent_end() -> None:
     """Test emit_agent_end helper."""
     events = []
 
-    def callback(event):
+    def callback(event: Any) -> Any:
         events.append(event)
 
     emit_agent_end(callback, agent_id="agent-1", success=False, error="Test error")
@@ -175,11 +176,11 @@ def test_emit_agent_end():
     print("✓ test_emit_agent_end passed")
 
 
-def test_emit_turn_start():
+def test_emit_turn_start() -> None:
     """Test emit_turn_start helper."""
     events = []
 
-    def callback(event):
+    def callback(event: Any) -> Any:
         events.append(event)
 
     emit_turn_start(callback, turn_number=1, user_message="Hello")
@@ -191,11 +192,11 @@ def test_emit_turn_start():
     print("✓ test_emit_turn_start passed")
 
 
-def test_emit_turn_end():
+def test_emit_turn_end() -> None:
     """Test emit_turn_end helper."""
     events = []
 
-    def callback(event):
+    def callback(event: Any) -> Any:
         events.append(event)
 
     emit_turn_end(callback, turn_number=1, assistant_message="Hi there", tool_calls=2)
@@ -208,11 +209,11 @@ def test_emit_turn_end():
     print("✓ test_emit_turn_end passed")
 
 
-def test_emit_tool_start():
+def test_emit_tool_start() -> None:
     """Test emit_tool_start helper."""
     events = []
 
-    def callback(event):
+    def callback(event: Any) -> Any:
         events.append(event)
 
     emit_tool_start(callback, tool_name="search", tool_args={"query": "test"})
@@ -224,11 +225,11 @@ def test_emit_tool_start():
     print("✓ test_emit_tool_start passed")
 
 
-def test_emit_tool_end():
+def test_emit_tool_end() -> None:
     """Test emit_tool_end helper."""
     events = []
 
-    def callback(event):
+    def callback(event: Any) -> Any:
         events.append(event)
 
     emit_tool_end(callback, tool_name="search", success=True, result={"items": [1, 2, 3]})
@@ -241,20 +242,20 @@ def test_emit_tool_end():
     print("✓ test_emit_tool_end passed")
 
 
-def test_event_types():
+def test_event_types() -> None:
     """Test all event types are defined."""
-    assert AgentEventType.AGENT_START == "agent_start"
-    assert AgentEventType.AGENT_END == "agent_end"
-    assert AgentEventType.TURN_START == "turn_start"
-    assert AgentEventType.TURN_END == "turn_end"
-    assert AgentEventType.TOOL_START == "tool_start"
-    assert AgentEventType.TOOL_END == "tool_end"
-    assert AgentEventType.SPAN_START == "span_start"
-    assert AgentEventType.SPAN_END == "span_end"
+    assert AgentEventType.AGENT_START.value == "agent_start"
+    assert AgentEventType.AGENT_END.value == "agent_end"
+    assert AgentEventType.TURN_START.value == "turn_start"
+    assert AgentEventType.TURN_END.value == "turn_end"
+    assert AgentEventType.TOOL_START.value == "tool_start"
+    assert AgentEventType.TOOL_END.value == "tool_end"
+    assert AgentEventType.SPAN_START.value == "span_start"
+    assert AgentEventType.SPAN_END.value == "span_end"
     print("✓ test_event_types passed")
 
 
-def main():
+def main() -> Any:
     """Run all tests."""
     print("Running observability event system tests...")
     print()

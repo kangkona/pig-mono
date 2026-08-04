@@ -16,22 +16,22 @@ from pig_agent_core.observability.events import (
 class TestResilienceEventTypes:
     """Test resilience event types."""
 
-    def test_profile_rotated_event_type_exists(self):
+    def test_profile_rotated_event_type_exists(self) -> None:
         """Test that PROFILE_ROTATED event type exists."""
         assert hasattr(AgentEventType, "PROFILE_ROTATED")
         assert AgentEventType.PROFILE_ROTATED.value == "profile_rotated"
 
-    def test_context_compressed_event_type_exists(self):
+    def test_context_compressed_event_type_exists(self) -> None:
         """Test that CONTEXT_COMPRESSED event type exists."""
         assert hasattr(AgentEventType, "CONTEXT_COMPRESSED")
         assert AgentEventType.CONTEXT_COMPRESSED.value == "context_compressed"
 
-    def test_model_fallback_event_type_exists(self):
+    def test_model_fallback_event_type_exists(self) -> None:
         """Test that MODEL_FALLBACK event type exists."""
         assert hasattr(AgentEventType, "MODEL_FALLBACK")
         assert AgentEventType.MODEL_FALLBACK.value == "model_fallback"
 
-    def test_all_event_types_are_strings(self):
+    def test_all_event_types_are_strings(self) -> None:
         """Test that all event types are string enums."""
         for event_type in AgentEventType:
             assert isinstance(event_type.value, str)
@@ -40,11 +40,11 @@ class TestResilienceEventTypes:
 class TestEmitProfileRotated:
     """Test emit_profile_rotated helper function."""
 
-    def test_emit_profile_rotated_basic(self):
+    def test_emit_profile_rotated_basic(self) -> None:
         """Test emitting profile rotated event."""
         events = []
 
-        def callback(event: AgentEvent):
+        def callback(event: AgentEvent) -> Any:
             events.append(event)
 
         emit_profile_rotated(
@@ -56,14 +56,16 @@ class TestEmitProfileRotated:
         assert len(events) == 1
         event = events[0]
         assert event.type == AgentEventType.PROFILE_ROTATED
-        assert event.data["from_key"] == "old-key-123"
-        assert event.data["to_key"] == "new-key-456"
+        assert event.data["from_key"].startswith("sha256:")
+        assert event.data["to_key"].startswith("sha256:")
+        assert "old-key-123" not in str(event.data)
+        assert "new-key-456" not in str(event.data)
 
-    def test_emit_profile_rotated_with_reason(self):
+    def test_emit_profile_rotated_with_reason(self) -> None:
         """Test emitting profile rotated event with reason."""
         events = []
 
-        def callback(event: AgentEvent):
+        def callback(event: AgentEvent) -> Any:
             events.append(event)
 
         emit_profile_rotated(
@@ -76,11 +78,11 @@ class TestEmitProfileRotated:
         assert len(events) == 1
         assert events[0].data["reason"] == "rate_limit"
 
-    def test_emit_profile_rotated_with_none_from_key(self):
+    def test_emit_profile_rotated_with_none_from_key(self) -> None:
         """Test emitting profile rotated event with None from_key."""
         events = []
 
-        def callback(event: AgentEvent):
+        def callback(event: AgentEvent) -> Any:
             events.append(event)
 
         emit_profile_rotated(
@@ -92,11 +94,11 @@ class TestEmitProfileRotated:
         assert len(events) == 1
         assert events[0].data["from_key"] is None
 
-    def test_emit_profile_rotated_with_extra_kwargs(self):
+    def test_emit_profile_rotated_with_extra_kwargs(self) -> None:
         """Test emitting profile rotated event with extra data."""
         events = []
 
-        def callback(event: AgentEvent):
+        def callback(event: AgentEvent) -> Any:
             events.append(event)
 
         emit_profile_rotated(
@@ -111,7 +113,7 @@ class TestEmitProfileRotated:
         assert events[0].data["cooldown"] == 60.0
         assert events[0].data["attempt"] == 2
 
-    def test_emit_profile_rotated_without_callback(self):
+    def test_emit_profile_rotated_without_callback(self) -> None:
         """Test that emit_profile_rotated works without callback."""
         # Should not raise
         emit_profile_rotated(
@@ -124,11 +126,11 @@ class TestEmitProfileRotated:
 class TestEmitContextCompressed:
     """Test emit_context_compressed helper function."""
 
-    def test_emit_context_compressed_basic(self):
+    def test_emit_context_compressed_basic(self) -> None:
         """Test emitting context compressed event."""
         events = []
 
-        def callback(event: AgentEvent):
+        def callback(event: AgentEvent) -> Any:
             events.append(event)
 
         emit_context_compressed(
@@ -144,11 +146,11 @@ class TestEmitContextCompressed:
         assert event.data["compressed_count"] == 5
         assert event.data["reduction"] == 5
 
-    def test_emit_context_compressed_with_level(self):
+    def test_emit_context_compressed_with_level(self) -> None:
         """Test emitting context compressed event with compression level."""
         events = []
 
-        def callback(event: AgentEvent):
+        def callback(event: AgentEvent) -> Any:
             events.append(event)
 
         emit_context_compressed(
@@ -161,11 +163,11 @@ class TestEmitContextCompressed:
         assert len(events) == 1
         assert events[0].data["compression_level"] == 2
 
-    def test_emit_context_compressed_calculates_reduction(self):
+    def test_emit_context_compressed_calculates_reduction(self) -> None:
         """Test that reduction is calculated correctly."""
         events = []
 
-        def callback(event: AgentEvent):
+        def callback(event: AgentEvent) -> Any:
             events.append(event)
 
         emit_context_compressed(
@@ -177,11 +179,11 @@ class TestEmitContextCompressed:
         assert len(events) == 1
         assert events[0].data["reduction"] == 75
 
-    def test_emit_context_compressed_with_extra_kwargs(self):
+    def test_emit_context_compressed_with_extra_kwargs(self) -> None:
         """Test emitting context compressed event with extra data."""
         events = []
 
-        def callback(event: AgentEvent):
+        def callback(event: AgentEvent) -> Any:
             events.append(event)
 
         emit_context_compressed(
@@ -194,7 +196,7 @@ class TestEmitContextCompressed:
         assert len(events) == 1
         assert events[0].data["strategy"] == "truncate"
 
-    def test_emit_context_compressed_without_callback(self):
+    def test_emit_context_compressed_without_callback(self) -> None:
         """Test that emit_context_compressed works without callback."""
         # Should not raise
         emit_context_compressed(
@@ -207,11 +209,11 @@ class TestEmitContextCompressed:
 class TestEmitModelFallback:
     """Test emit_model_fallback helper function."""
 
-    def test_emit_model_fallback_basic(self):
+    def test_emit_model_fallback_basic(self) -> None:
         """Test emitting model fallback event."""
         events = []
 
-        def callback(event: AgentEvent):
+        def callback(event: AgentEvent) -> Any:
             events.append(event)
 
         emit_model_fallback(
@@ -226,11 +228,11 @@ class TestEmitModelFallback:
         assert event.data["from_model"] == "gpt-4"
         assert event.data["to_model"] == "gpt-3.5-turbo"
 
-    def test_emit_model_fallback_with_reason(self):
+    def test_emit_model_fallback_with_reason(self) -> None:
         """Test emitting model fallback event with reason."""
         events = []
 
-        def callback(event: AgentEvent):
+        def callback(event: AgentEvent) -> Any:
             events.append(event)
 
         emit_model_fallback(
@@ -243,11 +245,11 @@ class TestEmitModelFallback:
         assert len(events) == 1
         assert events[0].data["reason"] == "context_overflow"
 
-    def test_emit_model_fallback_with_extra_kwargs(self):
+    def test_emit_model_fallback_with_extra_kwargs(self) -> None:
         """Test emitting model fallback event with extra data."""
         events = []
 
-        def callback(event: AgentEvent):
+        def callback(event: AgentEvent) -> Any:
             events.append(event)
 
         emit_model_fallback(
@@ -262,7 +264,7 @@ class TestEmitModelFallback:
         assert events[0].data["attempt"] == 3
         assert events[0].data["cost_savings"] == 0.5
 
-    def test_emit_model_fallback_without_callback(self):
+    def test_emit_model_fallback_without_callback(self) -> None:
         """Test that emit_model_fallback works without callback."""
         # Should not raise
         emit_model_fallback(
@@ -275,30 +277,30 @@ class TestEmitModelFallback:
 class TestBillingHookProtocol:
     """Test BillingHook protocol."""
 
-    def test_billing_hook_protocol_exists(self):
+    def test_billing_hook_protocol_exists(self) -> None:
         """Test that BillingHook protocol is defined."""
         assert BillingHook is not None
 
-    def test_billing_hook_has_on_llm_call(self):
+    def test_billing_hook_has_on_llm_call(self) -> None:
         """Test that BillingHook has on_llm_call method."""
         # Check that protocol has the method signature
         assert hasattr(BillingHook, "on_llm_call")
 
-    def test_billing_hook_has_on_tool_call(self):
+    def test_billing_hook_has_on_tool_call(self) -> None:
         """Test that BillingHook has on_tool_call method."""
         assert hasattr(BillingHook, "on_tool_call")
 
-    def test_billing_hook_has_get_usage_summary(self):
+    def test_billing_hook_has_get_usage_summary(self) -> None:
         """Test that BillingHook has get_usage_summary method."""
         assert hasattr(BillingHook, "get_usage_summary")
 
-    def test_billing_hook_implementation(self):
+    def test_billing_hook_implementation(self) -> None:
         """Test implementing BillingHook protocol."""
 
         class SimpleBillingHook:
-            def __init__(self):
-                self.llm_calls = []
-                self.tool_calls = []
+            def __init__(self) -> None:
+                self.llm_calls: list[dict[str, Any]] = []
+                self.tool_calls: list[dict[str, Any]] = []
 
             def on_llm_call(
                 self,
@@ -345,7 +347,7 @@ class TestBillingHookProtocol:
         assert summary["total_llm_calls"] == 1
         assert summary["total_tool_calls"] == 1
 
-    def test_billing_hook_with_cost_calculation(self):
+    def test_billing_hook_with_cost_calculation(self) -> None:
         """Test BillingHook implementation with cost calculation."""
 
         class CostTrackingHook:
@@ -355,7 +357,7 @@ class TestBillingHookProtocol:
                 "gpt-3.5-turbo": {"input": 0.001, "output": 0.002},
             }
 
-            def __init__(self):
+            def __init__(self) -> None:
                 self.total_cost = 0.0
 
             def on_llm_call(
@@ -395,11 +397,11 @@ class TestBillingHookProtocol:
 class TestEventTimestamps:
     """Test that resilience events have timestamps."""
 
-    def test_profile_rotated_has_timestamp(self):
+    def test_profile_rotated_has_timestamp(self) -> None:
         """Test that profile rotated event has timestamp."""
         events = []
 
-        def callback(event: AgentEvent):
+        def callback(event: AgentEvent) -> Any:
             events.append(event)
 
         emit_profile_rotated(callback, from_key="old", to_key="new")
@@ -407,11 +409,11 @@ class TestEventTimestamps:
         assert len(events) == 1
         assert events[0].timestamp > 0
 
-    def test_context_compressed_has_timestamp(self):
+    def test_context_compressed_has_timestamp(self) -> None:
         """Test that context compressed event has timestamp."""
         events = []
 
-        def callback(event: AgentEvent):
+        def callback(event: AgentEvent) -> Any:
             events.append(event)
 
         emit_context_compressed(callback, original_count=10, compressed_count=5)
@@ -419,11 +421,11 @@ class TestEventTimestamps:
         assert len(events) == 1
         assert events[0].timestamp > 0
 
-    def test_model_fallback_has_timestamp(self):
+    def test_model_fallback_has_timestamp(self) -> None:
         """Test that model fallback event has timestamp."""
         events = []
 
-        def callback(event: AgentEvent):
+        def callback(event: AgentEvent) -> Any:
             events.append(event)
 
         emit_model_fallback(callback, from_model="gpt-4", to_model="gpt-3.5-turbo")

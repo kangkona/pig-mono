@@ -1,18 +1,21 @@
 """Core tool handlers for agent reasoning and planning."""
 
 import asyncio
+from collections.abc import Awaitable, Callable
 from datetime import datetime, timezone
-from typing import Any
+from typing import TypeVar
 from zoneinfo import ZoneInfo
 
 from .base import ToolResult
 from .schemas import get_all_schemas
 
 # Handler registry
-HANDLERS: dict[str, Any] = {}
+Handler = Callable[..., Awaitable[ToolResult]]
+HandlerT = TypeVar("HandlerT", bound=Handler)
+HANDLERS: dict[str, Handler] = {}
 
 
-def _register(name: str):
+def _register(name: str) -> Callable[[HandlerT], HandlerT]:
     """Decorator to register a tool handler.
 
     Args:
@@ -22,7 +25,7 @@ def _register(name: str):
         Decorator function
     """
 
-    def decorator(fn):
+    def decorator(fn: HandlerT) -> HandlerT:
         HANDLERS[name] = fn
         return fn
 
@@ -162,6 +165,7 @@ async def handle_discover_tools(
             "loaded": [{"name": n, "description": d} for n, d in matched.items()],
             "_activate": list(matched.keys()),  # Internal field for registry
         },
+        added_tool_names=list(matched.keys()),
     )
 
 

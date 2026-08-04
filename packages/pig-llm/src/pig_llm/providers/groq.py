@@ -1,6 +1,7 @@
 """Groq provider implementation (ultra-fast inference)."""
 
 from collections.abc import AsyncIterator, Iterator
+from typing import Any
 
 from groq import AsyncGroq, Groq
 
@@ -11,8 +12,8 @@ from ..compat import (
     apply_session_affinity_headers,
     apply_thinking_level,
     astream_openai_tool_aware,
-    iter_openai_stream_choices,
     normalize_messages,
+    stream_openai_tool_aware,
 )
 from ..config import Config
 from ..models import Message, Response, StreamChunk
@@ -23,7 +24,7 @@ class GroqProvider(Provider):
     """Groq provider implementation (fast LLM inference)."""
 
     @staticmethod
-    def _apply_reasoning_effort_override(model: str, kwargs: dict) -> dict:
+    def _apply_reasoning_effort_override(model: str, kwargs: dict[str, Any]) -> dict:
         """Apply known model-specific reasoning-effort overrides."""
         next_kwargs = dict(kwargs)
         if model.lower() == "qwen/qwen3-32b" and next_kwargs.get("reasoning_effort") == "medium":
@@ -33,18 +34,18 @@ class GroqProvider(Provider):
     def __init__(self, config: Config):
         """Initialize Groq provider."""
         self.config = config
-        self.client = Groq(
+        self.client: Any = Groq(
             api_key=config.api_key,
             timeout=config.timeout,
             max_retries=config.max_retries,
         )
-        self.async_client = AsyncGroq(
+        self.async_client: Any = AsyncGroq(
             api_key=config.api_key,
             timeout=config.timeout,
             max_retries=config.max_retries,
         )
 
-    def _convert_messages(self, messages: list[Message]) -> list[dict]:
+    def _convert_messages(self, messages: list[Message]) -> list[dict[str, Any]]:
         """Convert internal messages to Groq format."""
         result = []
         for msg in messages:
@@ -69,7 +70,7 @@ class GroqProvider(Provider):
         return result
 
     @staticmethod
-    def _extract_tool_calls(message) -> list[dict] | None:
+    def _extract_tool_calls(message: Any) -> list[dict[str, Any]] | None:
         """Extract tool_calls from OpenAI response message."""
         if not hasattr(message, "tool_calls") or not message.tool_calls:
             return None
@@ -91,7 +92,7 @@ class GroqProvider(Provider):
         model: str,
         temperature: float = 0.7,
         max_tokens: int | None = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> Response:
         """Generate a completion."""
         kwargs = apply_thinking_level(kwargs, GROQ_COMPAT)
@@ -134,7 +135,7 @@ class GroqProvider(Provider):
         model: str,
         temperature: float = 0.7,
         max_tokens: int | None = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> Iterator[StreamChunk]:
         """Stream a completion."""
         kwargs = apply_thinking_level(kwargs, GROQ_COMPAT)
@@ -157,13 +158,7 @@ class GroqProvider(Provider):
             **kwargs,
         )
 
-        for chunk, choice in iter_openai_stream_choices(stream):
-            if choice.delta.content:
-                yield StreamChunk(
-                    content=choice.delta.content,
-                    finish_reason=choice.finish_reason,
-                    metadata={"id": chunk.id},
-                )
+        yield from stream_openai_tool_aware(stream)
 
     async def acomplete(
         self,
@@ -171,7 +166,7 @@ class GroqProvider(Provider):
         model: str,
         temperature: float = 0.7,
         max_tokens: int | None = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> Response:
         """Async generate a completion."""
         kwargs = apply_thinking_level(kwargs, GROQ_COMPAT)
@@ -214,7 +209,7 @@ class GroqProvider(Provider):
         model: str,
         temperature: float = 0.7,
         max_tokens: int | None = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> AsyncIterator[StreamChunk]:
         """Async stream a completion."""
         kwargs = apply_thinking_level(kwargs, GROQ_COMPAT)

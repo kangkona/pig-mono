@@ -2,11 +2,12 @@
 
 import tempfile
 from pathlib import Path
+from typing import Any
 
-from pig_coding_agent.billing import CostTracker
+from pig_coding_agent.billing import CostTracker, CostTrackerBillingHook
 
 
-def test_cost_tracker_initialization():
+def test_cost_tracker_initialization() -> None:
     """Test cost tracker initialization."""
     with tempfile.TemporaryDirectory() as tmpdir:
         tracker = CostTracker(Path(tmpdir))
@@ -15,7 +16,7 @@ def test_cost_tracker_initialization():
         assert len(tracker.tool_calls) == 0
 
 
-def test_on_llm_call():
+def test_on_llm_call() -> None:
     """Test tracking LLM call."""
     with tempfile.TemporaryDirectory() as tmpdir:
         tracker = CostTracker(Path(tmpdir))
@@ -37,7 +38,7 @@ def test_on_llm_call():
         assert call["cost"] > 0
 
 
-def test_on_llm_call_cost_calculation():
+def test_on_llm_call_cost_calculation() -> None:
     """Test LLM call cost calculation."""
     with tempfile.TemporaryDirectory() as tmpdir:
         tracker = CostTracker(Path(tmpdir))
@@ -50,7 +51,7 @@ def test_on_llm_call_cost_calculation():
         assert abs(call["cost"] - expected_cost) < 0.01
 
 
-def test_on_tool_call():
+def test_on_tool_call() -> None:
     """Test tracking tool call."""
     with tempfile.TemporaryDirectory() as tmpdir:
         tracker = CostTracker(Path(tmpdir))
@@ -63,7 +64,7 @@ def test_on_tool_call():
         assert call["user_id"] == "user123"
 
 
-def test_get_usage_summary():
+def test_get_usage_summary() -> None:
     """Test getting usage summary."""
     with tempfile.TemporaryDirectory() as tmpdir:
         tracker = CostTracker(Path(tmpdir))
@@ -83,7 +84,7 @@ def test_get_usage_summary():
         assert summary["total_cost"] > 0
 
 
-def test_get_usage_summary_by_model():
+def test_get_usage_summary_by_model() -> None:
     """Test usage summary grouped by model."""
     with tempfile.TemporaryDirectory() as tmpdir:
         tracker = CostTracker(Path(tmpdir))
@@ -103,7 +104,7 @@ def test_get_usage_summary_by_model():
         assert gpt4_stats["output_tokens"] == 1500
 
 
-def test_get_usage_summary_by_tool():
+def test_get_usage_summary_by_tool() -> None:
     """Test usage summary grouped by tool."""
     with tempfile.TemporaryDirectory() as tmpdir:
         tracker = CostTracker(Path(tmpdir))
@@ -118,7 +119,7 @@ def test_get_usage_summary_by_tool():
         assert summary["by_tool"]["write_file"] == 1
 
 
-def test_get_usage_summary_filtered_by_user():
+def test_get_usage_summary_filtered_by_user() -> None:
     """Test usage summary filtered by user ID."""
     with tempfile.TemporaryDirectory() as tmpdir:
         tracker = CostTracker(Path(tmpdir))
@@ -135,7 +136,7 @@ def test_get_usage_summary_filtered_by_user():
         assert summary["total_input_tokens"] == 1000
 
 
-def test_reset_usage():
+def test_reset_usage() -> None:
     """Test resetting usage data."""
     with tempfile.TemporaryDirectory() as tmpdir:
         tracker = CostTracker(Path(tmpdir))
@@ -152,7 +153,7 @@ def test_reset_usage():
         assert len(tracker.tool_calls) == 0
 
 
-def test_format_summary():
+def test_format_summary() -> None:
     """Test formatting usage summary."""
     with tempfile.TemporaryDirectory() as tmpdir:
         tracker = CostTracker(Path(tmpdir))
@@ -169,7 +170,7 @@ def test_format_summary():
         assert "read_file" in formatted
 
 
-def test_persistence():
+def test_persistence() -> None:
     """Test usage data persistence."""
     with tempfile.TemporaryDirectory() as tmpdir:
         # Create tracker and add data
@@ -186,7 +187,7 @@ def test_persistence():
         assert tracker2.tool_calls[0]["tool_name"] == "read_file"
 
 
-def test_unknown_model_pricing():
+def test_unknown_model_pricing() -> None:
     """Test handling unknown model pricing."""
     with tempfile.TemporaryDirectory() as tmpdir:
         tracker = CostTracker(Path(tmpdir))
@@ -199,7 +200,7 @@ def test_unknown_model_pricing():
         assert call["cost"] > 0
 
 
-def test_cached_tokens_are_billed_at_cache_read_rate(tmp_path):
+def test_cached_tokens_are_billed_at_cache_read_rate(tmp_path: Any) -> None:
     """Cached input tokens are discounted at the model's cache-read rate."""
     from pig_coding_agent.billing import CostTracker
 
@@ -214,7 +215,38 @@ def test_cached_tokens_are_billed_at_cache_read_rate(tmp_path):
     assert summary["total_cached_tokens"] == 800
 
 
-def test_on_llm_call_without_cached_tokens_is_backward_compatible(tmp_path):
+def test_cached_tokens_remain_the_fourth_positional_argument(tmp_path: Any) -> None:
+    """Keep the original CostTracker positional API stable for existing callers."""
+    tracker = CostTracker(tmp_path)
+
+    tracker.on_llm_call("gpt-4o-2024-08-06", 1000, 50, 800, "legacy-user")
+
+    call = tracker.llm_calls[-1]
+    assert call["cached_tokens"] == 800
+    assert call["user_id"] == "legacy-user"
+
+
+def test_billing_hook_adapter_forwards_core_keywords_to_legacy_tracker(tmp_path: Any) -> None:
+    """Keep the core hook protocol separate from CostTracker's public positional API."""
+    tracker = CostTracker(tmp_path)
+    hook = CostTrackerBillingHook(tracker)
+
+    hook.on_llm_call(
+        "gpt-4o-2024-08-06",
+        1000,
+        50,
+        user_id="core-user",
+        metadata={"source": "core"},
+        cached_tokens=800,
+    )
+
+    call = tracker.llm_calls[-1]
+    assert call["cached_tokens"] == 800
+    assert call["user_id"] == "core-user"
+    assert call["metadata"] == {"source": "core"}
+
+
+def test_on_llm_call_without_cached_tokens_is_backward_compatible(tmp_path: Any) -> None:
     from pig_coding_agent.billing import CostTracker
 
     ct = CostTracker(tmp_path)

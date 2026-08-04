@@ -11,12 +11,15 @@ with streaming support, including:
 import asyncio
 import logging
 from abc import ABC, abstractmethod
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator, Callable, Mapping
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
 logger = logging.getLogger(__name__)
+
+MessageResponse = str | dict[str, Any]
+UpdateResponse = dict[str, Any] | None
 
 
 class MessengerType(str, Enum):
@@ -64,6 +67,23 @@ class IncomingMessage:
     is_mention: bool = False
     is_dm: bool = False
     raw_data: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class WebhookRequest:
+    """Canonical webhook inputs required by platform signature verifiers.
+
+    Platforms authenticate different parts of an HTTP request: Slack and
+    Discord include a timestamp, Telegram uses a secret-token header, and
+    Twilio signs the public URL plus form parameters.  Keeping those inputs in
+    one value gives callers a stable adapter-independent verification contract.
+    """
+
+    body: bytes = b""
+    signature: str = ""
+    timestamp: str | None = None
+    url: str | None = None
+    params: Mapping[str, str] = field(default_factory=dict)
 
 
 @dataclass
@@ -168,9 +188,10 @@ class MessengerThread:
         Returns:
             Message ID
         """
-        return await self.adapter.send_message(
+        response = await self.adapter.send_message(
             self.channel_id, text, thread_id=self.thread_id, **kwargs
         )
+        return self._response_id(response, "message_id")
 
     async def update(self, message_id: str, text: str, **kwargs: Any) -> None:
         """Update an existing message.
@@ -220,7 +241,8 @@ class MessengerThread:
         Returns:
             Message ID
         """
-        return await self.adapter.send_file(self.channel_id, url, filename, **kwargs)
+        response = await self.adapter.send_file(self.channel_id, url, filename, **kwargs)
+        return self._response_id(response, "message_id")
 
     async def post_file_content(
         self, content: bytes, filename: str, content_type: str, **kwargs: Any
@@ -236,9 +258,10 @@ class MessengerThread:
         Returns:
             Message ID
         """
-        return await self.adapter.send_file_content(
+        response = await self.adapter.send_file_content(
             self.channel_id, content, filename, content_type, **kwargs
         )
+        return self._response_id(response, "message_id")
 
     async def post_blocks(self, blocks: list[dict], text_fallback: str = "", **kwargs: Any) -> str:
         """Post structured blocks.
@@ -251,8 +274,43 @@ class MessengerThread:
         Returns:
             Message ID
         """
-        return await self.adapter.send_blocks(
+        response = await self.adapter.send_blocks(
             self.channel_id, blocks, text_fallback=text_fallback, thread_id=self.thread_id, **kwargs
+        )
+        return self._response_id(response, "message_id")
+
+    @staticmethod
+    def _response_id(response: MessageResponse, *keys: str) -> str:
+        """Normalize adapter responses to a non-empty identifier.
+
+        Mapping errors report only their shape so provider response values never
+        leak into logs or exception telemetry.
+        """
+        if isinstance(response, str):
+            if response:
+                return response
+            raise ValueError(f"Expected a non-empty response identifier for keys {keys!r}")
+
+        response_keys = tuple(sorted(response))
+        has_wrong_type = False
+        for key in keys:
+            if key not in response:
+                continue
+            value = response[key]
+            if not isinstance(value, str):
+                has_wrong_type = True
+                continue
+            if value:
+                return value
+
+        if has_wrong_type:
+            raise TypeError(
+                f"Expected string response identifier for keys {keys!r}; "
+                f"response keys: {response_keys!r}"
+            )
+        raise ValueError(
+            f"Expected a non-empty response identifier for keys {keys!r}; "
+            f"response keys: {response_keys!r}"
         )
 
     async def stream(
@@ -294,13 +352,14 @@ class MessengerThread:
             List of message IDs (single final message)
         """
         accumulated = ""
-        draft_id = None
+        draft_id: str | None = None
 
         async for chunk in async_chunks:
             accumulated += chunk
-            draft_id = await self.adapter.send_draft(
+            response = await self.adapter.send_draft(
                 self.channel_id, accumulated, draft_id=draft_id, **kwargs
             )
+            draft_id = self._response_id(response, "draft_id", "message_id")
 
         # Commit final message
         if accumulated:
@@ -414,7 +473,7 @@ class BaseMessengerAdapter(ABC):
     @abstractmethod
     async def send_message(
         self, channel_id: str, text: str, *, thread_id: str | None = None, **kwargs: Any
-    ) -> str:
+    ) -> MessageResponse:
         """Send a message.
 
         Args:
@@ -431,7 +490,7 @@ class BaseMessengerAdapter(ABC):
     @abstractmethod
     async def update_message(
         self, channel_id: str, message_id: str, text: str, **kwargs: Any
-    ) -> None:
+    ) -> UpdateResponse:
         """Update an existing message.
 
         Args:
@@ -443,7 +502,7 @@ class BaseMessengerAdapter(ABC):
         pass
 
     @abstractmethod
-    def parse_event(self, raw_event: dict[str, Any]) -> IncomingMessage | None:
+    async def parse_event(self, raw_event: dict[str, Any]) -> IncomingMessage | None:
         """Parse platform event to IncomingMessage.
 
         Args:
@@ -455,22 +514,13 @@ class BaseMessengerAdapter(ABC):
         pass
 
     @abstractmethod
-    def verify_signature(self, request_body: bytes, signature: str, **kwargs: Any) -> bool:
-        """Verify webhook signature.
-
-        Args:
-            request_body: Raw request body
-            signature: Signature from headers
-            **kwargs: Platform-specific arguments (e.g., timestamp)
-
-        Returns:
-            True if signature is valid
-        """
+    async def verify_signature(self, request: WebhookRequest) -> bool:
+        """Verify that a webhook request was signed by the platform."""
         pass
 
     # Virtual methods (can be overridden)
 
-    async def delete_message(self, channel_id: str, message_id: str, **kwargs: Any) -> None:
+    async def delete_message(self, channel_id: str, message_id: str, **kwargs: Any) -> bool | None:
         """Delete a message.
 
         Args:
@@ -479,6 +529,7 @@ class BaseMessengerAdapter(ABC):
             **kwargs: Platform-specific arguments
         """
         logger.warning(f"{self.__class__.__name__} does not support delete_message")
+        return None
 
     async def send_typing(self, channel_id: str, **kwargs: Any) -> None:  # noqa: B027
         """Send typing indicator.
@@ -491,7 +542,7 @@ class BaseMessengerAdapter(ABC):
 
     async def send_draft(
         self, channel_id: str, text: str, *, draft_id: str | None = None, **kwargs: Any
-    ) -> str:
+    ) -> MessageResponse:
         """Send draft message (for draft streaming).
 
         Args:
@@ -519,7 +570,9 @@ class BaseMessengerAdapter(ABC):
         """
         logger.warning(f"{self.__class__.__name__} does not support send_reaction")
 
-    async def send_file(self, channel_id: str, url: str, filename: str, **kwargs: Any) -> str:
+    async def send_file(
+        self, channel_id: str, url: str, filename: str, **kwargs: Any
+    ) -> MessageResponse:
         """Send a file from URL.
 
         Args:
@@ -541,7 +594,7 @@ class BaseMessengerAdapter(ABC):
         filename: str,
         content_type: str,
         **kwargs: Any,
-    ) -> str:
+    ) -> MessageResponse:
         """Send file content.
 
         Args:
@@ -565,7 +618,7 @@ class BaseMessengerAdapter(ABC):
         text_fallback: str = "",
         thread_id: str | None = None,
         **kwargs: Any,
-    ) -> str:
+    ) -> MessageResponse:
         """Send structured blocks.
 
         Args:

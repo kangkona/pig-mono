@@ -39,23 +39,22 @@ pip install pig-messenger[all]         # All adapters
 from pig_messenger import MessengerManager, MessengerRegistry, MessengerType
 from pig_messenger.adapters.telegram import TelegramMessengerAdapter
 
+
 # Register adapter
 @MessengerRegistry.register(MessengerType.TELEGRAM)
 class MyTelegramAdapter(TelegramMessengerAdapter):
     pass
 
+
 # Create manager
 def agent_factory(message, thread):
     return f"Echo: {message.text}"
 
+
 manager = MessengerManager(agent_factory=agent_factory)
 
 # Handle events
-await manager.handle_event(
-    MessengerType.TELEGRAM,
-    raw_event,
-    adapter=adapter
-)
+await manager.handle_event(MessengerType.TELEGRAM, raw_event, adapter=adapter)
 ```
 
 ## Architecture
@@ -107,10 +106,7 @@ TELEGRAM_BOT_TOKEN=your_bot_token
 ```python
 from pig_messenger.adapters.slack import SlackMessengerAdapter, SlackConfig
 
-config = SlackConfig(
-    bot_token="xoxb-...",
-    signing_secret="..."
-)
+config = SlackConfig(bot_token="xoxb-...", signing_secret="...")
 adapter = SlackMessengerAdapter(config=config)
 ```
 
@@ -119,10 +115,7 @@ adapter = SlackMessengerAdapter(config=config)
 ```python
 from pig_messenger.adapters.discord import DiscordMessengerAdapter, DiscordConfig
 
-config = DiscordConfig(
-    bot_token="your_bot_token",
-    intents=["guilds", "messages"]
-)
+config = DiscordConfig(bot_token="your_bot_token", intents=["guilds", "messages"])
 adapter = DiscordMessengerAdapter(config=config)
 ```
 
@@ -131,10 +124,7 @@ adapter = DiscordMessengerAdapter(config=config)
 ```python
 from pig_messenger.adapters.feishu import FeishuAdapter
 
-adapter = FeishuAdapter(
-    app_id="cli_xxx",
-    app_secret="xxx"
-)
+adapter = FeishuAdapter(app_id="cli_xxx", app_secret="xxx")
 ```
 
 ## Distributed State Management
@@ -144,16 +134,13 @@ from pig_messenger import MessengerState
 import redis.asyncio as redis
 
 # Create Redis connection
-redis_client = redis.Redis(host='localhost', port=6379)
+redis_client = redis.Redis(host="localhost", port=6379)
 
 # Initialize state management
 state = MessengerState(redis_client=redis_client)
 
 # Use in manager
-manager = MessengerManager(
-    agent_factory=agent_factory,
-    state=state
-)
+manager = MessengerManager(agent_factory=agent_factory, state=state)
 ```
 
 ## Advanced Features
@@ -175,28 +162,16 @@ async def streaming_agent(message, thread):
 
 ```python
 # Upload from URL
-await thread.post_file(
-    url="https://example.com/file.pdf",
-    filename="document.pdf"
-)
+await thread.post_file(url="https://example.com/file.pdf", filename="document.pdf")
 
 # Upload from content
-await thread.post_file_content(
-    content=file_bytes,
-    filename="image.png",
-    content_type="image/png"
-)
+await thread.post_file_content(content=file_bytes, filename="image.png", content_type="image/png")
 ```
 
 ### Structured Messages (Slack Block Kit)
 
 ```python
-blocks = [
-    {
-        "type": "section",
-        "text": {"type": "mrkdwn", "text": "*Hello World*"}
-    }
-]
+blocks = [{"type": "section", "text": {"type": "mrkdwn", "text": "*Hello World*"}}]
 await thread.post_blocks(blocks, text_fallback="Hello World")
 ```
 
@@ -208,7 +183,7 @@ The manager automatically retries transient errors (429, 502, 503, 504) with exp
 manager = MessengerManager(
     agent_factory=agent_factory,
     max_retries=3,  # Default: 3
-    retry_delay=1.0  # Default: 1.0 second
+    retry_delay=1.0,  # Default: 1.0 second
 )
 ```
 

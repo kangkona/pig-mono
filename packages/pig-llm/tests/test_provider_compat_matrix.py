@@ -10,14 +10,16 @@ from __future__ import annotations
 
 import asyncio
 import importlib
+from collections.abc import AsyncIterator, Iterator
 from types import SimpleNamespace
+from typing import Any, cast
 
 import pytest
 from pig_llm.config import Config
-from pig_llm.models import Message
+from pig_llm.models import Message, StreamChunk
 
 
-def _load_provider(module: str, cls_name: str, sdk: str):
+def _load_provider(module: str, cls_name: str, sdk: str) -> type[Any]:
     """Import a provider class, skipping if its optional SDK isn't installed.
 
     Provider modules import their SDK at module load time, so a missing
@@ -26,16 +28,17 @@ def _load_provider(module: str, cls_name: str, sdk: str):
     """
     pytest.importorskip(sdk)
     mod = importlib.import_module(f"pig_llm.providers.{module}")
-    return getattr(mod, cls_name)
+    return cast(type[Any], getattr(mod, cls_name))
 
 
 class _FakeStream:
     """Async iterator yielding one text delta then a usage-only chunk."""
 
-    def __aiter__(self):
-        async def gen():
+    def __aiter__(self) -> AsyncIterator[SimpleNamespace]:
+        async def gen() -> AsyncIterator[SimpleNamespace]:
             yield SimpleNamespace(
                 id="c1",
+                citations=["https://example.com/source"],
                 choices=[
                     SimpleNamespace(
                         delta=SimpleNamespace(content="ok", tool_calls=None),
@@ -61,19 +64,59 @@ class _FakeStream:
 class _CapturingCreate:
     """Fake async chat.completions.create that records kwargs."""
 
-    def __init__(self):
-        self.kwargs: dict | None = None
+    def __init__(self) -> None:
+        self.kwargs: dict[str, Any] = {}
 
-    async def __call__(self, **kwargs):
+    async def __call__(self, **kwargs: Any) -> _FakeStream:
         self.kwargs = kwargs
         return _FakeStream()
 
 
-def _make_provider(spec, **config_overrides):
+class _FakeSyncStream:
+    """Sync equivalent of the provider stream envelope."""
+
+    def __iter__(self) -> Iterator[SimpleNamespace]:
+        yield SimpleNamespace(
+            id="c1",
+            citations=["https://example.com/source"],
+            choices=[
+                SimpleNamespace(
+                    delta=SimpleNamespace(content="ok", tool_calls=None),
+                    finish_reason="stop",
+                )
+            ],
+            usage=None,
+        )
+        yield SimpleNamespace(
+            id="c1",
+            choices=[],
+            usage=SimpleNamespace(
+                prompt_tokens=10,
+                completion_tokens=2,
+                total_tokens=12,
+                prompt_tokens_details=SimpleNamespace(cached_tokens=4),
+            ),
+        )
+
+
+class _CapturingSyncCreate:
+    """Fake sync chat.completions.create that records kwargs."""
+
+    def __init__(self) -> None:
+        self.kwargs: dict[str, Any] = {}
+
+    def __call__(self, **kwargs: Any) -> _FakeSyncStream:
+        self.kwargs = kwargs
+        return _FakeSyncStream()
+
+
+def _make_provider(
+    spec: tuple[str, str, str], **config_overrides: Any
+) -> tuple[Any, _CapturingCreate]:
     cls = _load_provider(*spec)
     cfg = Config(provider="x", api_key="test", **config_overrides)
     # Construct without touching the network, then swap in a fake async client.
-    provider = cls.__new__(cls)
+    provider = object.__new__(cls)
     provider.config = cfg
     capture = _CapturingCreate()
     provider.async_client = SimpleNamespace(
@@ -83,9 +126,9 @@ def _make_provider(spec, **config_overrides):
     return provider, capture
 
 
-def _drive(provider, model: str, **kwargs) -> dict:
-    async def run():
-        chunks = []
+def _drive(provider: Any, model: str, **kwargs: Any) -> list[StreamChunk]:
+    async def run() -> list[StreamChunk]:
+        chunks: list[StreamChunk] = []
         async for chunk in provider.astream(
             [Message(role="user", content="hi")], model=model, **kwargs
         ):
@@ -93,6 +136,22 @@ def _drive(provider, model: str, **kwargs) -> dict:
         return chunks
 
     return asyncio.run(run())
+
+
+def _drive_sync(
+    spec: tuple[str, str, str], model: str, **kwargs: Any
+) -> tuple[list[StreamChunk], _CapturingSyncCreate]:
+    cls = _load_provider(*spec)
+    provider = object.__new__(cls)
+    provider.config = Config(provider="x", api_key="test")
+    capture = _CapturingSyncCreate()
+    provider.client = SimpleNamespace(
+        chat=SimpleNamespace(completions=SimpleNamespace(create=capture))
+    )
+    provider.async_client = provider.client
+    return list(
+        provider.stream([Message(role="user", content="hi")], model=model, **kwargs)
+    ), capture
 
 
 # (provider module, class name, required SDK module, model). The class is
@@ -114,7 +173,7 @@ _INTERNAL_MARKERS = {"_resolved_cache_retention", "session_id", "cache_retention
 
 
 @pytest.mark.parametrize("spec,model", PROVIDERS, ids=[s[1] for s, _ in PROVIDERS])
-def test_astream_requests_usage_and_streams(spec, model):
+def test_astream_requests_usage_and_streams(spec: tuple[str, str, str], model: str) -> None:
     """Every OpenAI-compatible provider streams with usage requested."""
     provider, capture = _make_provider(spec)
     chunks = _drive(provider, model, max_tokens=128)
@@ -129,10 +188,37 @@ def test_astream_requests_usage_and_streams(spec, model):
     assert text == "ok"
     usages = [c.usage for c in chunks if c.usage]
     assert usages and usages[-1]["cached_tokens"] == 4
+    assert chunks[-1].finish_reason == "stop"
+    if spec[0] == "perplexity":
+        assert chunks[0].metadata is not None
+        assert chunks[0].metadata["citations"] == ["https://example.com/source"]
 
 
 @pytest.mark.parametrize("spec,model", PROVIDERS, ids=[s[1] for s, _ in PROVIDERS])
-def test_astream_sends_exactly_one_token_limit_param(spec, model):
+def test_stream_preserves_terminal_reason_usage_and_citations(
+    spec: tuple[str, str, str], model: str
+) -> None:
+    """Every compatible sync provider surfaces the complete terminal envelope."""
+    chunks, capture = _drive_sync(spec, model, max_tokens=128)
+
+    assert capture.kwargs.get("stream_options") == {"include_usage": True}
+    assert "".join(chunk.content for chunk in chunks) == "ok"
+    assert chunks[-1].finish_reason == "stop"
+    assert chunks[-1].usage == {
+        "input_tokens": 10,
+        "output_tokens": 2,
+        "cached_tokens": 4,
+        "total_tokens": 12,
+    }
+    if spec[0] == "perplexity":
+        assert chunks[0].metadata is not None
+        assert chunks[0].metadata["citations"] == ["https://example.com/source"]
+
+
+@pytest.mark.parametrize("spec,model", PROVIDERS, ids=[s[1] for s, _ in PROVIDERS])
+def test_astream_sends_exactly_one_token_limit_param(
+    spec: tuple[str, str, str], model: str
+) -> None:
     """A single token-limit param is sent (legacy max_tokens is not duplicated)."""
     provider, capture = _make_provider(spec)
     _drive(provider, model, max_tokens=128)
@@ -142,7 +228,7 @@ def test_astream_sends_exactly_one_token_limit_param(spec, model):
 
 
 @pytest.mark.parametrize("spec,model", PROVIDERS, ids=[s[1] for s, _ in PROVIDERS])
-def test_astream_does_not_leak_internal_markers(spec, model):
+def test_astream_does_not_leak_internal_markers(spec: tuple[str, str, str], model: str) -> None:
     """Internal compat markers must never reach the SDK create() call."""
     provider, capture = _make_provider(spec)
     _drive(provider, model, max_tokens=128, session_id="sess-1")
@@ -152,7 +238,7 @@ def test_astream_does_not_leak_internal_markers(spec, model):
 
 
 @pytest.mark.parametrize("spec,model", PROVIDERS, ids=[s[1] for s, _ in PROVIDERS])
-def test_astream_passes_tools_through(spec, model):
+def test_astream_passes_tools_through(spec: tuple[str, str, str], model: str) -> None:
     """A tools schema is forwarded to the provider create() call."""
     provider, capture = _make_provider(spec)
     tools = [{"type": "function", "function": {"name": "noop", "parameters": {}}}]
@@ -162,7 +248,9 @@ def test_astream_passes_tools_through(spec, model):
 
 
 @pytest.mark.parametrize("spec,model", PROVIDERS, ids=[s[1] for s, _ in PROVIDERS])
-def test_astream_sends_prompt_cache_key_when_session_present(spec, model):
+def test_astream_sends_prompt_cache_key_when_session_present(
+    spec: tuple[str, str, str], model: str
+) -> None:
     """With a session_id and long retention, a prompt_cache_key is sent."""
     provider, capture = _make_provider(spec)
     _drive(provider, model, max_tokens=128, session_id="sess-1", cache_retention="24h")
@@ -173,7 +261,9 @@ def test_astream_sends_prompt_cache_key_when_session_present(spec, model):
 
 
 @pytest.mark.parametrize("spec,model", PROVIDERS, ids=[s[1] for s, _ in PROVIDERS])
-def test_astream_relocates_nonstandard_params_to_extra_body(spec, model):
+def test_astream_relocates_nonstandard_params_to_extra_body(
+    spec: tuple[str, str, str], model: str
+) -> None:
     """OpenRouter-style reasoning is sent via extra_body, never as a raw kwarg.
 
     Regression: a top-level `reasoning` kwarg crashed the OpenAI SDK with

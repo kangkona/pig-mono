@@ -61,20 +61,23 @@ class MarkdownStreamWriter:
     def __init__(self) -> None:
         self.text = ""
         self._live: Live | None = None
+        self._live_suspended = False
         self._started = time.monotonic()
         self._frame = 0
         self._done = False
         self._input = ""
         self._cursor = 0
         self._suggestions: list[str] = []
+        self._events: list[Any] = []
 
     def _renderable(self) -> Any:
         from rich.console import Group
         from rich.text import Text
 
         body = Markdown(self.text) if self.text else Text("")
+        rows: list[Any] = [p for p in (body if self.text else None, *self._events) if p]
         if self._done:
-            return body
+            return Group(*rows) if rows else Text("")
         spin = self._FRAMES[self._frame % len(self._FRAMES)]
         elapsed = int(time.monotonic() - self._started)
         status = Text(f"{spin} working… {elapsed}s", style="dim")
@@ -95,7 +98,7 @@ class MarkdownStreamWriter:
             input_line.append(after)
         else:
             input_line.append("▌", style="reverse")  # cursor at end
-        rows: list[Any] = [p for p in (body if self.text else None, status, input_line) if p]
+        rows.extend(p for p in (status, input_line) if p)
         # Slash-command suggestions (when typing a "/command").
         if self._suggestions:
             shown = self._suggestions[:8]
@@ -113,6 +116,24 @@ class MarkdownStreamWriter:
         self.text += normalize_terminal_output(text)
         self._refresh()
 
+    def add_event(self, renderable: Any) -> None:
+        self._events.append(renderable)
+        self._refresh()
+
+    def suspend(self) -> None:
+        """Temporarily release the terminal while a nested prompt owns it."""
+        if self._live is None or self._live_suspended:
+            return
+        self._live.stop()
+        self._live_suspended = True
+
+    def resume(self) -> None:
+        """Resume live rendering after a nested prompt completes."""
+        if self._live is None or not self._live_suspended:
+            return
+        self._live.start(refresh=True)
+        self._live_suspended = False
+
     def set_input(
         self, text: str, cursor: int | None = None, suggestions: list[str] | None = None
     ) -> None:
@@ -127,10 +148,11 @@ class MarkdownStreamWriter:
         self._frame += 1
         self._refresh()
 
-    def finalize(self) -> None:
+    def finalize(self, *, refresh: bool = True) -> None:
         """Drop the status / input lines, leaving only the rendered content."""
         self._done = True
-        self._refresh()
+        if refresh:
+            self._refresh()
 
 
 class ToolOutputWriter:
@@ -206,6 +228,7 @@ class ChatUI:
         self.show_timestamps = show_timestamps
         self.markdown_mode = markdown_mode
         self.console = Console()
+        self._active_markdown_writer: MarkdownStreamWriter | None = None
 
     def _format_timestamp(self) -> str:
         """Get formatted timestamp."""
@@ -220,6 +243,16 @@ class ChatUI:
             message: User message
         """
         timestamp = self._format_timestamp()
+        if self._active_markdown_writer is not None:
+            from rich.text import Text
+
+            line = Text()
+            if timestamp:
+                line.append(timestamp)
+            line.append("User: ", style=f"bold {self.theme.user_color}")
+            line.append(normalize_terminal_output(message))
+            self._active_markdown_writer.add_event(line)
+            return
         prefix = f"{timestamp}[bold {self.theme.user_color}]User:[/] "
 
         if self.markdown_mode:
@@ -284,16 +317,22 @@ class ChatUI:
             console=self.console,
             refresh_per_second=refresh_per_second,
             vertical_overflow="visible",
+            transient=True,
         )
         writer._live = live
+        self._active_markdown_writer = writer
         live.start()
         try:
             yield writer
         finally:
             # Drop the status line and render the final, complete Markdown.
-            writer.finalize()
-            live.refresh()
-            live.stop()
+            try:
+                writer.finalize(refresh=False)
+                final_renderable = writer._renderable()
+            finally:
+                self._active_markdown_writer = None
+                live.stop()
+                self.console.print(final_renderable)
 
     @contextmanager
     def tool_stream(self, tool_name: str) -> Any:
@@ -330,6 +369,16 @@ class ChatUI:
             message: System message
         """
         timestamp = self._format_timestamp()
+        if self._active_markdown_writer is not None:
+            from rich.text import Text
+
+            line = Text()
+            if timestamp:
+                line.append(timestamp)
+            line.append("System: ", style=self.theme.system_color)
+            line.append(normalize_terminal_output(message))
+            self._active_markdown_writer.add_event(line)
+            return
         self.console.print(
             f"{timestamp}[{self.theme.system_color}]System: {normalize_terminal_output(message)}[/]"
         )

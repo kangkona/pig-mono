@@ -115,7 +115,7 @@ class Skill:
 class SkillManager:
     """Manages agent skills."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize skill manager."""
         self.skills: dict[str, Skill] = {}
 

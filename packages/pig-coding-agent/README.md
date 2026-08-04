@@ -3,18 +3,39 @@
 [![PyPI version](https://badge.fury.io/py/pig-coding-agent.svg)](https://badge.fury.io/py/pig-coding-agent)
 [![Python](https://img.shields.io/pypi/pyversions/pig-coding-agent.svg)](https://pypi.org/project/pig-coding-agent/)
 
-Interactive coding agent CLI with file operations and code generation.
+Interactive coding agent CLI with file operations, session/runtime orchestration,
+and a terminal UI built on the `pig-tui` platform layer.
 
 ## Features
 
 - 💻 **Code Generation**: AI-powered code generation
-- 📁 **File Operations**: Read, write, edit files
+- 📁 **File Operations**: Read and write files inside the workspace
 - 🔍 **Code Analysis**: Understand and analyze code
 - 🛠️ **Refactoring**: Automated code refactoring
 - 🐚 **Shell Integration**: Execute shell commands
 - 💬 **Interactive Chat**: Conversational interface
 - 🔄 **Resilience**: Automatic API key rotation and fallback (NEW in v0.0.4)
 - 💰 **Cost Tracking**: Track LLM and tool usage costs (NEW in v0.0.4)
+
+## Architecture
+
+`pig-coding-agent` is now structured so that:
+
+- application semantics and orchestration stay in `pig-coding-agent`
+- reusable terminal presentation primitives live in `pig-tui`
+- the interactive shell lifecycle now lives in a dedicated `InteractiveMode`
+- slash-command dispatch now splits across `InteractionRuntime`, `InteractionDispatcher`,
+  and `InteractionRoutes`
+- imperative command handlers live in `InteractionCommands`
+- selector/editor/session/tree/settings flows live in `InteractionFlows`
+- user-facing panel/status/result reporting lives in `InteractionViews`
+- session/tree/settings/export/copy-style application actions live in `AppActions`
+
+That means session/status/tree/skills/extensions/prompts displays increasingly
+flow through `pig-tui` platform abstractions instead of being assembled inline
+inside the agent runtime, and the main `CodingAgent` class is increasingly an
+application assembly/orchestration surface rather than the place where the
+interactive loop itself lives.
 
 ## Installation
 
@@ -45,12 +66,6 @@ pig gen "Create a FastAPI hello world app"
 
 # Analyze file
 pig analyze main.py
-
-# Refactor code
-pig refactor main.py "Add type hints"
-
-# Chat mode
-pig chat
 ```
 
 ## Built-in Tools
@@ -62,20 +77,13 @@ The coding agent comes with these tools:
 - `read_file(path)` - Read file contents
 - `write_file(path, content)` - Write to file
 - `list_files(directory)` - List directory contents
-- `search_files(pattern)` - Search for files
-
-### Code Operations
-
-- `generate_code(description)` - Generate code from description
-- `explain_code(code)` - Explain what code does
-- `fix_code(code, error)` - Fix code errors
-- `add_tests(code)` - Generate tests for code
+- `grep_files(pattern, path)` - Search for text in files
+- `find_files(pattern, path)` - Find files by glob pattern
+- `ls_detailed(path)` - List files with metadata
 
 ### Shell Operations
 
 - `run_command(command)` - Execute shell command
-- `git_status()` - Get git status
-- `git_diff()` - Get git diff
 
 ## Usage Examples
 
@@ -94,8 +102,7 @@ Agent will:
 ### Analyze Codebase
 
 ```bash
-$ pig analyze
-> Analyze this codebase and suggest improvements
+$ pig analyze .
 
 Agent will:
 1. Read relevant files
@@ -103,7 +110,7 @@ Agent will:
 3. Provide recommendations
 ```
 
-### Interactive Refactoring
+### Interactive Editing
 
 ```bash
 $ pig
@@ -111,31 +118,34 @@ $ pig
 
 Agent will:
 1. Read the file
-2. Refactor the code
-3. Show diff
-4. Ask for confirmation
-5. Write changes
+2. Propose a change
+3. Request confirmation before writing files or running shell commands
+4. Apply the approved change
 ```
 
 ## Configuration
 
-Create `.pig-config.json`:
+Create `.agents/config.json`:
 
 ```json
 {
   "provider": "openai",
   "model": "gpt-4",
   "temperature": 0.7,
-  "max_iterations": 10,
-  "auto_confirm": false,
-  "workspace": "./",
-  "ignore_patterns": [
-    "node_modules",
-    ".git",
-    "__pycache__"
-  ]
+  "auto_compact": true,
+  "auto_compact_threshold": 0.85,
+  "enable_extensions": true,
+  "enable_skills": true
 }
 ```
+
+Project-local configuration, instructions, prompts, skills, package roots, and
+extensions are loaded only after the canonical workspace is trusted. Interactive
+TTY runs can remember that decision. JSON/RPC, piped input, and the SDK fail
+closed unless the host supplies an explicit trust decision; global resources
+under `~/.agents` and `~/.pi/agent` remain independent of project trust.
+An explicit `/settings` edit may create a new project config in an untrusted
+workspace, but it will not parse or merge a pre-existing untrusted config.
 
 ## Chat Commands
 
@@ -238,11 +248,37 @@ pig --no-cost-tracking
 
 ## Safety Features
 
-- File operation confirmations
-- Command execution warnings
-- Workspace boundaries
-- Backup before overwrite
-- Git integration for tracking changes
+- Project-local `.agents`/`.pi` settings, instructions, prompts, skills,
+  packages, and extensions are gated by a separate workspace trust decision.
+  The decision is keyed by the canonical workspace path and remembered in
+  `~/.agents/project-trust.json`. Unknown workspaces fail closed in JSON/RPC,
+  piped, and SDK usage. Interactive CLI sessions ask once; `--approve` and
+  `--no-approve` provide explicit per-run overrides.
+- Global resources under `~/.agents` and `~/.pi/agent` remain available even
+  when project-local resources are denied.
+- Interactive `pig` sessions require confirmation before `write_file`,
+  `run_command`, or an extension-provided `edit_file` can run.
+- JSON/RPC modes, piped stdin, `pig gen`, and `pig analyze` install the same
+  fail-closed unattended policy. Denials use the stable code
+  `tool_permission_denied` and the message
+  `Permission denied: side-effectful tools are disabled in unattended mode`.
+- JSON emits a `permission_denied` event, RPC `complete` returns a
+  `permissionDenials` array, and direct RPC `bash` returns the denial in
+  `result.error`. Piped stdin, `pig gen`, and `pig analyze` print the stable
+  `tool_permission_denied: ...` text and exit with status 2.
+- The embeddable SDK also defaults to that deny policy. A host must explicitly
+  pass `PermissionPolicy.confirm_all(...)` or `PermissionPolicy.allow_all()` to
+  enable side effects. `prompt()` returns the stable denial text, while
+  `prompt_result()` also exposes the machine-readable `permission_denials`.
+- `pig gen --output FILE` is an explicit CLI write to the requested file; model
+  tool calls remain denied during the generation turn, and a denied turn does
+  not create the output file.
+- File-tool paths remain constrained to the configured workspace.
+
+`edit_file` is not a built-in tool today. The permission boundary reserves that
+name so an extension cannot introduce an unconfirmed edit path. Registry/SDK
+tool failures carry a `permission_denial` metadata object with `code`,
+`message`, `action`, and `target`.
 
 ## Architecture
 
@@ -253,16 +289,12 @@ CodingAgent
 ├── TUI (pig-tui)
 └── Built-in Tools
     ├── FileTools
-    ├── CodeTools
     └── ShellTools
 ```
 
 ## Examples
 
-See `examples/coding-agent/`:
-- `generate_app.py` - Generate full application
-- `refactor_demo.py` - Code refactoring
-- `analysis_demo.py` - Code analysis
+The package currently focuses on the interactive CLI, session handling, and embeddable runtime API.
 
 ## License
 

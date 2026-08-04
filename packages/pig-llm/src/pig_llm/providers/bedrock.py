@@ -1,10 +1,12 @@
 """Amazon Bedrock provider implementation."""
 
 from collections.abc import AsyncIterator, Iterator
+from importlib import import_module
+from typing import Any
 
 try:
-    import boto3
-    from botocore.config import Config as BotoConfig
+    boto3: Any = import_module("boto3")
+    BotoConfig: Any = import_module("botocore.config").Config
 except ImportError as err:
     raise ImportError("boto3 is required for Bedrock. Install with: pip install boto3") from err
 
@@ -48,13 +50,13 @@ class BedrockProvider(Provider):
             retries={"max_attempts": config.max_retries},
         )
 
-        self.client = boto3.client(
+        self.client: Any = boto3.client(
             "bedrock-runtime",
             region_name=self.region,
             config=boto_config,
         )
 
-    def _convert_messages(self, messages: list[Message]) -> tuple[str, list[dict]]:
+    def _convert_messages(self, messages: list[Message]) -> tuple[str, list[dict[str, Any]]]:
         """Convert internal messages to Bedrock format.
 
         Returns:
@@ -77,12 +79,12 @@ class BedrockProvider(Provider):
         model: str,
         temperature: float,
         max_tokens: int | None,
-    ) -> dict:
+    ) -> dict[str, Any]:
         """Build request body for Bedrock."""
         system_prompt, converted_messages = self._convert_messages(messages)
         resolved_max_tokens = max_tokens if max_tokens is not None else self.config.max_tokens
 
-        body = {
+        body: dict[str, Any] = {
             "messages": converted_messages,
             "inferenceConfig": {
                 "temperature": temperature,
@@ -103,7 +105,7 @@ class BedrockProvider(Provider):
         model: str,
         temperature: float = 0.7,
         max_tokens: int | None = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> Response:
         """Generate a completion."""
         normalized_messages = normalize_messages(messages, BEDROCK_COMPAT)
@@ -156,7 +158,7 @@ class BedrockProvider(Provider):
         model: str,
         temperature: float = 0.7,
         max_tokens: int | None = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> Iterator[StreamChunk]:
         """Stream a completion."""
         normalized_messages = normalize_messages(messages, BEDROCK_COMPAT)
@@ -243,7 +245,7 @@ class BedrockProvider(Provider):
         model: str,
         temperature: float = 0.7,
         max_tokens: int | None = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> Response:
         """Async generate a completion.
 
@@ -259,7 +261,7 @@ class BedrockProvider(Provider):
         model: str,
         temperature: float = 0.7,
         max_tokens: int | None = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> AsyncIterator[StreamChunk]:
         """Async stream a completion.
 

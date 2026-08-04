@@ -1,6 +1,7 @@
 """OpenAI provider implementation."""
 
 from collections.abc import AsyncIterator, Iterator
+from typing import Any
 
 import openai
 
@@ -16,6 +17,7 @@ from ..compat import (
     STRING_THINKING_COMPAT,
     TOGETHER_COMPAT,
     ZAI_COMPAT,
+    ProviderCompat,
     apply_prompt_cache,
     apply_request_headers,
     apply_session_affinity_headers,
@@ -23,8 +25,8 @@ from ..compat import (
     astream_openai_tool_aware,
     build_token_limit_param,
     extract_openai_usage,
-    iter_openai_stream_choices,
     normalize_messages,
+    stream_openai_tool_aware,
 )
 from ..config import Config
 from ..models import Message, Response, StreamChunk
@@ -46,7 +48,7 @@ class OpenAIProvider(Provider):
         "string-thinking": STRING_THINKING_COMPAT,
     }
 
-    def _compat(self, model: str | None = None):
+    def _compat(self, model: str | None = None) -> ProviderCompat:
         base_url = (self.config.base_url or "").lower()
         model_name = (model or self.config.model or "").lower()
         compat_mode = (self.config.compat_mode or "").lower()
@@ -79,20 +81,20 @@ class OpenAIProvider(Provider):
     def __init__(self, config: Config):
         """Initialize OpenAI provider."""
         self.config = config
-        self.client = openai.OpenAI(
+        self.client: Any = openai.OpenAI(
             api_key=config.api_key,
             base_url=config.base_url,
             timeout=config.timeout,
             max_retries=config.max_retries,
         )
-        self.async_client = openai.AsyncOpenAI(
+        self.async_client: Any = openai.AsyncOpenAI(
             api_key=config.api_key,
             base_url=config.base_url,
             timeout=config.timeout,
             max_retries=config.max_retries,
         )
 
-    def _convert_messages(self, messages: list[Message]) -> list[dict]:
+    def _convert_messages(self, messages: list[Message]) -> list[dict[str, Any]]:
         """Convert internal messages to OpenAI format."""
         result = []
         for msg in messages:
@@ -117,7 +119,7 @@ class OpenAIProvider(Provider):
         return result
 
     @staticmethod
-    def _extract_tool_calls(message) -> list[dict] | None:
+    def _extract_tool_calls(message: Any) -> list[dict[str, Any]] | None:
         """Extract tool_calls from OpenAI response message."""
         if not hasattr(message, "tool_calls") or not message.tool_calls:
             return None
@@ -134,7 +136,9 @@ class OpenAIProvider(Provider):
         ]
 
     @staticmethod
-    def _token_limit_param(max_tokens: int | None, compat=OPENAI_COMPAT) -> dict[str, int]:
+    def _token_limit_param(
+        max_tokens: int | None, compat: ProviderCompat = OPENAI_COMPAT
+    ) -> dict[str, int]:
         """Build token limit parameters for current OpenAI-compatible chat models."""
         return build_token_limit_param(
             max_tokens,
@@ -148,7 +152,7 @@ class OpenAIProvider(Provider):
         model: str,
         temperature: float = 0.7,
         max_tokens: int | None = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> Response:
         """Generate a completion."""
         compat = self._compat(model)
@@ -189,7 +193,7 @@ class OpenAIProvider(Provider):
         model: str,
         temperature: float = 0.7,
         max_tokens: int | None = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> Iterator[StreamChunk]:
         """Stream a completion."""
         compat = self._compat(model)
@@ -214,13 +218,7 @@ class OpenAIProvider(Provider):
             **kwargs,
         )
 
-        for chunk, choice in iter_openai_stream_choices(stream):
-            if choice.delta.content:
-                yield StreamChunk(
-                    content=choice.delta.content,
-                    finish_reason=choice.finish_reason,
-                    metadata={"id": chunk.id},
-                )
+        yield from stream_openai_tool_aware(stream)
 
     async def acomplete(
         self,
@@ -228,7 +226,7 @@ class OpenAIProvider(Provider):
         model: str,
         temperature: float = 0.7,
         max_tokens: int | None = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> Response:
         """Async generate a completion."""
         compat = self._compat(model)
@@ -269,7 +267,7 @@ class OpenAIProvider(Provider):
         model: str,
         temperature: float = 0.7,
         max_tokens: int | None = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> AsyncIterator[StreamChunk]:
         """Async stream a completion."""
         compat = self._compat(model)
