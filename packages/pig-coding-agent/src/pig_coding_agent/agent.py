@@ -13,6 +13,7 @@ from pig_agent_core import (
     ContextManager,
     ExtensionManager,
     PromptManager,
+    RunAuthority,
     Session,
     SessionManager,
     SkillManager,
@@ -147,6 +148,7 @@ class CodingAgent:
         project_trust_decider: ProjectTrustDecider | None = None,
         project_trust_store: ProjectTrustStore | None = None,
         unattended_project_trust: bool = True,
+        run_authority: RunAuthority | None = None,
     ) -> None:
         """Initialize coding agent.
 
@@ -169,6 +171,7 @@ class CodingAgent:
             project_trust_decider: Interactive host callback for unknown workspaces
             project_trust_store: Persistent allow/deny decision store
             unattended_project_trust: Fail closed when no trust decision exists
+            run_authority: Optional durable run authority supplied by an embedding host
         """
         self.workspace = Path(workspace).resolve()
         self.project_trusted = resolve_project_trust(
@@ -184,6 +187,7 @@ class CodingAgent:
         self.verbose = verbose
         self.excluded_tools = set(excluded_tools or set())
         self.permission_policy = permission_policy or self._build_interactive_permission_policy()
+        self.run_authority = run_authority
         self._extensions_shutdown_done = False
         self._protocol_shutdown: Callable[[str], None] | None = None
         self._protocol_shutdown_emitted = False
@@ -267,6 +271,7 @@ class CodingAgent:
             max_rounds=0,
             session=self.session,
             tool_adapter=self._prepare_tool,
+            run_authority=run_authority,
         )
 
         # Register the coding tools on the agent's registry, then drop any tools
@@ -663,7 +668,13 @@ You can:
     def run_once_result(self, message: str) -> AgentTurnResult:
         """Run one turn and preserve its outcome and permission denials."""
         token = self.turn_lifecycle.begin()
+        run_context = None
         try:
+            if self.run_authority is not None:
+                run_context = self.run_authority.begin_turn(
+                    session_id=self.session.id,
+                    user_input=message,
+                )
             self.permission_policy.consume_denials()
             self.agent.last_turn_outcome = None
             self.agent.last_finish_reason = None
@@ -686,11 +697,26 @@ You can:
             if not isinstance(raw_finish_reason, str):
                 candidate = getattr(response, "raw_finish_reason", None)
                 raw_finish_reason = candidate if isinstance(candidate, str) else None
-            return AgentTurnResult(
+            result = AgentTurnResult(
                 content=content,
                 permission_denials=denials,
                 outcome=outcome,
                 raw_finish_reason=raw_finish_reason,
             )
+        except BaseException as error:
+            if self.run_authority is not None and run_context is not None:
+                self.run_authority.fail_turn(run_context, error)
+            raise
+        else:
+            if self.run_authority is not None and run_context is not None:
+                self.run_authority.finish_turn(
+                    run_context,
+                    outcome=result.outcome,
+                    raw_finish_reason=result.raw_finish_reason,
+                    permission_denials=result.permission_denials,
+                    usage_snapshot=self.agent.usage.snapshot(),
+                    compaction_checkpoint=self.session.last_compaction_checkpoint,
+                )
+            return result
         finally:
             self.turn_lifecycle.end(token)
