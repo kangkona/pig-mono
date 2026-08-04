@@ -92,6 +92,7 @@ class SQLiteRunStore:
         self._connection.execute("PRAGMA journal_mode = WAL")
         self._connection.execute("PRAGMA synchronous = FULL")
         self._connection.execute(f"PRAGMA busy_timeout = {max(0, int(timeout * 1000))}")
+        self._transaction_depth = 0
         self._initialize_schema()
         self._closed = False
 
@@ -151,14 +152,21 @@ class SQLiteRunStore:
 
     @contextmanager
     def _transaction(self) -> Iterator[None]:
-        self._connection.execute("BEGIN IMMEDIATE")
+        outermost = self._transaction_depth == 0
+        if outermost:
+            self._connection.execute("BEGIN IMMEDIATE")
+        self._transaction_depth += 1
         try:
             yield
         except BaseException:
-            self._connection.rollback()
+            self._transaction_depth -= 1
+            if outermost:
+                self._connection.rollback()
             raise
         else:
-            self._connection.commit()
+            self._transaction_depth -= 1
+            if outermost:
+                self._connection.commit()
 
     def _snapshot_locked(self, run_id: str) -> RunSnapshot | None:
         row = self._connection.execute(
@@ -311,6 +319,80 @@ class SQLiteRunStore:
         )
         return snapshot.run
 
+    def begin_run(
+        self,
+        *,
+        session_id: str,
+        owner_id: str,
+        lease_expires_at: datetime,
+        input_digest: str | None = None,
+        metadata: dict[str, Any] | None = None,
+        occurred_at: datetime | None = None,
+    ) -> tuple[Run, Turn]:
+        """Atomically create, start, and attach the first turn to a run."""
+        timestamp = _occurred_at(occurred_at)
+        with self._transaction():
+            created = self.create_run(
+                session_id=session_id,
+                metadata=metadata,
+                owner_id=owner_id,
+                lease_expires_at=lease_expires_at,
+                occurred_at=timestamp,
+            )
+            self.transition_run(created.id, RunStatus.RUNNING, occurred_at=timestamp)
+            turn = self.create_turn(
+                created.id,
+                input_digest=input_digest,
+                occurred_at=timestamp,
+            )
+            return self.get_snapshot(created.id).run, turn
+
+    @contextmanager
+    def owned_transaction(
+        self,
+        run_id: str,
+        *,
+        owner_id: str,
+        lease_expires_at: datetime,
+        occurred_at: datetime | None = None,
+    ) -> Iterator[None]:
+        """Serialize authority writes and renew ownership before it expires.
+
+        Expired ownership is rejected before any append. ``BEGIN IMMEDIATE``
+        makes validation and proactive renewal atomic with recovery or takeover,
+        so a stale owner cannot cross a later provider or tool-effect boundary.
+        """
+        timestamp = _occurred_at(occurred_at)
+        renewed_until = _occurred_at(lease_expires_at)
+        if renewed_until <= timestamp:
+            raise ValueError("A renewed run lease must expire in the future")
+        with self._transaction():
+            snapshot = self._snapshot_locked(run_id)
+            if snapshot is None:
+                raise KeyError(f"Unknown run {run_id}")
+            run = snapshot.run
+            if run.status.is_terminal:
+                raise ConcurrencyConflictError(f"Run {run_id} is already terminal")
+            if run.owner_id != owner_id or run.lease_expires_at is None:
+                raise ConcurrencyConflictError(f"Run {run_id} is not leased by {owner_id}")
+            if run.lease_expires_at <= timestamp:
+                raise ConcurrencyConflictError(f"Run {run_id} lease has expired")
+
+            renewal_window = (renewed_until - timestamp) / 2
+            if run.lease_expires_at <= timestamp + renewal_window:
+                _, snapshot = self._append_locked(
+                    snapshot,
+                    run_id=run_id,
+                    evidence_type=EvidenceType.LEASE_ACQUIRED,
+                    entity_id=run_id,
+                    payload={
+                        "owner_id": owner_id,
+                        "lease_expires_at": renewed_until.isoformat(),
+                    },
+                    occurred_at=timestamp,
+                )
+            yield
+
     def transition_run(
         self,
         run_id: str,
@@ -399,6 +481,53 @@ class SQLiteRunStore:
                 occurred_at=timestamp,
             )
             return evidence
+
+    def finalize_run(
+        self,
+        run_id: str,
+        target: RunStatus,
+        *,
+        owner_id: str,
+        reason: str | None = None,
+        expected_sequence: int | None = None,
+        occurred_at: datetime | None = None,
+    ) -> Evidence:
+        """Atomically release the matching lease and commit one terminal state."""
+        if not target.is_terminal:
+            raise ValueError("finalize_run requires a terminal run status")
+        timestamp = _occurred_at(occurred_at)
+        with self._transaction():
+            snapshot = self._snapshot_locked(run_id)
+            if snapshot is None:
+                raise KeyError(f"Unknown run {run_id}")
+            if expected_sequence is not None and snapshot.sequence != expected_sequence:
+                raise ConcurrencyConflictError(
+                    f"Run {run_id} is at sequence {snapshot.sequence}, expected {expected_sequence}"
+                )
+            if snapshot.run.owner_id != owner_id:
+                raise ConcurrencyConflictError(f"Run {run_id} is not leased by {owner_id}")
+            if snapshot.run.lease_expires_at is None or snapshot.run.lease_expires_at <= timestamp:
+                raise ConcurrencyConflictError(f"Run {run_id} lease has expired")
+            _, snapshot = self._append_locked(
+                snapshot,
+                run_id=run_id,
+                evidence_type=EvidenceType.LEASE_RELEASED,
+                entity_id=run_id,
+                payload={"owner_id": owner_id},
+                occurred_at=timestamp,
+            )
+            payload = {"status": target.value}
+            if reason is not None:
+                payload["reason"] = reason
+            terminal, _ = self._append_locked(
+                snapshot,
+                run_id=run_id,
+                evidence_type=EvidenceType.RUN_TRANSITIONED,
+                entity_id=run_id,
+                payload=payload,
+                occurred_at=timestamp,
+            )
+            return terminal
 
     def create_turn(
         self,
@@ -570,12 +699,14 @@ class SQLiteRunStore:
         self,
         operation_id: str,
         *,
+        attempt_id: str,
         occurred_at: datetime | None = None,
     ) -> Evidence:
-        """Durably mark an operation before its dispatch boundary."""
+        """Durably bind an operation dispatch to one running attempt."""
         return self._operation_event(
             operation_id,
             EvidenceType.OPERATION_DISPATCHED,
+            payload={"attempt_id": attempt_id},
             occurred_at=occurred_at,
         )
 
@@ -598,12 +729,14 @@ class SQLiteRunStore:
         self,
         operation_id: str,
         *,
+        attempt_id: str,
         occurred_at: datetime | None = None,
     ) -> Evidence:
         """Record that a tool side-effect boundary has been crossed."""
         return self._operation_event(
             operation_id,
             EvidenceType.OPERATION_EFFECT_STARTED,
+            payload={"attempt_id": attempt_id},
             occurred_at=occurred_at,
         )
 
@@ -611,6 +744,7 @@ class SQLiteRunStore:
         self,
         operation_id: str,
         *,
+        attempt_id: str,
         chunk_digest: str,
         occurred_at: datetime | None = None,
     ) -> Evidence:
@@ -618,7 +752,7 @@ class SQLiteRunStore:
         return self._operation_event(
             operation_id,
             EvidenceType.PROVIDER_PARTIAL_OUTPUT,
-            payload={"chunk_digest": chunk_digest},
+            payload={"attempt_id": attempt_id, "chunk_digest": chunk_digest},
             occurred_at=occurred_at,
         )
 
@@ -750,28 +884,73 @@ class SQLiteRunStore:
                 },
                 occurred_at=timestamp,
             )
-            operation = snapshot.latest_operation()
-            if operation is None:
-                classification = RecoveryClassification.BEFORE_DISPATCH
-                resume_allowed = True
-            elif operation.status is OperationStatus.COMPLETED:
-                classification = RecoveryClassification.DURABLE_OPERATION_COMPLETION
-                resume_allowed = True
-            elif operation.kind is OperationKind.PROVIDER and operation.dispatch_recorded:
-                classification = RecoveryClassification.PROVIDER_OUTCOME_UNKNOWN
+            operations = sorted(snapshot.operations.values(), key=lambda item: item.ordinal)
+            open_operations = [item for item in operations if not item.status.is_terminal]
+            active_attempts_by_operation = {
+                operation.id: [
+                    attempt
+                    for attempt in snapshot.attempts.values()
+                    if attempt.operation_id == operation.id and not attempt.status.is_terminal
+                ]
+                for operation in operations
+            }
+
+            def has_active_dispatch(operation: Operation) -> bool:
+                return any(
+                    attempt.dispatch_recorded
+                    for attempt in active_attempts_by_operation[operation.id]
+                )
+
+            unsafe_operations = [
+                item
+                for item in operations
+                if item.status is OperationStatus.OUTCOME_UNKNOWN
+                or (
+                    not item.receipt_recorded
+                    and (
+                        (
+                            item.kind is OperationKind.PROVIDER
+                            and (item.partial_output or has_active_dispatch(item))
+                        )
+                        or (item.kind is OperationKind.TOOL and item.effect_started)
+                        or (
+                            item.kind not in {OperationKind.PROVIDER, OperationKind.TOOL}
+                            and has_active_dispatch(item)
+                        )
+                    )
+                )
+            ]
+            before_effect = [
+                item
+                for item in open_operations
+                if item.kind is OperationKind.TOOL
+                and has_active_dispatch(item)
+                and not item.effect_started
+            ]
+            if unsafe_operations:
+                operation = unsafe_operations[0]
+                classification = (
+                    RecoveryClassification.PROVIDER_OUTCOME_UNKNOWN
+                    if operation.kind is OperationKind.PROVIDER
+                    else RecoveryClassification.TOOL_OUTCOME_UNKNOWN
+                )
                 resume_allowed = False
-            elif operation.kind is OperationKind.TOOL and not operation.effect_started:
+            elif before_effect:
+                operation = before_effect[0]
                 classification = RecoveryClassification.BEFORE_TOOL_EFFECT
                 resume_allowed = True
-            elif operation.kind is OperationKind.TOOL:
-                classification = RecoveryClassification.TOOL_OUTCOME_UNKNOWN
-                resume_allowed = False
-            elif not operation.dispatch_recorded:
+            elif open_operations:
+                operation = open_operations[0]
                 classification = RecoveryClassification.BEFORE_DISPATCH
                 resume_allowed = True
+            elif operations:
+                operation = operations[-1]
+                classification = RecoveryClassification.DURABLE_OPERATION_COMPLETION
+                resume_allowed = True
             else:
-                classification = RecoveryClassification.TOOL_OUTCOME_UNKNOWN
-                resume_allowed = False
+                operation = None
+                classification = RecoveryClassification.BEFORE_DISPATCH
+                resume_allowed = True
 
             classification_evidence, snapshot = self._append_locked(
                 snapshot,
@@ -787,16 +966,32 @@ class SQLiteRunStore:
                 occurred_at=timestamp,
             )
 
-            if operation is not None and not operation.status.is_terminal:
+            unsafe_ids = {item.id for item in unsafe_operations}
+            for open_operation in open_operations:
+                operation_is_unsafe = open_operation.id in unsafe_ids
                 active_attempts = [
                     item
                     for item in snapshot.attempts.values()
-                    if item.operation_id == operation.id and not item.status.is_terminal
+                    if item.operation_id == open_operation.id and not item.status.is_terminal
                 ]
-                attempt_status = (
-                    AttemptStatus.FAILED if resume_allowed else AttemptStatus.OUTCOME_UNKNOWN
-                )
                 for attempt in active_attempts:
+                    attempt_is_unsafe = (
+                        attempt.effect_started
+                        or attempt.partial_output
+                        or (
+                            open_operation.kind is OperationKind.PROVIDER
+                            and attempt.dispatch_recorded
+                        )
+                        or (
+                            open_operation.kind not in {OperationKind.PROVIDER, OperationKind.TOOL}
+                            and attempt.dispatch_recorded
+                        )
+                    )
+                    attempt_status = (
+                        AttemptStatus.OUTCOME_UNKNOWN
+                        if operation_is_unsafe and attempt_is_unsafe
+                        else AttemptStatus.FAILED
+                    )
                     _, snapshot = self._append_locked(
                         snapshot,
                         run_id=run_id,
@@ -808,16 +1003,17 @@ class SQLiteRunStore:
                         },
                         occurred_at=timestamp,
                     )
-                operation_evidence_type = (
-                    EvidenceType.OPERATION_WAITING
-                    if resume_allowed
-                    else EvidenceType.OPERATION_OUTCOME_UNKNOWN
-                )
+                if resume_allowed:
+                    operation_evidence_type = EvidenceType.OPERATION_WAITING
+                elif operation_is_unsafe:
+                    operation_evidence_type = EvidenceType.OPERATION_OUTCOME_UNKNOWN
+                else:
+                    operation_evidence_type = EvidenceType.OPERATION_FAILED
                 _, snapshot = self._append_locked(
                     snapshot,
                     run_id=run_id,
                     evidence_type=operation_evidence_type,
-                    entity_id=operation.id,
+                    entity_id=open_operation.id,
                     payload={"reason_code": "owner_expired"},
                     occurred_at=timestamp,
                 )

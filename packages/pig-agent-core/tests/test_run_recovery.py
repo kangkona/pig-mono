@@ -60,9 +60,14 @@ def test_recovery_during_provider_streaming_is_outcome_unknown(tmp_path: Path) -
             occurred_at=LEASE_STARTED,
         )
         attempt = store.start_attempt(operation.id, occurred_at=LEASE_STARTED)
-        store.dispatch_operation(operation.id, occurred_at=LEASE_STARTED)
+        store.dispatch_operation(
+            operation.id,
+            attempt_id=attempt.id,
+            occurred_at=LEASE_STARTED,
+        )
         store.record_provider_partial_output(
             operation.id,
+            attempt_id=attempt.id,
             chunk_digest="sha256:partial",
             occurred_at=LEASE_STARTED,
         )
@@ -78,6 +83,39 @@ def test_recovery_during_provider_streaming_is_outcome_unknown(tmp_path: Path) -
     assert snapshot.attempts[attempt.id].status is AttemptStatus.OUTCOME_UNKNOWN
 
 
+def test_recovery_does_not_borrow_dispatch_from_a_failed_retry_attempt(
+    tmp_path: Path,
+) -> None:
+    with SQLiteRunStore(tmp_path / "runs.sqlite3") as store:
+        run_id = _owned_running_run(store)
+        operation = store.ensure_operation(
+            run_id,
+            kind=OperationKind.PROVIDER,
+            idempotency_key="provider:retry-before-dispatch",
+            occurred_at=LEASE_STARTED,
+        )
+        first = store.start_attempt(operation.id, occurred_at=LEASE_STARTED)
+        store.dispatch_operation(
+            operation.id,
+            attempt_id=first.id,
+            occurred_at=LEASE_STARTED,
+        )
+        store.finish_attempt(first.id, AttemptStatus.FAILED, occurred_at=LEASE_STARTED)
+        second = store.start_attempt(operation.id, occurred_at=LEASE_STARTED)
+
+        decision = store.recover_expired(run_id, now=NOW)
+        snapshot = store.verify(run_id)
+
+    assert decision.classification is RecoveryClassification.BEFORE_DISPATCH
+    assert decision.resume_allowed is True
+    assert snapshot.run.status is RunStatus.WAITING
+    assert snapshot.operations[operation.id].status is OperationStatus.WAITING
+    assert snapshot.attempts[first.id].status is AttemptStatus.FAILED
+    assert snapshot.attempts[first.id].dispatch_recorded is True
+    assert snapshot.attempts[second.id].status is AttemptStatus.FAILED
+    assert snapshot.attempts[second.id].dispatch_recorded is False
+
+
 def test_recovery_before_tool_effect_allows_explicit_resume_without_redispatch(
     tmp_path: Path,
 ) -> None:
@@ -90,7 +128,11 @@ def test_recovery_before_tool_effect_allows_explicit_resume_without_redispatch(
             occurred_at=LEASE_STARTED,
         )
         attempt = store.start_attempt(operation.id, occurred_at=LEASE_STARTED)
-        store.dispatch_operation(operation.id, occurred_at=LEASE_STARTED)
+        store.dispatch_operation(
+            operation.id,
+            attempt_id=attempt.id,
+            occurred_at=LEASE_STARTED,
+        )
 
         decision = store.recover_expired(run_id, now=NOW)
         snapshot = store.get_snapshot(run_id)
@@ -114,8 +156,16 @@ def test_recovery_after_unconfirmed_tool_effect_is_outcome_unknown(tmp_path: Pat
             occurred_at=LEASE_STARTED,
         )
         attempt = store.start_attempt(operation.id, occurred_at=LEASE_STARTED)
-        store.dispatch_operation(operation.id, occurred_at=LEASE_STARTED)
-        store.record_effect_started(operation.id, occurred_at=LEASE_STARTED)
+        store.dispatch_operation(
+            operation.id,
+            attempt_id=attempt.id,
+            occurred_at=LEASE_STARTED,
+        )
+        store.record_effect_started(
+            operation.id,
+            attempt_id=attempt.id,
+            occurred_at=LEASE_STARTED,
+        )
 
         decision = store.recover_expired(run_id, now=NOW)
         snapshot = store.get_snapshot(run_id)
@@ -128,6 +178,56 @@ def test_recovery_after_unconfirmed_tool_effect_is_outcome_unknown(tmp_path: Pat
     assert snapshot.attempts[attempt.id].status is AttemptStatus.OUTCOME_UNKNOWN
 
 
+def test_recovery_closes_every_parallel_operation_before_terminalizing(
+    tmp_path: Path,
+) -> None:
+    with SQLiteRunStore(tmp_path / "runs.sqlite3") as store:
+        run_id = _owned_running_run(store)
+        unsafe = store.ensure_operation(
+            run_id,
+            kind=OperationKind.TOOL,
+            idempotency_key="tool:effect-started",
+            occurred_at=LEASE_STARTED,
+        )
+        unsafe_attempt = store.start_attempt(unsafe.id, occurred_at=LEASE_STARTED)
+        store.dispatch_operation(
+            unsafe.id,
+            attempt_id=unsafe_attempt.id,
+            occurred_at=LEASE_STARTED,
+        )
+        store.record_effect_started(
+            unsafe.id,
+            attempt_id=unsafe_attempt.id,
+            occurred_at=LEASE_STARTED,
+        )
+
+        safe = store.ensure_operation(
+            run_id,
+            kind=OperationKind.TOOL,
+            idempotency_key="tool:before-effect",
+            occurred_at=LEASE_STARTED,
+        )
+        safe_attempt = store.start_attempt(safe.id, occurred_at=LEASE_STARTED)
+        store.dispatch_operation(
+            safe.id,
+            attempt_id=safe_attempt.id,
+            occurred_at=LEASE_STARTED,
+        )
+
+        decision = store.recover_expired(run_id, now=NOW)
+        snapshot = store.verify(run_id)
+
+    assert decision.classification is RecoveryClassification.TOOL_OUTCOME_UNKNOWN
+    assert snapshot.run.status is RunStatus.OUTCOME_UNKNOWN
+    assert snapshot.operations[unsafe.id].status is OperationStatus.OUTCOME_UNKNOWN
+    assert snapshot.attempts[unsafe_attempt.id].status is AttemptStatus.OUTCOME_UNKNOWN
+    assert snapshot.operations[safe.id].status is OperationStatus.FAILED
+    assert snapshot.operations[safe.id].receipt_recorded is True
+    assert snapshot.attempts[safe_attempt.id].status is AttemptStatus.FAILED
+    assert all(item.status.is_terminal for item in snapshot.operations.values())
+    assert all(item.status.is_terminal for item in snapshot.attempts.values())
+
+
 def test_recovery_after_durable_completion_is_a_read_only_noop(tmp_path: Path) -> None:
     with SQLiteRunStore(tmp_path / "runs.sqlite3") as store:
         run_id = _owned_running_run(store)
@@ -138,7 +238,11 @@ def test_recovery_after_durable_completion_is_a_read_only_noop(tmp_path: Path) -
             occurred_at=LEASE_STARTED,
         )
         attempt = store.start_attempt(operation.id, occurred_at=LEASE_STARTED)
-        store.dispatch_operation(operation.id, occurred_at=LEASE_STARTED)
+        store.dispatch_operation(
+            operation.id,
+            attempt_id=attempt.id,
+            occurred_at=LEASE_STARTED,
+        )
         store.finish_attempt(attempt.id, AttemptStatus.SUCCEEDED, occurred_at=LEASE_STARTED)
         store.complete_operation(
             operation.id,

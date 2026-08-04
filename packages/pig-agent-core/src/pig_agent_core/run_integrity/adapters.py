@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -13,9 +15,13 @@ from ..observability.events import AgentEvent
 from ..tools.audit import ToolAuditEntry
 from ..usage import UsageRecord
 from .models import (
+    Attempt,
     AttemptStatus,
     EvidenceType,
+    Operation,
     OperationKind,
+    OperationStatus,
+    RunSnapshot,
     RunStatus,
     content_digest,
 )
@@ -26,6 +32,34 @@ def _safe_error_digest(value: object) -> str | None:
     if value is None or value == "":
         return None
     return content_digest({"value": str(value)})
+
+
+def _operation_is_uncertain(snapshot: RunSnapshot, operation: Operation) -> bool:
+    """Classify only the active attempt's dispatch, not sticky retry history."""
+    if operation.status is OperationStatus.OUTCOME_UNKNOWN:
+        return True
+    if operation.receipt_recorded:
+        return False
+    active_attempts = [
+        item
+        for item in snapshot.attempts.values()
+        if item.operation_id == operation.id and not item.status.is_terminal
+    ]
+    if operation.kind is OperationKind.PROVIDER:
+        return operation.partial_output or any(item.dispatch_recorded for item in active_attempts)
+    if operation.kind is OperationKind.TOOL:
+        return operation.effect_started
+    return any(item.dispatch_recorded for item in active_attempts)
+
+
+def _attempt_is_uncertain(operation: Operation, attempt: Attempt) -> bool:
+    if attempt.effect_started or attempt.partial_output:
+        return True
+    if operation.kind is OperationKind.PROVIDER:
+        return attempt.dispatch_recorded
+    if operation.kind is OperationKind.TOOL:
+        return attempt.effect_started
+    return attempt.dispatch_recorded
 
 
 def turn_outcome_status(outcome: TurnOutcome) -> RunStatus | None:
@@ -120,6 +154,10 @@ class ActiveRunContext:
     partial_output: bool = False
 
 
+class ToolOutcomeUnknownError(RuntimeError):
+    """Raised after persisting an unconfirmed effectful tool outcome."""
+
+
 class RunAuthority:
     """Fail-closed collaborator bridging current Agent turns to the R1 ledger."""
 
@@ -154,15 +192,10 @@ class RunAuthority:
         if self._active is not None:
             raise RuntimeError("RunAuthority already has an active turn")
         timestamp = occurred_at or datetime.now(timezone.utc)
-        run = self.store.create_run(
+        run, turn = self.store.begin_run(
             session_id=session_id,
             owner_id=self.owner_id,
             lease_expires_at=timestamp + self.lease_duration,
-            occurred_at=timestamp,
-        )
-        self.store.transition_run(run.id, RunStatus.RUNNING, occurred_at=timestamp)
-        turn = self.store.create_turn(
-            run.id,
             input_digest=content_digest({"input": user_input}),
             occurred_at=timestamp,
         )
@@ -181,11 +214,41 @@ class RunAuthority:
             raise RuntimeError("RunAuthority has no active turn")
         return context
 
+    @contextmanager
+    def _owned(self, context: ActiveRunContext) -> Iterator[None]:
+        """Hold and renew this authority's durable ownership for one command."""
+        timestamp = datetime.now(timezone.utc)
+        with self.store.owned_transaction(
+            context.run_id,
+            owner_id=context.owner_id,
+            lease_expires_at=timestamp + self.lease_duration,
+            occurred_at=timestamp,
+        ):
+            yield
+
     def record_provider_attempt(self, data: dict[str, Any]) -> None:
         """Persist provider attempt boundaries synchronously and fail closed."""
         context = self._active
         if context is None:
             return
+        provider_operations = dict(context.provider_operations)
+        attempts = dict(context.attempts)
+        partial_output = context.partial_output
+        try:
+            with self._owned(context):
+                self._record_provider_attempt_owned(context, data)
+        except BaseException:
+            context.provider_operations = provider_operations
+            context.attempts = attempts
+            context.partial_output = partial_output
+            raise
+
+    def _record_provider_attempt_owned(
+        self,
+        context: ActiveRunContext,
+        data: dict[str, Any],
+    ) -> None:
+        """Persist one provider boundary while ownership is transactionally held."""
         retry_id = data.get("retry_id")
         phase = data.get("phase")
         attempt_number = data.get("attempt")
@@ -221,7 +284,7 @@ class RunAuthority:
                     f"Provider attempt sequence mismatch: {attempt.number} != {attempt_number}"
                 )
             context.attempts[key] = attempt.id
-            self.store.dispatch_operation(operation_id)
+            self.store.dispatch_operation(operation_id, attempt_id=attempt.id)
         else:
             if attempt_id is None:
                 raise ValueError(f"Provider attempt {retry_id}/{attempt_number} was not started")
@@ -234,6 +297,7 @@ class RunAuthority:
                     context.partial_output = True
                     self.store.record_provider_partial_output(
                         operation_id,
+                        attempt_id=attempt_id,
                         chunk_digest=content_digest(
                             {"retry_id": retry_id, "attempt": attempt_number}
                         ),
@@ -268,6 +332,26 @@ class RunAuthority:
         context = self._active
         if context is None:
             return
+        tool_operations = dict(context.tool_operations)
+        tool_attempts = dict(context.tool_attempts)
+        try:
+            with self._owned(context):
+                outcome_unknown = self._record_tool_execution_owned(context, data)
+        except BaseException:
+            context.tool_operations = tool_operations
+            context.tool_attempts = tool_attempts
+            raise
+        if outcome_unknown:
+            raise ToolOutcomeUnknownError(
+                "Tool effect may have occurred; automatic retry and fallback are blocked"
+            )
+
+    def _record_tool_execution_owned(
+        self,
+        context: ActiveRunContext,
+        data: dict[str, Any],
+    ) -> bool:
+        """Persist one tool boundary while ownership is transactionally held."""
         execution_id = data.get("execution_id")
         phase = data.get("phase")
         tool_name = data.get("tool_name")
@@ -291,7 +375,7 @@ class RunAuthority:
             context.tool_operations[execution_id] = operation_id
 
         if phase == "created":
-            return
+            return False
 
         attempt_number = data.get("attempt")
         key: tuple[str, int] | None = None
@@ -314,29 +398,41 @@ class RunAuthority:
                     f"Tool attempt sequence mismatch: {attempt.number} != {attempt_number}"
                 )
             context.tool_attempts[key] = attempt.id
-            self.store.dispatch_operation(operation_id)
-            self.store.record_effect_started(operation_id)
-            return
+            self.store.dispatch_operation(operation_id, attempt_id=attempt.id)
+            self.store.record_effect_started(operation_id, attempt_id=attempt.id)
+            return False
 
         if phase in {"succeeded", "failed"}:
             if attempt_id is None:
                 raise ValueError(f"Tool attempt {execution_id}/{attempt_number} was not started")
-            status = AttemptStatus.SUCCEEDED if phase == "succeeded" else AttemptStatus.FAILED
+            outcome_unknown = bool(phase == "failed")
+            status = AttemptStatus.OUTCOME_UNKNOWN if outcome_unknown else AttemptStatus.SUCCEEDED
             self.store.finish_attempt(
                 attempt_id,
                 status,
-                metadata={"reason": str(data.get("reason", phase))},
+                metadata={"reason_code": str(data.get("reason", phase))},
             )
-            return
+            if outcome_unknown:
+                self.store.mark_operation_outcome_unknown(
+                    operation_id,
+                    reason_code="tool_effect_unconfirmed",
+                )
+            return outcome_unknown
 
         result_payload = {
             "ok": bool(data.get("ok", False)),
             "error": str(data.get("error", "")),
         }
-        self.store.complete_operation(
-            operation_id,
-            result_digest=content_digest(result_payload),
-        )
+        if result_payload["ok"]:
+            self.store.complete_operation(
+                operation_id,
+                result_digest=content_digest(result_payload),
+            )
+        else:
+            self.store.fail_operation(
+                operation_id,
+                reason_code="tool_result_failed",
+            )
         self.store.record_evidence(
             context.run_id,
             EvidenceType.TOOL_AUDIT_OBSERVED,
@@ -348,6 +444,7 @@ class RunAuthority:
                 "success": result_payload["ok"],
             },
         )
+        return False
 
     def record_agent_event(self, event: AgentEvent) -> None:
         """Project legacy retry observations; never use this as a dispatch boundary."""
@@ -356,13 +453,14 @@ class RunAuthority:
             return
         if "retry_id" not in event.data:
             return
-        self.store.record_evidence(
-            context.run_id,
-            EvidenceType.RETRY_OBSERVED,
-            entity_id=context.run_id,
-            payload=retry_observation_payload(event.data),
-            occurred_at=datetime.fromtimestamp(event.timestamp, tz=timezone.utc),
-        )
+        with self._owned(context):
+            self.store.record_evidence(
+                context.run_id,
+                EvidenceType.RETRY_OBSERVED,
+                entity_id=context.run_id,
+                payload=retry_observation_payload(event.data),
+                occurred_at=datetime.fromtimestamp(event.timestamp, tz=timezone.utc),
+            )
 
     def record_usage_snapshot(self, snapshot: dict[str, Any]) -> None:
         """Record cumulative usage as a digest-backed compatibility observation."""
@@ -374,43 +472,47 @@ class RunAuthority:
             and isinstance(value, int | float)
         }
         safe_counts["by_kind_digest"] = content_digest(snapshot.get("by_kind", {}))
-        self.store.record_evidence(
-            context.run_id,
-            EvidenceType.USAGE_OBSERVED,
-            entity_id=context.turn_id,
-            payload=safe_counts,
-        )
+        with self._owned(context):
+            self.store.record_evidence(
+                context.run_id,
+                EvidenceType.USAGE_OBSERVED,
+                entity_id=context.turn_id,
+                payload=safe_counts,
+            )
 
     def record_compaction(self, checkpoint: CompactionCheckpoint) -> None:
         """Record an existing durable compaction checkpoint by identity."""
         context = self._require_active()
-        self.store.record_evidence(
-            context.run_id,
-            EvidenceType.COMPACTION_OBSERVED,
-            entity_id=checkpoint.id,
-            payload=compaction_payload(checkpoint),
-        )
+        with self._owned(context):
+            self.store.record_evidence(
+                context.run_id,
+                EvidenceType.COMPACTION_OBSERVED,
+                entity_id=checkpoint.id,
+                payload=compaction_payload(checkpoint),
+            )
 
     def record_permission_denial(self, denial: dict[str, str]) -> None:
         """Record a redacted compatibility view of one permission denial."""
         context = self._require_active()
-        self.store.record_evidence(
-            context.run_id,
-            EvidenceType.PERMISSION_DENIAL_OBSERVED,
-            entity_id=context.turn_id,
-            payload=permission_denial_payload(denial),
-        )
+        with self._owned(context):
+            self.store.record_evidence(
+                context.run_id,
+                EvidenceType.PERMISSION_DENIAL_OBSERVED,
+                entity_id=context.turn_id,
+                payload=permission_denial_payload(denial),
+            )
 
     def record_tool_audit(self, entry: ToolAuditEntry) -> None:
         """Record a redacted compatibility view of an existing tool audit."""
         context = self._require_active()
-        self.store.record_evidence(
-            context.run_id,
-            EvidenceType.TOOL_AUDIT_OBSERVED,
-            entity_id=context.turn_id,
-            payload=tool_audit_payload(entry),
-            occurred_at=datetime.fromtimestamp(entry.timestamp, tz=timezone.utc),
-        )
+        with self._owned(context):
+            self.store.record_evidence(
+                context.run_id,
+                EvidenceType.TOOL_AUDIT_OBSERVED,
+                entity_id=context.turn_id,
+                payload=tool_audit_payload(entry),
+                occurred_at=datetime.fromtimestamp(entry.timestamp, tz=timezone.utc),
+            )
 
     def _finish_open_operations(
         self,
@@ -423,10 +525,12 @@ class RunAuthority:
         open_operations = [
             item for item in snapshot.operations.values() if not item.status.is_terminal
         ]
-        dispatched_open = [item for item in open_operations if item.dispatch_recorded]
+        uncertain_ids = {
+            item.id for item in open_operations if _operation_is_uncertain(snapshot, item)
+        }
         if status is RunStatus.COMPLETED and open_operations:
             status = RunStatus.OUTCOME_UNKNOWN
-        if status is RunStatus.CANCELLED and dispatched_open:
+        if status is RunStatus.CANCELLED and uncertain_ids:
             status = RunStatus.OUTCOME_UNKNOWN
         if context.partial_output:
             status = RunStatus.OUTCOME_UNKNOWN
@@ -440,11 +544,20 @@ class RunAuthority:
             ]
             if status is RunStatus.OUTCOME_UNKNOWN:
                 for attempt in active_attempts:
-                    self.store.finish_attempt(attempt.id, AttemptStatus.OUTCOME_UNKNOWN)
-                self.store.mark_operation_outcome_unknown(
-                    operation.id,
-                    reason_code=reason_code,
-                )
+                    attempt_status = (
+                        AttemptStatus.OUTCOME_UNKNOWN
+                        if operation.id in uncertain_ids
+                        and _attempt_is_uncertain(operation, attempt)
+                        else AttemptStatus.FAILED
+                    )
+                    self.store.finish_attempt(attempt.id, attempt_status)
+                if operation.id in uncertain_ids:
+                    self.store.mark_operation_outcome_unknown(
+                        operation.id,
+                        reason_code=reason_code,
+                    )
+                else:
+                    self.store.fail_operation(operation.id, reason_code=reason_code)
             elif status is RunStatus.CANCELLED:
                 for attempt in active_attempts:
                     self.store.finish_attempt(attempt.id, AttemptStatus.CANCELLED)
@@ -468,34 +581,35 @@ class RunAuthority:
         """Commit current receipts, release ownership, and write one run terminal."""
         if context is not self._require_active():
             raise RuntimeError("Cannot finish a stale run context")
-        self.store.record_evidence(
-            context.run_id,
-            EvidenceType.TURN_OUTCOME_OBSERVED,
-            entity_id=context.turn_id,
-            payload={
-                "outcome": outcome.value,
-                "raw_finish_reason_digest": _safe_error_digest(raw_finish_reason),
-            },
-        )
-        if usage_snapshot is not None:
-            self.record_usage_snapshot(usage_snapshot)
-        if compaction_checkpoint is not None:
-            self.record_compaction(compaction_checkpoint)
-        for denial in permission_denials:
-            self.record_permission_denial(denial)
+        with self._owned(context):
+            self.store.record_evidence(
+                context.run_id,
+                EvidenceType.TURN_OUTCOME_OBSERVED,
+                entity_id=context.turn_id,
+                payload={
+                    "outcome": outcome.value,
+                    "raw_finish_reason_digest": _safe_error_digest(raw_finish_reason),
+                },
+            )
+            if usage_snapshot is not None:
+                self.record_usage_snapshot(usage_snapshot)
+            if compaction_checkpoint is not None:
+                self.record_compaction(compaction_checkpoint)
+            for denial in permission_denials:
+                self.record_permission_denial(denial)
 
-        status = turn_outcome_status(outcome) or RunStatus.FAILED
-        status = self._finish_open_operations(
-            context,
-            status=status,
-            reason_code=raw_finish_reason or outcome.value,
-        )
-        self.store.release_lease(context.run_id, owner_id=context.owner_id)
-        self.store.transition_run(
-            context.run_id,
-            status,
-            reason=raw_finish_reason or outcome.value,
-        )
+            status = turn_outcome_status(outcome) or RunStatus.FAILED
+            status = self._finish_open_operations(
+                context,
+                status=status,
+                reason_code=outcome.value,
+            )
+            self.store.finalize_run(
+                context.run_id,
+                status,
+                owner_id=context.owner_id,
+                reason=outcome.value,
+            )
         self._active = None
         return context.run_id
 
@@ -503,31 +617,31 @@ class RunAuthority:
         """Fail closed after an exception, using outcome_unknown past dispatch."""
         if context is not self._require_active():
             raise RuntimeError("Cannot fail a stale run context")
-        snapshot = self.store.get_snapshot(context.run_id)
-        status = (
-            RunStatus.OUTCOME_UNKNOWN
-            if any(item.dispatch_recorded for item in snapshot.operations.values())
-            else RunStatus.FAILED
-        )
-        status = self._finish_open_operations(
-            context,
-            status=status,
-            reason_code="unhandled_exception",
-        )
-        self.store.record_evidence(
-            context.run_id,
-            EvidenceType.TURN_OUTCOME_OBSERVED,
-            entity_id=context.turn_id,
-            payload={
-                "outcome": status.value,
-                "error_digest": _safe_error_digest(error),
-            },
-        )
-        self.store.release_lease(context.run_id, owner_id=context.owner_id)
-        self.store.transition_run(
-            context.run_id,
-            status,
-            reason="unhandled_exception",
-        )
+        with self._owned(context):
+            snapshot = self.store.get_snapshot(context.run_id)
+            uncertain = any(
+                _operation_is_uncertain(snapshot, item) for item in snapshot.operations.values()
+            )
+            status = RunStatus.OUTCOME_UNKNOWN if uncertain else RunStatus.FAILED
+            status = self._finish_open_operations(
+                context,
+                status=status,
+                reason_code="unhandled_exception",
+            )
+            self.store.record_evidence(
+                context.run_id,
+                EvidenceType.TURN_OUTCOME_OBSERVED,
+                entity_id=context.turn_id,
+                payload={
+                    "outcome": status.value,
+                    "error_digest": _safe_error_digest(error),
+                },
+            )
+            self.store.finalize_run(
+                context.run_id,
+                status,
+                owner_id=context.owner_id,
+                reason="unhandled_exception",
+            )
         self._active = None
         return context.run_id

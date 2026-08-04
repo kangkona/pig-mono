@@ -121,12 +121,14 @@ def apply_evidence(snapshot: RunSnapshot | None, evidence: Evidence) -> RunSnaps
 
     if evidence.type is EvidenceType.RUN_CREATED:
         raise ValueError("A run can only have one run_created event")
+    if run.status.is_terminal:
+        raise ValueError(f"Cannot append evidence to terminal run {run.id}")
     if evidence.type is EvidenceType.RUN_TRANSITIONED:
         target = RunStatus(str(payload["status"]))
         if target is RunStatus.COMPLETED and any(
-            item.status is not OperationStatus.COMPLETED for item in operations.values()
+            not item.status.is_terminal or not item.receipt_recorded for item in operations.values()
         ):
-            raise ValueError("A completed run cannot contain unfinished operations")
+            raise ValueError("A completed run cannot contain unfinished operations or receipts")
         uncertain = [
             item
             for item in operations.values()
@@ -135,6 +137,10 @@ def apply_evidence(snapshot: RunSnapshot | None, evidence: Evidence) -> RunSnaps
         ]
         if uncertain and target.is_terminal and target is not RunStatus.OUTCOME_UNKNOWN:
             raise ValueError("A run with unconfirmed operation effects must end as outcome_unknown")
+        if target.is_terminal and any(not item.status.is_terminal for item in operations.values()):
+            raise ValueError("A terminal run cannot contain nonterminal operations")
+        if target.is_terminal and any(not item.status.is_terminal for item in attempts.values()):
+            raise ValueError("A terminal run cannot contain running attempts")
         run = transition_run(run, target, occurred_at=evidence.occurred_at)
         if target.is_terminal:
             run = run.model_copy(update={"terminal_evidence_id": evidence.id})
@@ -183,6 +189,19 @@ def apply_evidence(snapshot: RunSnapshot | None, evidence: Evidence) -> RunSnaps
             raise ValueError("Operation ordinals must be contiguous and 1-based")
         operations[operation.id] = operation
     elif evidence.type is EvidenceType.OPERATION_DISPATCHED:
+        attempt_id = payload.get("attempt_id")
+        if not isinstance(attempt_id, str) or not attempt_id:
+            raise ValueError("operation_dispatched requires attempt_id")
+        dispatch_attempt = attempts.get(attempt_id)
+        if dispatch_attempt is None:
+            raise ValueError(f"Unknown attempt {attempt_id}")
+        if dispatch_attempt.operation_id != evidence.entity_id:
+            raise ValueError("Dispatch attempt does not belong to the operation")
+        if dispatch_attempt.status is not AttemptStatus.RUNNING:
+            raise ValueError("Only a running attempt can be dispatched")
+        if dispatch_attempt.dispatch_recorded:
+            raise ValueError(f"Attempt {attempt_id} is already dispatched")
+        attempts[attempt_id] = dispatch_attempt.model_copy(update={"dispatch_recorded": True})
         operations = _updated_operation(
             snapshot,
             evidence,
@@ -196,20 +215,59 @@ def apply_evidence(snapshot: RunSnapshot | None, evidence: Evidence) -> RunSnaps
             status=OperationStatus.WAITING,
         )
     elif evidence.type is EvidenceType.OPERATION_EFFECT_STARTED:
+        attempt_id = payload.get("attempt_id")
+        effect_attempt = attempts.get(attempt_id) if isinstance(attempt_id, str) else None
+        if (
+            effect_attempt is None
+            or effect_attempt.operation_id != evidence.entity_id
+            or effect_attempt.status is not AttemptStatus.RUNNING
+            or not effect_attempt.dispatch_recorded
+        ):
+            raise ValueError("An effect requires its running dispatched attempt")
+        if effect_attempt.effect_started:
+            raise ValueError(f"Attempt {effect_attempt.id} already crossed its effect boundary")
+        attempts[effect_attempt.id] = effect_attempt.model_copy(update={"effect_started": True})
         effect_operation = operations.get(evidence.entity_id)
         if effect_operation is None or not effect_operation.dispatch_recorded:
             raise ValueError("An effect cannot start before durable dispatch evidence")
         operations = _updated_operation(snapshot, evidence, effect_started=True)
     elif evidence.type is EvidenceType.PROVIDER_PARTIAL_OUTPUT:
+        attempt_id = payload.get("attempt_id")
+        partial_attempt = attempts.get(attempt_id) if isinstance(attempt_id, str) else None
         provider_operation = operations.get(evidence.entity_id)
         if (
             provider_operation is None
             or provider_operation.kind is not OperationKind.PROVIDER
             or not provider_operation.dispatch_recorded
+            or partial_attempt is None
+            or partial_attempt.operation_id != evidence.entity_id
+            or partial_attempt.status is not AttemptStatus.RUNNING
+            or not partial_attempt.dispatch_recorded
         ):
-            raise ValueError("Partial output requires a dispatched provider operation")
+            raise ValueError("Partial output requires its running dispatched provider attempt")
+        attempts[partial_attempt.id] = partial_attempt.model_copy(update={"partial_output": True})
         operations = _updated_operation(snapshot, evidence, partial_output=True)
     elif evidence.type is EvidenceType.OPERATION_COMPLETED:
+        completing_operation = operations.get(evidence.entity_id)
+        if completing_operation is None:
+            raise ValueError(f"Unknown operation {evidence.entity_id}")
+        operation_attempts = [
+            item for item in attempts.values() if item.operation_id == evidence.entity_id
+        ]
+        if any(not item.status.is_terminal for item in operation_attempts):
+            raise ValueError("An operation cannot complete with a running attempt")
+        if any(item.status is AttemptStatus.OUTCOME_UNKNOWN for item in operation_attempts):
+            raise ValueError("An operation with an unknown attempt cannot complete")
+        if completing_operation.kind in {OperationKind.PROVIDER, OperationKind.TOOL}:
+            if not completing_operation.dispatch_recorded:
+                raise ValueError("Provider and tool completion requires durable dispatch evidence")
+            if not any(
+                item.status is AttemptStatus.SUCCEEDED and item.dispatch_recorded
+                for item in operation_attempts
+            ):
+                raise ValueError(
+                    "Provider and tool completion requires a dispatched succeeded attempt"
+                )
         operations = _updated_operation(
             snapshot,
             evidence,
@@ -217,6 +275,13 @@ def apply_evidence(snapshot: RunSnapshot | None, evidence: Evidence) -> RunSnaps
             receipt_recorded=True,
         )
     elif evidence.type is EvidenceType.OPERATION_FAILED:
+        operation_attempts = [
+            item for item in attempts.values() if item.operation_id == evidence.entity_id
+        ]
+        if any(not item.status.is_terminal for item in operation_attempts):
+            raise ValueError("An operation cannot fail with a running attempt")
+        if any(item.status is AttemptStatus.OUTCOME_UNKNOWN for item in operation_attempts):
+            raise ValueError("An operation with an unknown attempt cannot fail")
         operations = _updated_operation(
             snapshot,
             evidence,
@@ -224,6 +289,13 @@ def apply_evidence(snapshot: RunSnapshot | None, evidence: Evidence) -> RunSnaps
             receipt_recorded=True,
         )
     elif evidence.type is EvidenceType.OPERATION_CANCELLED:
+        operation_attempts = [
+            item for item in attempts.values() if item.operation_id == evidence.entity_id
+        ]
+        if any(not item.status.is_terminal for item in operation_attempts):
+            raise ValueError("An operation cannot cancel with a running attempt")
+        if any(item.status is AttemptStatus.OUTCOME_UNKNOWN for item in operation_attempts):
+            raise ValueError("An operation with an unknown attempt cannot cancel")
         operations = _updated_operation(
             snapshot,
             evidence,
@@ -231,6 +303,11 @@ def apply_evidence(snapshot: RunSnapshot | None, evidence: Evidence) -> RunSnaps
             receipt_recorded=True,
         )
     elif evidence.type is EvidenceType.OPERATION_OUTCOME_UNKNOWN:
+        if any(
+            item.operation_id == evidence.entity_id and not item.status.is_terminal
+            for item in attempts.values()
+        ):
+            raise ValueError("An operation cannot become outcome_unknown with a running attempt")
         operations = _updated_operation(
             snapshot,
             evidence,
@@ -242,6 +319,8 @@ def apply_evidence(snapshot: RunSnapshot | None, evidence: Evidence) -> RunSnaps
             raise ValueError("attempt_started identity does not match its evidence envelope")
         if attempt.operation_id not in operations:
             raise ValueError(f"Unknown operation {attempt.operation_id}")
+        if operations[attempt.operation_id].status.is_terminal:
+            raise ValueError("Cannot start an attempt for a terminal operation")
         if attempt.status is not AttemptStatus.RUNNING or attempt.finished_at is not None:
             raise ValueError("A new attempt must start in running state")
         operation_attempts = [
@@ -249,6 +328,11 @@ def apply_evidence(snapshot: RunSnapshot | None, evidence: Evidence) -> RunSnaps
         ]
         if any(not item.status.is_terminal for item in operation_attempts):
             raise ValueError("The previous attempt must finish before retrying")
+        if any(
+            item.status in {AttemptStatus.SUCCEEDED, AttemptStatus.OUTCOME_UNKNOWN}
+            for item in operation_attempts
+        ):
+            raise ValueError("A succeeded or outcome_unknown attempt cannot be retried")
         if attempt.number != len(operation_attempts) + 1:
             raise ValueError("Attempt numbers must be contiguous and 1-based")
         attempts[attempt.id] = attempt
@@ -261,6 +345,14 @@ def apply_evidence(snapshot: RunSnapshot | None, evidence: Evidence) -> RunSnaps
         status = AttemptStatus(str(payload["status"]))
         if not status.is_terminal:
             raise ValueError("attempt_finished requires a terminal attempt status")
+        if status in {AttemptStatus.SUCCEEDED, AttemptStatus.OUTCOME_UNKNOWN} and not (
+            finishing_attempt.dispatch_recorded
+        ):
+            raise ValueError(f"Attempt status {status.value} requires durable dispatch evidence")
+        if status in {AttemptStatus.FAILED, AttemptStatus.CANCELLED} and (
+            finishing_attempt.effect_started or finishing_attempt.partial_output
+        ):
+            raise ValueError("An attempt with an unconfirmed effect cannot become known terminal")
         attempts[finishing_attempt.id] = finishing_attempt.model_copy(
             update={
                 "status": status,

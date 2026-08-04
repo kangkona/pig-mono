@@ -53,6 +53,7 @@ from .run_integrity import (
     RunStatus,
     RunStoreError,
     SQLiteRunStore,
+    ToolOutcomeUnknownError,
     Turn,
 )
 from .session import Session, SessionEntry, SessionTree
@@ -109,6 +110,7 @@ __all__ = [
     # Durable run integrity
     "Run",
     "RunAuthority",
+    "ToolOutcomeUnknownError",
     "RunStatus",
     "RunSnapshot",
     "Turn",

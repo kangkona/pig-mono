@@ -84,7 +84,10 @@ The packaged `pig-coding-agent` SDK supplies that lifecycle when
 `create_agent_session(..., run_ledger_path=...)` is used. Hosts integrating
 `Agent` directly can provide their own `RunAuthority`; if they do, a failed
 evidence write propagates and prevents a provider dispatch or tool effect rather
-than degrading into observability-only logging.
+than degrading into observability-only logging. Authority commands reject
+expired or stale owners, and run initialization/finalization commit atomically.
+An exception, timeout, or cancellation after a tool effect starts is recorded as
+`outcome_unknown` and blocks automatic retry or fallback.
 
 The R1 evidence adapter deliberately stores content digests for prompts, tool
 arguments, targets, provider errors, and results. It is a run-integrity boundary,

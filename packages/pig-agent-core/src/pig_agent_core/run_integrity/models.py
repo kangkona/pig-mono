@@ -268,6 +268,9 @@ class Attempt(ProtocolModel):
     operation_id: str
     number: int = Field(ge=1)
     status: AttemptStatus
+    dispatch_recorded: bool = False
+    effect_started: bool = False
+    partial_output: bool = False
     started_at: datetime
     finished_at: datetime | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)

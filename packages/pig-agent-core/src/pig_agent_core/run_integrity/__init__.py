@@ -3,6 +3,7 @@
 from .adapters import (
     ActiveRunContext,
     RunAuthority,
+    ToolOutcomeUnknownError,
     compaction_payload,
     permission_denial_payload,
     retry_observation_payload,
@@ -63,6 +64,7 @@ __all__ = [
     "RunStatus",
     "RunStoreError",
     "SQLiteRunStore",
+    "ToolOutcomeUnknownError",
     "Turn",
     "apply_evidence",
     "canonical_json",

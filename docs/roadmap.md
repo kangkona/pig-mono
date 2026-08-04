@@ -25,8 +25,8 @@ The `0.2.0` baseline contains:
 - strict repository typing and multi-platform CI;
 - tag/package/import/dependency verification plus exact PyPI artifact verification.
 
-These are current code and release contracts. They are foundations for run
-integrity, not proof that run integrity is already complete.
+These are the published release contracts and retained foundations for later
+runtime work; they are not proof that run integrity is already complete.
 
 ## Product and engineering principles
 
@@ -91,18 +91,28 @@ Exit criteria:
 
 **Implemented**
 
-- Versioned immutable models and IDs for `Run`, `Turn`, `Operation`, `Attempt`,
-  and `Evidence`, with a validated transition kernel and explicit
+- Versioned frozen protocol envelopes and IDs for `Run`, `Turn`, `Operation`,
+  `Attempt`, and `Evidence`, with a validated transition kernel and explicit
   `outcome_unknown` terminal state.
 - A stdlib SQLite ledger whose append-only evidence stream and materialized run
   projection update in one transaction. Evidence rows are hash chained, while
   projections can be deleted and rebuilt from the log.
 - Stable logical operation identity across provider and tool retries, with
-  separately numbered attempts and a lease-based recovery classifier.
-- Direct, fail-closed provider and tool execution hooks. Provider dispatch is
-  recorded before the network call. Tool dispatch and effect-start are separate
-  durable facts; a ledger failure before effect-start prevents the handler from
-  running.
+  separately numbered attempts; attempt-bound dispatch, effect-start, and
+  partial-output receipts; and a lease-based recovery classifier. Attempts with
+  an unconfirmed effect cannot be downgraded to a known failure or retried.
+- Direct, fail-closed provider and tool execution hooks. Every authority write
+  validates an unexpired matching owner in the same SQLite transaction and
+  renews only an active lease. Provider dispatch is recorded before the network
+  call. Tool dispatch and effect-start are separate facts committed together
+  before the handler; either both commit or both roll back.
+- Atomic run initialization and finalization commands. Terminal transition and
+  ownership release either both commit or both roll back, so the normal finish
+  path cannot create a nonterminal unowned run.
+- Receipt-aware operation algebra. Known provider/tool failures remain
+  `failed`; only unconfirmed effects become `outcome_unknown`. Tool exceptions,
+  timeouts, and cancellation after effect-start block automatic retry and
+  fallback.
 - Redacted compatibility projections for turn outcomes, retries, usage,
   compaction checkpoints, permission denials, and tool audits. Raw prompts,
   tool arguments, targets, provider errors, and credentials are represented by
@@ -112,19 +122,23 @@ Exit criteria:
 
 **Verified**
 
-- Transition tests reject a second terminal event and reject `completed` while
-  any operation lacks a durable completion receipt.
+- Transition tests reject post-terminal evidence, terminal runs with open
+  operations or attempts, fabricated provider/tool completion without dispatch
+  and a succeeded attempt, retry attempts that borrow an earlier attempt's
+  dispatch, and `completed` while any operation lacks a durable receipt.
 - Replay, projection rebuild, evidence-chain verification, compare-and-swap,
   and append-only SQLite trigger tests exercise the storage invariants.
 - Recovery fixtures cover interruption before dispatch, partial provider
   streaming, before tool effect, after an unconfirmed tool effect, and after a
-  durable completion. A direct fault-injection test also interrupts the actual
-  tool hook between dispatch and effect-start and verifies that recovery permits
-  explicit resume but never automatic redispatch.
+  durable completion. Recovery closes every open operation/attempt before a
+  terminal outcome. A direct fault-injection test also interrupts the actual
+  tool hook between dispatch and effect-start and proves the enclosing
+  transaction rolls dispatch back before the handler can run.
 - Provider and tool boundary tests prove that a failed durable write prevents
-  the downstream network call or tool handler. SDK integration tests verify a
-  provider-tool-provider turn, replay its projection, and preserve the existing
-  prompt result contract.
+  the downstream network call or tool handler, that an expired/stale owner
+  cannot cross an effect boundary, and that an unconfirmed tool exception cannot
+  retry or fall back. SDK integration tests verify a provider-tool-provider turn,
+  replay its projection, and preserve the existing prompt result contract.
 - Repository Ruff, formatting, strict mypy, package tests, release verification,
   and wheel/sdist checks remain required before merge; the PR reports their
   exact results rather than treating this status section as release evidence.
@@ -136,9 +150,15 @@ Exit criteria:
 - The current embedding adapter serializes one active turn per
   `RunAuthority`. A host-neutral async harness, event cursors, backpressure, and
   transport equivalence remain R3 work.
+- The compatibility adapter currently maps one host request to one `Turn`, even
+  when the agent performs multiple provider reasoning cycles. Moving to the
+  target model of one Turn per model-facing cycle belongs with the R3 harness.
 - The R1 recovery cases are protocol and boundary-level fixtures. The broader
   subprocess death, duplicate delivery, storage race, and transport fault matrix
   is not a release gate until R4.
+- SQLite event envelopes are versioned, but database-format migration and
+  unsupported-future-version policy must be defined before R2 evolves the
+  persisted schema.
 - Credential authority is not implemented here. R1 therefore does not solve
   token refresh ownership, credential leakage across hosts, or credential
   availability misclassification. Context evidence is limited to digests and
