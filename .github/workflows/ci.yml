@@ -43,8 +43,8 @@ jobs:
     - name: Run linting
       shell: bash
       run: |
-        ruff check packages/
-        ruff format --check packages/
+        ruff check packages/ tests/ scripts/verify_release.py
+        ruff format --check packages/ tests/ scripts/verify_release.py
 
     - name: Run type checking
       shell: bash
@@ -100,7 +100,7 @@ jobs:
 
     - name: Check distributions
       run: |
-        twine check packages/*/dist/* || true
+        twine check packages/*/dist/*
 
   docs:
     runs-on: ubuntu-latest

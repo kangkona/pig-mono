@@ -1931,7 +1931,7 @@ wheels = [
 
 [[package]]
 name = "pig-agent-core"
-version = "0.1.1"
+version = "0.2.0"
 source = { editable = "packages/pig-agent-core" }
 dependencies = [
     { name = "pig-llm" },
@@ -1963,7 +1963,7 @@ provides-extras = ["dev"]
 
 [[package]]
 name = "pig-coding-agent"
-version = "0.1.1"
+version = "0.2.0"
 source = { editable = "packages/pig-coding-agent" }
 dependencies = [
     { name = "pig-agent-core" },
@@ -1993,7 +1993,7 @@ provides-extras = ["dev"]
 
 [[package]]
 name = "pig-llm"
-version = "0.1.1"
+version = "0.2.0"
 source = { editable = "packages/pig-llm" }
 dependencies = [
     { name = "anthropic" },
@@ -2035,7 +2035,7 @@ provides-extras = ["dev"]
 
 [[package]]
 name = "pig-messenger"
-version = "0.0.3"
+version = "0.2.0"
 source = { editable = "packages/pig-messenger" }
 dependencies = [
     { name = "httpx" },
@@ -2110,7 +2110,7 @@ provides-extras = ["redis", "encryption", "slack", "discord", "whatsapp", "teleg
 
 [[package]]
 name = "pig-mono"
-version = "0.0.1"
+version = "0.2.0"
 source = { editable = "." }
 dependencies = [
     { name = "rich" },
@@ -2178,7 +2178,7 @@ dev = [
 
 [[package]]
 name = "pig-tui"
-version = "0.1.1"
+version = "0.2.0"
 source = { editable = "packages/pig-tui" }
 dependencies = [
     { name = "prompt-toolkit" },
@@ -2210,7 +2210,7 @@ provides-extras = ["dev"]
 
 [[package]]
 name = "pig-web-ui"
-version = "0.0.1"
+version = "0.2.0"
 source = { editable = "packages/pig-web-ui" }
 dependencies = [
     { name = "fastapi" },

@@ -10,12 +10,20 @@ REPO_ROOT="$(dirname "$SCRIPT_DIR")"
 
 cd "$REPO_ROOT"
 
+if [[ -z "${RUFF:-}" ]]; then
+  if [[ -x "$REPO_ROOT/.venv/bin/ruff" ]]; then
+    RUFF="$REPO_ROOT/.venv/bin/ruff"
+  else
+    RUFF="ruff"
+  fi
+fi
+
 # Run ruff
 echo "→ Running ruff..."
-ruff check packages/
+"$RUFF" check packages/ tests/ scripts/verify_release.py
 
 echo "→ Running ruff format check..."
-ruff format --check packages/
+"$RUFF" format --check packages/ tests/ scripts/verify_release.py
 
 # Run mypy
 echo "→ Running mypy..."

@@ -2,6 +2,30 @@
 
 All notable changes to pig-coding-agent will be documented in this file.
 
+## [0.2.0] - 2026-08-04
+
+### Added
+
+- `create_agent_session()` and `AgentSessionRuntime` for Python hosts.
+- Structured `AgentTurnResult` outcomes and permission denials.
+- Canonical project-trust decisions for project configuration, instructions,
+  prompts, skills, package roots, and extensions.
+- `ActiveTurnLifecycle` for interactive cancellation and lifecycle coordination.
+
+### Changed
+
+- Split interactive dispatch, commands, flows, views, and terminal orchestration
+  into focused modules.
+- Made unattended CLI, JSON, RPC, piped-input, generation, analysis, and default
+  SDK routes deny side-effectful tools unless an explicit policy authorizes them.
+- Aligned `pig-llm`, `pig-agent-core`, and `pig-tui` dependency floors at `0.2.0`.
+
+### Fixed
+
+- Preserved structured turn outcomes across CLI and SDK boundaries.
+- Prevented closed or non-interactive stdin from bypassing or crashing permission
+  handling.
+
 ## [0.0.4] - 2026-03-04
 
 ### Added

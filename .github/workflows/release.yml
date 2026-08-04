@@ -6,10 +6,8 @@ on:
       - 'v*'
 
 jobs:
-  release:
+  build:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write          # create the GitHub Release
 
     steps:
     - uses: actions/checkout@v4
@@ -22,7 +20,13 @@ jobs:
     - name: Install build tooling
       run: |
         python -m pip install --upgrade pip
-        pip install build
+        pip install build twine
+
+    - name: Verify release metadata
+      run: python scripts/verify_release.py --tag "${GITHUB_REF_NAME}"
+
+    - name: Set reproducible build timestamp
+      run: echo "SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)" >> "$GITHUB_ENV"
 
     - name: Build packages
       run: |
@@ -33,42 +37,30 @@ jobs:
           fi
         done
 
-    # Collect every package's artifacts into one dir so both the GitHub
-    # Release and the PyPI publish step have a single source of truth.
-    - name: Gather distributions
+    - name: Gather and check distributions
       run: |
         mkdir -p dist
         cp packages/*/dist/* dist/
-        ls -l dist
+        twine check dist/*
 
-    - name: Create GitHub Release
-      uses: softprops/action-gh-release@v1
-      with:
-        files: dist/*
-        generate_release_notes: true
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-    - name: Upload distributions for the publish job
+    - name: Upload verified distributions
       uses: actions/upload-artifact@v4
       with:
         name: dist
         path: dist/
+        if-no-files-found: error
 
-  # Separate job so a PyPI misconfiguration can never undo the GitHub Release
-  # above. Uses PyPI Trusted Publishing (OIDC) — no token/secret required, but
-  # each project must have a trusted publisher configured on PyPI first (see
-  # the note below). skip-existing keeps re-tagging from failing on versions
-  # that are already published (e.g. unchanged packages on a later tag).
+  # Trusted Publishing uses GitHub OIDC. The environment must allow v* tags,
+  # and every PyPI project must trust this workflow and environment.
   pypi-publish:
-    needs: release
+    needs: build
     runs-on: ubuntu-latest
     environment: pypi
     permissions:
-      id-token: write          # mint the OIDC token for Trusted Publishing
+      id-token: write
 
     steps:
-    - name: Download built distributions
+    - name: Download verified distributions
       uses: actions/download-artifact@v4
       with:
         name: dist
@@ -78,26 +70,51 @@ jobs:
       uses: pypa/gh-action-pypi-publish@release/v1
       with:
         packages-dir: dist/
+        # Supports recovery from a partially completed multi-package publish.
+        # The next job still requires every published digest to match this build.
         skip-existing: true
 
-# One-time PyPI setup required before the pypi-publish job can succeed:
-#   1. For each package (pig-llm, pig-agent-core, pig-coding-agent, pig-tui,
-#      pig-messenger, pig-web-ui), add a Trusted Publisher on
-#      PyPI -> Project -> Settings -> Publishing (or a "pending publisher" for
-#      first-ever uploads) with:
-#         Owner:    kangkona
-#         Repo:     pig-mono
-#         Workflow: release.yml
-#         Environment: pypi
-#   2. Create a GitHub Environment named "pypi" (Settings -> Environments) —
-#      optionally add required reviewers to gate publishes.
-#
-# Prefer an API token instead of Trusted Publishing? Replace the publish step
-# with the token form and add a PYPI_TOKEN secret:
-#     - name: Publish to PyPI
-#       uses: pypa/gh-action-pypi-publish@release/v1
-#       with:
-#         packages-dir: dist/
-#         skip-existing: true
-#         password: ${{ secrets.PYPI_TOKEN }}
-#   (the id-token permission is then unnecessary).
+  verify-published:
+    needs: [build, pypi-publish]
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+
+    - name: Download verified distributions
+      uses: actions/download-artifact@v4
+      with:
+        name: dist
+        path: dist/
+
+    - name: Verify PyPI artifact integrity
+      run: >-
+        python scripts/verify_release.py
+        --tag "${GITHUB_REF_NAME}"
+        --published-dist dist
+
+  github-release:
+    needs: [build, verify-published]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+    - name: Download published distributions
+      uses: actions/download-artifact@v4
+      with:
+        name: dist
+        path: dist/
+
+    - name: Create GitHub Release
+      uses: softprops/action-gh-release@v1
+      with:
+        files: dist/*
+        generate_release_notes: true
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

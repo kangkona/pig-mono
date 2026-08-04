@@ -116,11 +116,11 @@ Check the `examples/` directory for more:
 ```
 pig-mono/
 ├── packages/
-│   ├── pig-llm/              # ✅ Ready to use
-│   ├── pig-agent-core/      # 🚧 Coming soon
-│   ├── pig-coding-agent/    # 🚧 Coming soon
-│   ├── pig-tui/             # 🚧 Coming soon
-│   └── pig-web-ui/          # 🚧 Coming soon
+│   ├── pig-llm/             # LLM and provider runtime
+│   ├── pig-agent-core/      # Agent and session runtime
+│   ├── pig-coding-agent/    # CLI and embedding surface
+│   ├── pig-tui/             # Terminal interaction primitives
+│   └── pig-web-ui/          # Web application surface
 ├── examples/               # Usage examples
 ├── tests/                  # Tests
 └── scripts/                # Utility scripts

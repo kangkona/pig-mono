@@ -3,7 +3,7 @@
 [![PyPI version](https://badge.fury.io/py/pig-agent-core.svg)](https://badge.fury.io/py/pig-agent-core)
 [![Python](https://img.shields.io/pypi/pyversions/pig-agent-core.svg)](https://pypi.org/project/pig-agent-core/)
 
-Production-ready agent framework with tool calling, resilience, and observability.
+Agent runtime with tool calling, streaming, sessions, resilience, and observability.
 
 ## Features
 

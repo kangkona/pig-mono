@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "pig-messenger"
-version = "0.0.3"
+version = "0.2.0"
 description = "Universal multi-platform bot framework"
 readme = "README.md"
 license = { text = "MIT" }
@@ -14,8 +14,8 @@ authors = [
 ]
 
 dependencies = [
-    "pig-llm>=0.0.1",
-    "pig-agent-core>=0.0.1",
+    "pig-llm>=0.2.0",
+    "pig-agent-core>=0.2.0",
     "pydantic>=2.6.0",
     "httpx>=0.26.0",
     "python-dotenv>=1.0.0",
