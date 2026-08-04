@@ -48,6 +48,43 @@ optional so installing the coding-agent package alone does not pull every SDK.
 
 ## Quick Start
 
+### Embed with durable run integrity
+
+The synchronous Python SDK keeps durable run recording opt-in. Pass a SQLite
+path when the host needs replayable provider/tool attempt evidence and a
+verifiable terminal result:
+
+```python
+from pathlib import Path
+
+from pig_coding_agent import create_agent_session
+from pig_coding_agent.permissions import PermissionPolicy
+from pig_llm import LLM
+
+runtime = create_agent_session(
+    workspace=Path.cwd(),
+    llm=LLM(provider="openai"),
+    project_trust=True,
+    permission_policy=PermissionPolicy.unattended(),
+    run_ledger_path=Path(".agents/runs.sqlite3"),
+    run_owner_id="my-python-host",
+)
+
+try:
+    result = runtime.prompt_result("Explain this repository")
+    run_id = runtime.last_run_id
+    if run_id is not None and runtime.run_store is not None:
+        verified = runtime.run_store.verify(run_id)
+        print(verified.run.status.value, result.content)
+finally:
+    runtime.close()
+```
+
+The ledger stores prompt, target, argument, result, and error digests rather than
+their raw values. Provider calls and tool effects fail closed when their durable
+boundary cannot be recorded. Leaving out `run_ledger_path` preserves the
+existing in-process SDK behavior and creates no ledger.
+
 ### Start Interactive Session
 
 ```bash

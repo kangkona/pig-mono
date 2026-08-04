@@ -73,6 +73,23 @@ agent = Agent(
 response = await agent.arun("Complex task requiring multiple API calls")
 ```
 
+### Durable Run Authority
+
+`SQLiteRunStore` is the append-only source of run evidence and `RunAuthority`
+connects provider and tool boundaries to it. Embedding hosts own the outer turn
+lifecycle: begin the run before host or provider work, then commit exactly one
+terminal outcome after durable session persistence.
+
+The packaged `pig-coding-agent` SDK supplies that lifecycle when
+`create_agent_session(..., run_ledger_path=...)` is used. Hosts integrating
+`Agent` directly can provide their own `RunAuthority`; if they do, a failed
+evidence write propagates and prevents a provider dispatch or tool effect rather
+than degrading into observability-only logging.
+
+The R1 evidence adapter deliberately stores content digests for prompts, tool
+arguments, targets, provider errors, and results. It is a run-integrity boundary,
+not a context-provenance or credential-authority implementation.
+
 ### Agent with Tools
 
 ```python

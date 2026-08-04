@@ -87,6 +87,72 @@ Exit criteria:
   completion.
 - Existing CLI and SDK behavior passes unchanged through an adapter layer.
 
+### R1 implementation status
+
+**Implemented**
+
+- Versioned immutable models and IDs for `Run`, `Turn`, `Operation`, `Attempt`,
+  and `Evidence`, with a validated transition kernel and explicit
+  `outcome_unknown` terminal state.
+- A stdlib SQLite ledger whose append-only evidence stream and materialized run
+  projection update in one transaction. Evidence rows are hash chained, while
+  projections can be deleted and rebuilt from the log.
+- Stable logical operation identity across provider and tool retries, with
+  separately numbered attempts and a lease-based recovery classifier.
+- Direct, fail-closed provider and tool execution hooks. Provider dispatch is
+  recorded before the network call. Tool dispatch and effect-start are separate
+  durable facts; a ledger failure before effect-start prevents the handler from
+  running.
+- Redacted compatibility projections for turn outcomes, retries, usage,
+  compaction checkpoints, permission denials, and tool audits. Raw prompts,
+  tool arguments, targets, provider errors, and credentials are represented by
+  digests rather than copied into evidence.
+- An opt-in synchronous Python embedding path via `run_ledger_path`. Omitting
+  the option preserves the `0.2` SDK contract and does not create a run database.
+
+**Verified**
+
+- Transition tests reject a second terminal event and reject `completed` while
+  any operation lacks a durable completion receipt.
+- Replay, projection rebuild, evidence-chain verification, compare-and-swap,
+  and append-only SQLite trigger tests exercise the storage invariants.
+- Recovery fixtures cover interruption before dispatch, partial provider
+  streaming, before tool effect, after an unconfirmed tool effect, and after a
+  durable completion. A direct fault-injection test also interrupts the actual
+  tool hook between dispatch and effect-start and verifies that recovery permits
+  explicit resume but never automatic redispatch.
+- Provider and tool boundary tests prove that a failed durable write prevents
+  the downstream network call or tool handler. SDK integration tests verify a
+  provider-tool-provider turn, replay its projection, and preserve the existing
+  prompt result contract.
+- Repository Ruff, formatting, strict mypy, package tests, release verification,
+  and wheel/sdist checks remain required before merge; the PR reports their
+  exact results rather than treating this status section as release evidence.
+
+**Known gaps**
+
+- R1 records existing permission denials but does not yet make a versioned,
+  scoped `PolicyDecision` the authority for tool dispatch. That is the R2 gate.
+- The current embedding adapter serializes one active turn per
+  `RunAuthority`. A host-neutral async harness, event cursors, backpressure, and
+  transport equivalence remain R3 work.
+- The R1 recovery cases are protocol and boundary-level fixtures. The broader
+  subprocess death, duplicate delivery, storage race, and transport fault matrix
+  is not a release gate until R4.
+- Credential authority is not implemented here. R1 therefore does not solve
+  token refresh ownership, credential leakage across hosts, or credential
+  availability misclassification. Context evidence is limited to digests and
+  compaction receipts; it cannot yet answer why a particular context fragment
+  was selected for a model request. Those require R2 credential/capability
+  authority plus the R3/R4 context provenance and conformance work.
+
+**Next gate**
+
+Define R2 policy and credential envelopes so every side-effecting dispatch can
+prove who authorized which capability, target, credential reference, scope, and
+expiry. Add the first cross-process R4 fixture alongside that work so policy and
+recovery are tested at the same durable boundaries rather than only in-process.
+
 ## Milestone R2: capability policy and evidence envelopes
 
 Move from tool-name checks toward explicit, scoped authority while preserving the
