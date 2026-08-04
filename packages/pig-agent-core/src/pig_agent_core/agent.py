@@ -111,7 +111,7 @@ class Agent:
         self.run_authority = run_authority
 
         # Use enhanced ToolRegistry from tools/registry.py
-        self.registry = ToolRegistry()
+        self.registry = ToolRegistry(execution_callback=self._record_tool_execution)
         if tools:
             for tool in tools:
                 self.add_tool(tool)
@@ -179,7 +179,14 @@ class Agent:
 
         try:
             if hasattr(self.registry, "execute_sync"):
-                result = self.registry.execute_sync(tool_name, tool_args)
+                tool_call_id = tool_call.get("id")
+                result = self.registry.execute_sync(
+                    tool_name,
+                    tool_args,
+                    execution_id=(
+                        f"{tool_call_id}:{tool_name}" if isinstance(tool_call_id, str) else None
+                    ),
+                )
             else:
                 raw_result = self.registry.execute(tool_name, **tool_args)
                 result = self._as_tool_result(raw_result)
@@ -196,6 +203,8 @@ class Agent:
             if self.on_tool_end:
                 self.on_tool_end(tool_name, result)
         except Exception as e:
+            if self.run_authority is not None:
+                raise
             result = ToolResult(ok=False, error=f"Error: {e}")
             self._log(f"✗ {result.error}", style="red")
 
@@ -642,6 +651,11 @@ class Agent:
         if self.run_authority is not None:
             self.run_authority.record_provider_attempt(data)
 
+    def _record_tool_execution(self, data: dict[str, Any]) -> None:
+        """Persist tool effect boundaries directly when run authority is enabled."""
+        if self.run_authority is not None:
+            self.run_authority.record_tool_execution(data)
+
     def _emit_agent_end(self, *, success: bool, error: str | None = None) -> None:
         """Emit a terminal agent_end event for the current run."""
         emit_agent_end(
@@ -673,10 +687,11 @@ class Agent:
 
         tool_call_objects = [
             SimpleNamespace(
+                id=tool_call.get("id"),
                 function=SimpleNamespace(
                     name=tool_call.get("function", {}).get("name"),
                     arguments=tool_call.get("function", {}).get("arguments", "{}"),
-                )
+                ),
             )
             for tool_call in tool_calls
         ]
@@ -1058,10 +1073,11 @@ class Agent:
                             from types import SimpleNamespace
 
                             tool_call_obj = SimpleNamespace(
+                                id=tool_call_id,
                                 function=SimpleNamespace(
                                     name=tool_name,
                                     arguments=tool_args_str,
-                                )
+                                ),
                             )
 
                             if hasattr(self.registry, "execute"):
@@ -1107,6 +1123,8 @@ class Agent:
                                 tool_call_id=tool_call_id,
                             )
                         except Exception as e:
+                            if self.run_authority is not None:
+                                raise
                             error_msg = f"Error: {e}"
                             result = ToolResult(ok=False, error=error_msg)
                             self._observe_tool_result(
@@ -1593,10 +1611,11 @@ class Agent:
                     from types import SimpleNamespace
 
                     tool_call_obj = SimpleNamespace(
+                        id=tool_call_id,
                         function=SimpleNamespace(
                             name=tool_name,
                             arguments=tool_args_str,
-                        )
+                        ),
                     )
                     result = await self.registry.execute(tool_call_obj, "default", {}, cancel)
                 else:
@@ -1637,6 +1656,8 @@ class Agent:
                 if result.meta.get("abort_batch"):
                     return termination
             except Exception as e:
+                if self.run_authority is not None:
+                    raise
                 error_msg = f"Error: {e}"
                 result = ToolResult(ok=False, error=error_msg)
                 self._observe_tool_result(

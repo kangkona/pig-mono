@@ -115,6 +115,8 @@ class ActiveRunContext:
     owner_id: str
     provider_operations: dict[str, str] = field(default_factory=dict)
     attempts: dict[tuple[str, int], str] = field(default_factory=dict)
+    tool_operations: dict[str, str] = field(default_factory=dict)
+    tool_attempts: dict[tuple[str, int], str] = field(default_factory=dict)
     partial_output: bool = False
 
 
@@ -259,6 +261,92 @@ class RunAuthority:
             EvidenceType.RETRY_OBSERVED,
             entity_id=operation_id,
             payload=retry_observation_payload(data),
+        )
+
+    def record_tool_execution(self, data: dict[str, Any]) -> None:
+        """Persist tool effect boundaries and receipts synchronously."""
+        context = self._active
+        if context is None:
+            return
+        execution_id = data.get("execution_id")
+        phase = data.get("phase")
+        tool_name = data.get("tool_name")
+        if not isinstance(execution_id, str) or not execution_id:
+            raise ValueError("Tool execution evidence requires execution_id")
+        if phase not in {"created", "started", "succeeded", "failed", "completed"}:
+            raise ValueError("Tool execution evidence has an invalid phase")
+        if not isinstance(tool_name, str) or not tool_name:
+            raise ValueError("Tool execution evidence requires tool_name")
+
+        operation_id = context.tool_operations.get(execution_id)
+        if operation_id is None:
+            operation = self.store.ensure_operation(
+                context.run_id,
+                turn_id=context.turn_id,
+                kind=OperationKind.TOOL,
+                idempotency_key=f"tool:{context.turn_id}:{execution_id}",
+                metadata={"tool_name": tool_name},
+            )
+            operation_id = operation.id
+            context.tool_operations[execution_id] = operation_id
+
+        if phase == "created":
+            return
+
+        attempt_number = data.get("attempt")
+        key: tuple[str, int] | None = None
+        attempt_id: str | None = None
+        if phase in {"started", "succeeded", "failed"}:
+            if not isinstance(attempt_number, int) or attempt_number < 1:
+                raise ValueError("Tool attempt evidence requires a 1-based attempt")
+            key = (execution_id, attempt_number)
+            attempt_id = context.tool_attempts.get(key)
+
+        if phase == "started":
+            if key is None or attempt_id is not None:
+                raise ValueError(f"Tool attempt {execution_id}/{attempt_number} already started")
+            attempt = self.store.start_attempt(
+                operation_id,
+                metadata={"tool_name": tool_name},
+            )
+            if attempt.number != attempt_number:
+                raise ValueError(
+                    f"Tool attempt sequence mismatch: {attempt.number} != {attempt_number}"
+                )
+            context.tool_attempts[key] = attempt.id
+            self.store.dispatch_operation(operation_id)
+            self.store.record_effect_started(operation_id)
+            return
+
+        if phase in {"succeeded", "failed"}:
+            if attempt_id is None:
+                raise ValueError(f"Tool attempt {execution_id}/{attempt_number} was not started")
+            status = AttemptStatus.SUCCEEDED if phase == "succeeded" else AttemptStatus.FAILED
+            self.store.finish_attempt(
+                attempt_id,
+                status,
+                metadata={"reason": str(data.get("reason", phase))},
+            )
+            return
+
+        result_payload = {
+            "ok": bool(data.get("ok", False)),
+            "error": str(data.get("error", "")),
+        }
+        self.store.complete_operation(
+            operation_id,
+            result_digest=content_digest(result_payload),
+        )
+        self.store.record_evidence(
+            context.run_id,
+            EvidenceType.TOOL_AUDIT_OBSERVED,
+            entity_id=operation_id,
+            payload={
+                "tool_name": tool_name,
+                "args_digest": content_digest(data.get("args", {})),
+                "result_digest": content_digest(result_payload),
+                "success": result_payload["ok"],
+            },
         )
 
     def record_agent_event(self, event: AgentEvent) -> None:
