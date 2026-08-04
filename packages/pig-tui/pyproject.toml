@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "pig-tui"
-version = "0.1.1"
+version = "0.2.0"
 description = "Terminal UI library with differential rendering"
 readme = "README.md"
 license = { text = "MIT" }

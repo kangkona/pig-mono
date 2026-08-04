@@ -3,7 +3,7 @@
 [![PyPI version](https://badge.fury.io/py/pig-messenger.svg)](https://badge.fury.io/py/pig-messenger)
 [![Python](https://img.shields.io/pypi/pyversions/pig-messenger.svg)](https://pypi.org/project/pig-messenger/)
 
-Universal messenger abstraction library for building multi-platform bots with production-grade features.
+Messenger abstraction library for building bots across optional platform adapters.
 
 English | [简体中文](./README.zh-CN.md)
 
@@ -12,7 +12,7 @@ English | [简体中文](./README.zh-CN.md)
 - **Universal Abstractions**: Single API for Telegram, Slack, Discord, WhatsApp, Feishu
 - **Streaming Support**: 3-strategy streaming (draft/edit/batch) for real-time responses
 - **Distributed State**: Redis-backed state management with agent locking and follow-up queues
-- **Production Ready**: Retry logic, error handling, graceful shutdown
+- **Lifecycle Handling**: Retry paths, error handling, and graceful shutdown
 - **Type Safe**: Full type hints and dataclass-based models
 
 ## Installation

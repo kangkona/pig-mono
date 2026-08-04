@@ -18,7 +18,7 @@ from .project_trust import (
 from .sdk import AgentSessionRuntime, create_agent_session
 from .tools import FileTools, ShellTools, build_coding_tools
 
-__version__ = "0.1.1"
+__version__ = "0.2.0"
 
 __all__ = [
     "CodingAgent",

@@ -1,321 +1,184 @@
 # pig-mono
 
-> **Python Monorepo for AI Agents** - A comprehensive toolkit inspired by [pi-mono](https://github.com/badlogic/pi-mono)
->
-> *Named "**pig-mono**" (🐷) - 虾仁猪心 (a Chinese pun meaning "utterly devastating"), our tribute to pi-mono while bringing these excellent ideas to the Python ecosystem*
+> Python-native, embeddable agent runtime and application toolkit.
 
-[![Python Version](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Code style: ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)](https://github.com/astral-sh/ruff)
-[![Test Coverage](https://img.shields.io/badge/coverage-84%25-green.svg)](TESTING.md)
-[![PyPI](https://img.shields.io/pypi/v/pig-llm.svg)](https://pypi.org/project/pig-llm/)
+[![CI](https://github.com/kangkona/pig-mono/actions/workflows/ci.yml/badge.svg)](https://github.com/kangkona/pig-mono/actions/workflows/ci.yml)
+[![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-yellow.svg)](LICENSE)
+[![PyPI: pig-coding-agent](https://img.shields.io/pypi/v/pig-coding-agent.svg)](https://pypi.org/project/pig-coding-agent/)
 
-Build AI agents and LLM applications with a powerful, modular Python toolkit. pig-mono provides everything you need: unified LLM APIs, agent runtime, session management, extensions, skills, and multi-platform messaging bots.
+pig-mono is a Python monorepo for building LLM clients, agent loops, terminal
+applications, web interfaces, and messaging integrations. Its architectural
+direction is a reusable Python runtime with explicit policy boundaries and
+verifiable run integrity.
 
-**🌟 Unique Features:**
-- **Multi-Platform Bots**: Support for Slack, Discord, Telegram, WhatsApp, and Feishu (vs pi-mono's Slack-only)
-- **14 LLM Providers**: OpenAI, Anthropic, Google, Azure, Groq, Mistral, and more
-- **Complete Agent System**: Sessions, extensions, skills, prompts, and context management
-- **Production Ready**: 99.5%+ feature parity with pi-mono, 84% test coverage
+The `0.2.0` release establishes the runtime baseline. It does not claim that the
+later run-integrity roadmap is already complete.
 
----
+## What 0.2.0 provides
 
-## 📦 Packages
+- A provider/model runtime with credential resolution, capability metadata,
+  refreshable model catalogs, and provider-scoped failure handling.
+- Sync and async agent loops with streaming, cancellation, tool execution,
+  steering messages, follow-up messages, and structured turn outcomes.
+- Tree-backed sessions with branch-local tool activation and durable compaction
+  checkpoints.
+- Semantic compaction that keeps an exact recent tail and leaves durable session
+  state unchanged when summarization or atomic persistence fails.
+- Model-capability gates for deferred tools, strict JSON schemas, and grammar
+  constraints.
+- A Python embedding surface through `create_agent_session()`.
+- Project-trust and side-effect permission boundaries. Non-interactive and SDK
+  hosts deny side-effectful tools unless the host supplies an explicit policy.
+- Reusable terminal interaction primitives, a coding-agent CLI, a web UI, and
+  messaging adapters.
+- Strict repository type checking and a release pipeline that verifies tag,
+  package, import, dependency, and published-artifact facts.
 
-| Package | Version | Description | Status |
-|---------|---------|-------------|--------|
-| **[pig-llm](packages/pig-llm)** | v0.1.1 | Unified LLM API for 14 providers | ✅ Ready |
-| **[pig-agent-core](packages/pig-agent-core)** | v0.1.1 | Agent runtime with tools, resilience, observability | ✅ Ready |
-| **[pig-tui](packages/pig-tui)** | v0.1.1 | Terminal UI with rich formatting | ✅ Ready |
-| **[pig-web-ui](packages/pig-web-ui)** | v0.0.1 | Web chat interface with FastAPI | ✅ Ready |
-| **[pig-coding-agent](packages/pig-coding-agent)** | v0.1.1 | Interactive coding assistant with resilience & cost tracking | ✅ Ready |
-| **[pig-messenger](packages/pig-messenger)** | v0.0.3 | Multi-platform bot framework | ✅ Ready |
+## What is not yet provided
 
----
+The current runtime does not yet provide a durable `Run` authority, an
+append-only operation/evidence ledger, crash recovery with an explicit
+`outcome_unknown` state, process isolation, transport-neutral async hosting,
+MCP/ACP adapters, or governed multi-agent workers. These are sequenced in the
+[runtime roadmap](docs/roadmap.md), with the accepted direction recorded in
+[ADR-001](docs/decisions/ADR-001-python-runtime-and-run-integrity.md).
 
-## 🚀 Quick Start
+## Packages
 
-### Installation
+The workspace metadata and all public packages in the `0.2.0` release use the
+same version so a tag maps to one coherent source and dependency baseline.
 
-Install individual packages from PyPI:
+| Package | Role |
+| --- | --- |
+| [`pig-llm`](packages/pig-llm) | Provider-neutral LLM client and provider/model runtime |
+| [`pig-agent-core`](packages/pig-agent-core) | Agent loop, tools, sessions, compaction, resilience, and usage records |
+| [`pig-tui`](packages/pig-tui) | Reusable terminal presentation and interaction runtime |
+| [`pig-coding-agent`](packages/pig-coding-agent) | Interactive CLI and embeddable coding-agent session |
+| [`pig-web-ui`](packages/pig-web-ui) | FastAPI-based chat application surface |
+| [`pig-messenger`](packages/pig-messenger) | Messaging abstractions and optional platform adapters |
+
+## Install
+
+Install only the surfaces an application needs:
 
 ```bash
-# Using uv (recommended)
-uv pip install pig-llm pig-agent-core pig-coding-agent
-
-# Using pipx (for CLI tools)
-pipx install pig-coding-agent
-
-# Using pip
-pip install pig-llm pig-agent-core
+python -m pip install pig-llm pig-agent-core
+python -m pip install pig-coding-agent
+python -m pip install pig-web-ui
+python -m pip install "pig-messenger[slack]"
 ```
 
-For development from source:
+For a source checkout:
 
 ```bash
 git clone https://github.com/kangkona/pig-mono.git
 cd pig-mono
-uv pip install -e ".[dev]"
-./scripts/install-dev.sh
+uv sync --all-packages
 ```
 
-### Try it Out
+## Use the coding agent
 
-**Web UI** (easiest):
+The interactive CLI asks for provider/model configuration when needed:
+
 ```bash
-# Install
-uv pip install pig-web-ui
-# or: pipx install pig-web-ui
-
-export OPENROUTER_API_KEY=your-key
-pig-webui --provider openrouter --model moonshotai/kimi-k2.5
-# Open http://localhost:8000
-```
-
-**Coding Agent** (powerful):
-```bash
-# Install
-uv pip install pig-coding-agent
-# or: pipx install pig-coding-agent
-
-# Interactive startup — prompts for provider and model if omitted
 pig
-
-# Or specify directly
-pig --provider openrouter --model moonshotai/kimi-k2.5
-
-# Try these features:
-> Review @src/main.py for bugs          # @file references
-> /tree                                   # View session tree
-> /fork alternative-approach              # Branch conversation
-> /skill:code-review                      # Invoke skill
-> /resilience                             # Check API key status
-> /cost                                   # View usage & costs
-!Stop and explain what you're doing      # Interrupt with steering
 ```
 
-**Production Resilience**:
+It can also be configured explicitly:
+
 ```bash
-# Set multiple API keys for automatic rotation
-export OPENAI_API_KEY=sk-...
-export OPENAI_API_KEY_2=sk-...
-export ANTHROPIC_API_KEY=sk-ant-...
-
-pig
-# ✓ Resilience enabled: 3 API keys available
-# ✓ Cost tracking enabled
-
-# Agent automatically:
-# - Rotates keys on rate limits
-# - Falls back to alternative models
-# - Tracks costs in real-time
+export OPENAI_API_KEY=your-key
+pig --provider openai --model gpt-4o-mini
 ```
 
-**Multi-Platform Bot** ([setup guide](packages/pig-messenger/README.md)):
+Inside an interactive session:
+
+```text
+Review @src/main.py for bugs
+/tree
+/settings
+/cost
+!Stop and explain the current action
+>>After that, add focused tests
+```
+
+Writes and shell commands require confirmation in an interactive terminal.
+JSON, RPC, piped-input, and default SDK routes fail closed instead of silently
+performing side effects.
+
+## Embed a session in Python
+
 ```python
-import os
-from pig_messenger import MessengerBot
-from pig_messenger.adapters import SlackAdapter
-from pig_agent_core import Agent
+from pig_coding_agent import create_agent_session
 from pig_llm import LLM
 
-agent = Agent(llm=LLM(provider="openrouter", model="moonshotai/kimi-k2.5",
-                       api_key=os.environ["OPENROUTER_API_KEY"]))
-bot = MessengerBot(agent)
-bot.add_platform(SlackAdapter(
-    app_token=os.environ["SLACK_APP_TOKEN"],
-    bot_token=os.environ["SLACK_BOT_TOKEN"],
-))
-bot.start()
+runtime = create_agent_session(
+    workspace=".",
+    llm=LLM(provider="openai", model="gpt-4o-mini"),
+    project_trust=False,
+)
+
+try:
+    result = runtime.prompt_result("Summarize the repository structure")
+    print(result.content)
+    print(result.outcome.value)
+    print(result.permission_denials)
+finally:
+    runtime.close()
 ```
 
----
+The default SDK permission policy denies writes and shell commands. A host must
+pass an explicit `PermissionPolicy` to authorize or confirm those operations.
 
-## ✨ Key Features
+## Architecture boundaries
 
-### 14 LLM Providers
-- **Major**: OpenAI, Anthropic (Claude), Google (Gemini), Azure
-- **Fast**: Groq, Cerebras, Together AI
-- **Specialized**: Mistral, Cohere, DeepSeek, Perplexity
-- **Aggregators**: OpenRouter, Amazon Bedrock, xAI
-
-### Complete Agent System
-- **Sessions**: Tree-based conversation management with branching and forking
-- **Extensions**: Plugin system for custom tools, commands, and events
-- **Skills**: Reusable agent capabilities (Agent Skills standard)
-- **Prompts**: Template system with variable substitution
-- **Context**: Project-aware via AGENTS.md and SYSTEM.md
-- **Resilience**: Automatic API key rotation, failure recovery, model fallback
-- **Observability**: Event emission, billing tracking, metrics collection
-- **Streaming**: Live tool call output with onUpdate callbacks and any-tool termination
-
-### Production-Ready Infrastructure
-- **Unified Tool Registry**: Single ToolRegistry across all tools; web tools (search, read) built into pig-agent-core
-- **Operations Abstraction**: FileOperations/ShellOperations protocols for testable, swappable backends
-- **API Key Rotation**: Automatic failover on rate limits with per-failure-type cooldowns
-- **Cost Tracking**: Real-time LLM and tool usage monitoring with pricing data
-- **Context Management**: 3-level compression (truncate → summarize → LLM-compress)
-- **Tool System**: Fallback mapping, confirmation gates, parallel/sequential execution
-- **Memory Protocols**: Pluggable memory providers for custom storage backends
-
-### Multi-Platform Messaging
-- **5 Platforms**: Slack, Discord, Telegram, WhatsApp, Feishu
-- **Unified API**: Same agent code works everywhere
-- **Per-Channel Sessions**: Each conversation maintains its own context
-
-### Developer Experience
-- **30+ Commands**: Comprehensive CLI control
-- **Message Queue**: Queue messages while agent works (!steering, >>followup)
-- **File References**: Auto-include files with @filename syntax
-- **Export/Share**: Export sessions to HTML or GitHub Gist
-- **JSON/RPC Modes**: Programmatic integration
-
----
-
-## 📖 Documentation
-
-- **[Quick Start](QUICKSTART.md)** - Get started in 5 minutes
-- **[Messenger Bot](packages/pig-messenger/README.md)** - Slack/Discord/Telegram/WhatsApp/Feishu bot setup
-- **[Testing Guide](TESTING.md)** - How to run and write tests
-- **[Contributing](CONTRIBUTING.md)** - Contribution guidelines
-
----
-
-## 🎯 Use Cases
-
-### Code Development
-```bash
-pig --session my-project
-
-> Create a FastAPI web server with authentication
-> @src/main.py - Review this code
-> /fork add-tests
-> Commit changes with message "Add auth"
+```text
+Applications
+├── pig-coding-agent
+├── pig-web-ui
+└── pig-messenger
+        │
+Runtime and presentation
+├── pig-agent-core
+└── pig-tui
+        │
+Model/provider boundary
+└── pig-llm
 ```
 
-### Team Collaboration
-```python
-# Same bot across Slack, Discord, Telegram, WhatsApp, Feishu
-bot = MessengerBot(agent)
-bot.add_platform(SlackAdapter(...))
-bot.add_platform(DiscordAdapter(...))
-bot.add_platform(TelegramAdapter(...))
-bot.add_platform(WhatsAppAdapter(...))
-bot.add_platform(FeishuAdapter(...))
-bot.start()
-```
+- `pig-llm` owns provider construction, model metadata, credentials, and model
+  capability facts.
+- `pig-agent-core` owns agent/session/tool behavior. It does not yet own the
+  durable `Run` ledger described in the roadmap.
+- Application packages own host UX and policy decisions. SDK hosts must make
+  trust and side-effect authority explicit.
 
-### Automation
-```bash
-# Use OpenRouter for cost-effective automation
-export OPENROUTER_API_KEY=your-key
-
-# JSON mode for CI/CD
-echo '{"message": "Review this code"}' | pig --provider openrouter --mode json
-
-# RPC mode for integration
-pig --provider openrouter --mode rpc < requests.jsonl > responses.jsonl
-```
-
----
-
-## 📊 Project Stats
-
-- **Code**: 14,000+ lines
-- **Tests**: 330+ tests with 84% coverage
-- **Documentation**: 55,000+ words
-- **Packages**: 6 production-ready packages on PyPI
-- **CI/CD**: Automated PyPI publishing via Trusted Publishing on tag releases
-
----
-
-## 🆚 vs pi-mono
-
-| Feature | pi-mono | pig-mono |
-|---------|---------|----------|
-| **Core Development** | ✅ | ✅ 99.5%+ |
-| **LLM Providers** | 17 | 14 (all major ones) |
-| **Messaging Platforms** | 1 (Slack) | **5 (Slack, Discord, Telegram, WhatsApp, Feishu)** 🌟 |
-| **Test Coverage** | ~80% | **84%** |
-| **Documentation** | Excellent | **More comprehensive** |
-| **Language** | TypeScript | Python |
-
-**pig-mono achieves 99.5%+ feature parity with pi-mono and exceeds it in multi-platform support!**
-
----
-
-## 🏗️ Architecture
-
-```
-Infrastructure Layer
-├── pig-llm (LLM abstraction)
-├── pig-agent-core (Agent runtime)
-├── pig-tui (Terminal UI)
-└── pig-web-ui (Web UI)
-
-Application Layer
-├── pig-coding-agent (CLI assistant)
-└── pig-messenger (Multi-platform bots)
-```
-
----
-
-## 🛠️ Development
+## Development and verification
 
 ```bash
-# Install dependencies
-uv pip install -e ".[dev]"
-./scripts/install-dev.sh
+uv sync --all-packages
 
-# Run tests
-./scripts/test.sh
-
-# Lint code
 ./scripts/lint.sh
+./scripts/typecheck.sh
+./scripts/run-tests.sh
 
-# Run coding agent from source
-cd packages/pig-coding-agent
-python -m pig_coding_agent.cli
+python scripts/verify_release.py --tag v0.2.0
 ```
 
----
+CI runs linting, formatting checks, strict typing, tests, and package builds on
+Python 3.10–3.12 across Linux, macOS, and Windows. See the [testing guide](TESTING.md)
+for the exact local commands.
 
-## 🤝 Contributing
+## Documentation
 
-We welcome contributions! See [CONTRIBUTING.md](CONTRIBUTING.md) for:
-- Development setup
-- Code style guidelines
-- Testing requirements
-- Pull request process
+- [Runtime roadmap](docs/roadmap.md)
+- [Architecture decision: Python runtime and run integrity](docs/decisions/ADR-001-python-runtime-and-run-integrity.md)
+- [Testing guide](TESTING.md)
+- [Quick start](QUICKSTART.md)
+- [Contributing](CONTRIBUTING.md)
+- [Changelog](CHANGELOG.md)
 
----
+## License
 
-## 📝 License
-
-MIT License - see [LICENSE](LICENSE) for details
-
----
-
-## 🙏 Acknowledgments
-
-Inspired by [badlogic/pi-mono](https://github.com/badlogic/pi-mono) - an excellent TypeScript AI agent toolkit.
-
-pig-mono (affectionately called "pig-mono" 🐷 by the community) brings these concepts to the Python ecosystem with additional innovations like multi-platform messaging support.
-
-### Why "pig-mono"?
-
-The name comes from a playful Chinese pun: "虾仁猪心" (xiā rén zhū xīn), which sounds like "杀人诛心" (shā rén zhū xīn) - meaning to utterly defeat someone not just physically but mentally.
-
-Our tribute to pi-mono: We aim to match it feature-for-feature while adding unique Python-ecosystem value! 🐷💪
-
----
-
-## ⭐ Star History
-
-If you find pig-mono useful, please star the repository!
-
-[![Star History Chart](https://api.star-history.com/svg?repos=kangkona/pig-mono&type=Date)](https://star-history.com/#kangkona/pig-mono&Date)
-
----
-
-**Built with ❤️ for the Python AI community**
+MIT. See [LICENSE](LICENSE).

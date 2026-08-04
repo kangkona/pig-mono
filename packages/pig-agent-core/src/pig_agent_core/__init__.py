@@ -46,7 +46,7 @@ from .tools.metrics import ToolMetrics, ToolMetricsCollector
 from .tools.registry import ToolRegistry as EnhancedToolRegistry
 from .usage import UsageKind, UsageLedger, UsageRecord
 
-__version__ = "0.1.1"
+__version__ = "0.2.0"
 
 __all__ = [
     # Core

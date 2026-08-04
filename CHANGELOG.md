@@ -1,116 +1,107 @@
 # Changelog
 
-All notable changes to pig-mono will be documented in this file.
-
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+All notable changes to pig-mono are documented in this file. The format follows
+[Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
+[Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-## [0.0.4] - 2026-03-04
-
-### Agent Middlewares Enhancement
-
-Major upgrade adding production-ready resilience and observability features.
-
-#### pig-agent-core v0.0.4
-
-**Added:**
-- **Resilience System**: API key rotation with per-failure-type cooldowns
-  - ProfileManager for managing multiple API profiles
-  - Per-failure-type cooldown periods (AUTH=5min, RATE_LIMIT=1min, BILLING=1hr, etc.)
-  - resilient_call() and resilient_streaming_call() with automatic retry
-
-- **Observability System**: Event emission and metrics collection
-  - AgentEvent and AgentEventType for structured event tracking
-  - BillingHook protocol for cost tracking
-  - Tool audit logging with execution metrics
-
-- **Context Management**: 3-level compression strategy
-  - Token counting with tiktoken and character-based fallback
-  - Automatic context overflow detection and handling
-
-- **Memory Protocols**: Pluggable storage backends
-  - MemoryProvider protocol for custom implementations
-
-- **Enhanced Tool System**:
-  - Tool fallback mapping, confirmation gates
-  - Parallel vs sequential execution strategies
-  - URL validation for SSRF protection
-
-**Tests:** 330+ new tests covering all subsystems
-
-#### pig-coding-agent v0.0.4
-
-**Added:**
-- **Resilience Support**: Automatic API key rotation
-  - Multi-key support via environment variables
-  - /resilience command to view status
-
-- **Cost Tracking**: Usage and cost monitoring
-  - Automatic LLM call tracking (tokens, cost)
-  - Tool usage tracking with statistics
-  - /cost and /usage commands
-
-- **Documentation**: CHANGELOG.md, UPGRADE.md
-
-**Tests:** 25 new tests (11 resilience + 14 billing)
-
-#### pig-messenger v0.0.2
-
-**Changed:**
-- Updated to use pig-agent-core v0.0.4 features
-- Now benefits from automatic API key rotation and cost tracking
+## [0.2.0] - 2026-08-04
 
 ### Added
-- Initial release of pig-mono
-- 6 core packages: pig-llm, pig-agent-core, pig-tui, pig-web-ui, pig-coding-agent, pig-messenger
-- 14 LLM providers: OpenAI, Anthropic, Google, Azure, Groq, Mistral, OpenRouter, Bedrock, xAI, Cerebras, Cohere, Perplexity, DeepSeek, Together AI
-- Multi-platform bot support: Slack, Discord, Telegram, WhatsApp, Feishu
-- Session management with tree structure, branching, and forking
-- Extension system for custom tools and commands
-- Skills library (Agent Skills standard)
-- Prompt templates with variable substitution
-- Context management (AGENTS.md, SYSTEM.md)
-- Message queue (steering and follow-up messages)
-- File reference system (@filename auto-include)
-- Export sessions to HTML
-- Share sessions via GitHub Gist
-- JSON and RPC output modes
-- OAuth authentication framework
-- 300+ tests with 84% coverage
-- Comprehensive documentation (55,000+ words)
 
-## [0.0.1] - 2026-02-23
+- Provider/model runtime ownership for provider registration, credential
+  resolution, model metadata, capability filtering, catalog persistence, and
+  explicit refresh.
+- Model-gated deferred tools, strict JSON schemas, and grammar constraints.
+- Branch-local semantic compaction with durable checkpoints, exact recent-tail
+  preservation, provider-usage categorization, and rollback on summarization or
+  atomic-save failure.
+- Structured `TurnOutcome` results across provider, core runtime, CLI, RPC, JSON,
+  and Python SDK boundaries.
+- `ActiveTurnLifecycle` coordination for interactive turns, cancellation, and
+  concurrent lifecycle transitions.
+- A stable `create_agent_session()` embedding surface with structured permission
+  denials.
+- Repository release verification for tag/package/import/dependency consistency
+  and exact PyPI artifact digests.
+- Architecture decision and staged roadmap for a Python-native embeddable runtime
+  with verifiable run integrity.
 
-### Initial Release
+### Changed
 
-First public release of pig-mono - a comprehensive Python toolkit for building AI agents.
+- Aligned all six public packages at version `0.2.0` and raised local dependency
+  floors to the same source-compatible baseline.
+- Split coding-agent interaction dispatch, commands, flows, views, and terminal
+  lifecycle into focused application/runtime modules.
+- Made project-local configuration, instructions, prompts, skills, package roots,
+  and extensions conditional on a canonical workspace trust decision.
+- Made unattended, non-TTY, piped, JSON, RPC, generation, analysis, and default SDK
+  routes fail closed for side-effectful tools.
+- Made profile rotation rebuild the provider client with the selected credential
+  before reporting the strategy transition.
+- Strengthened strict typing across production code, tests, and examples, including
+  Linux, macOS, and Windows CI coverage.
+- Sequenced release publication so GitHub Releases are created only after PyPI
+  publication and digest verification succeed.
 
-#### Features
-- **pig-llm**: Unified LLM API supporting 14 providers
-- **pig-agent-core**: Complete agent runtime with sessions, extensions, and skills
-- **pig-tui**: Rich terminal UI components
-- **pig-web-ui**: Modern web chat interface
-- **pig-coding-agent**: Interactive coding assistant
-- **pig-messenger**: Universal multi-platform bot framework
+### Fixed
 
-#### Highlights
-- 99.5%+ feature parity with pi-mono
-- Multi-platform messaging (5 platforms vs pi-mono's 1)
-- Production-ready with extensive testing
-- Well-documented with examples
+- Preserved canonical tool calls, tool-call IDs, and activation anchors across
+  session save/load and compaction.
+- Prevented retries after a stream has already emitted partial output.
+- Prevented permission prompts from crashing when stdin is closed or non-interactive.
+- Corrected version drift between package manifests, import-time `__version__`
+  values, dependency floors, and public documentation.
 
-#### Known Issues
-- Some providers require API keys not included in tests
-- OAuth login requires manual provider configuration
-- Differential rendering not implemented in TUI
+### Security
 
----
+- Workspace trust discovery no longer requires reading untrusted project content.
+- Side-effect authorization is explicit at each host boundary; unattended hosts do
+  not inherit interactive approval behavior.
+- Provider credential transitions use one-way profile fingerprints rather than raw
+  keys or key prefixes in lifecycle events.
 
-## Development
+## [0.1.1] - 2026-06-08
 
-To see what's planned for future releases, check:
-- GitHub Issues
-- Project boards
-- Community discussions
+### Changed
+
+- Aligned `pig-llm` and `pig-tui` on the `0.1.1` package line.
+
+### Release note
+
+- The GitHub release was created, but PyPI deployment was rejected by the GitHub
+  environment policy. The `0.2.0` pipeline makes registry publication and artifact
+  verification prerequisites for the GitHub Release.
+
+## [0.1.0] - 2026-06-05
+
+### Added
+
+- Initial `0.1` package line for the LLM, agent-core, terminal, and coding-agent
+  surfaces.
+
+### Release note
+
+- The GitHub release was created, but the PyPI deployment job did not complete.
+
+## 0.0.4 - 2026-03-04
+
+### Added
+
+- Profile-based retry and fallback primitives.
+- Structured agent events, billing hooks, tool audit records, and usage tracking.
+- Context compression and pluggable memory protocols.
+- Coding-agent resilience and cost-reporting commands.
+
+## 0.0.1 - 2026-02-23
+
+### Added
+
+- Initial monorepo package structure, provider adapters, agent/session/tool
+  primitives, terminal and web surfaces, and messaging adapters.
+
+[Unreleased]: https://github.com/kangkona/pig-mono/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/kangkona/pig-mono/compare/v0.1.1...v0.2.0
+[0.1.1]: https://github.com/kangkona/pig-mono/compare/v0.1.0...v0.1.1
+[0.1.0]: https://github.com/kangkona/pig-mono/releases/tag/v0.1.0
