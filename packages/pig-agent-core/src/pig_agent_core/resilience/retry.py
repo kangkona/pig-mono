@@ -22,6 +22,8 @@ from .profile import APIProfile, ProfileManager
 
 logger = logging.getLogger(__name__)
 
+ProviderAttemptCallback = Callable[[dict[str, Any]], None]
+
 
 async def _stream_chunks(
     llm: LLM,
@@ -297,6 +299,35 @@ def _emit_retry_event(
     )
 
 
+def _notify_provider_attempt(
+    callback: ProviderAttemptCallback | None,
+    *,
+    retry_id: str,
+    phase: str,
+    attempt: int,
+    max_retries: int,
+    model: Any,
+    reason: str | None = None,
+    error: str | None = None,
+    partial_output: bool = False,
+) -> None:
+    """Call the durable attempt boundary directly so failures propagate."""
+    if callback is None:
+        return
+    callback(
+        {
+            "retry_id": retry_id,
+            "phase": phase,
+            "attempt": attempt,
+            "max_retries": max_retries,
+            "model": model,
+            "reason": reason,
+            "error": error,
+            "partial_output": partial_output,
+        }
+    )
+
+
 async def resilient_streaming_call(
     llm: LLM,
     messages: list[Message],
@@ -304,6 +335,7 @@ async def resilient_streaming_call(
     compress_fn: Callable[[list[Message]], list[Message]] | None = None,
     max_retries: int = 3,
     event_callback: AgentEventCallback | None = None,
+    attempt_callback: ProviderAttemptCallback | None = None,
     **llm_kwargs: Any,
 ) -> AsyncIterator[StreamChunk]:
     """Make a resilient streaming LLM call with retry and fallback.
@@ -345,6 +377,14 @@ async def resilient_streaming_call(
     # Layer 1: Profile rotation
     for attempt in range(total_attempts):
         yielded_output = False
+        _notify_provider_attempt(
+            attempt_callback,
+            retry_id=retry_id,
+            phase="started",
+            attempt=attempt + 1,
+            max_retries=max_retries,
+            model=current_model,
+        )
         try:
             # Try with current profile
             async for chunk in _stream_chunks(
@@ -354,23 +394,18 @@ async def resilient_streaming_call(
             ):
                 yielded_output = True
                 yield chunk
-            if attempt > 0:
-                if current_messages is not messages:
-                    messages[:] = current_messages
-                _emit_retry_event(
-                    event_callback,
-                    retry_id=retry_id,
-                    subtype="resilience_retry_succeeded",
-                    phase="succeeded",
-                    reason="retry_succeeded",
-                    attempt=attempt + 1,
-                    max_retries=max_retries,
-                    model=current_model,
-                    compaction_checkpoint_id=compaction_checkpoint_id,
-                )
-            return  # Success!
-
         except Exception as e:
+            _notify_provider_attempt(
+                attempt_callback,
+                retry_id=retry_id,
+                phase="failed",
+                attempt=attempt + 1,
+                max_retries=max_retries,
+                model=current_model,
+                reason=_retry_reason(e),
+                error=str(e),
+                partial_output=yielded_output,
+            )
             logger.warning(f"LLM call failed (attempt {attempt + 1}/{total_attempts}): {e}")
 
             # Emit retry event. Once output has been yielded, replaying the call
@@ -532,6 +567,32 @@ async def resilient_streaming_call(
 
             # Exponential backoff
             await asyncio.sleep(2**attempt)
+            continue
+        else:
+            _notify_provider_attempt(
+                attempt_callback,
+                retry_id=retry_id,
+                phase="succeeded",
+                attempt=attempt + 1,
+                max_retries=max_retries,
+                model=current_model,
+                reason="completed",
+            )
+            if attempt > 0:
+                if current_messages is not messages:
+                    messages[:] = current_messages
+                _emit_retry_event(
+                    event_callback,
+                    retry_id=retry_id,
+                    subtype="resilience_retry_succeeded",
+                    phase="succeeded",
+                    reason="retry_succeeded",
+                    attempt=attempt + 1,
+                    max_retries=max_retries,
+                    model=current_model,
+                    compaction_checkpoint_id=compaction_checkpoint_id,
+                )
+            return  # Success!
 
     raise AssertionError("retry loop exited without returning or raising")
 
@@ -543,6 +604,7 @@ async def resilient_call(
     compress_fn: Callable[[list[Message]], list[Message]] | None = None,
     max_retries: int = 3,
     event_callback: AgentEventCallback | None = None,
+    attempt_callback: ProviderAttemptCallback | None = None,
     **llm_kwargs: Any,
 ) -> str:
     """Make a resilient non-streaming LLM call with retry and fallback.
@@ -580,26 +642,28 @@ async def resilient_call(
 
     # Layer 1: Profile rotation
     for attempt in range(total_attempts):
+        _notify_provider_attempt(
+            attempt_callback,
+            retry_id=retry_id,
+            phase="started",
+            attempt=attempt + 1,
+            max_retries=max_retries,
+            model=current_model,
+        )
         try:
             # Try with current profile
             response = await active_llm.achat(messages=current_messages, **llm_kwargs)
-            if attempt > 0:
-                if current_messages is not messages:
-                    messages[:] = current_messages
-                _emit_retry_event(
-                    event_callback,
-                    retry_id=retry_id,
-                    subtype="resilience_retry_succeeded",
-                    phase="succeeded",
-                    reason="retry_succeeded",
-                    attempt=attempt + 1,
-                    max_retries=max_retries,
-                    model=current_model,
-                    compaction_checkpoint_id=compaction_checkpoint_id,
-                )
-            return response.content
-
         except Exception as e:
+            _notify_provider_attempt(
+                attempt_callback,
+                retry_id=retry_id,
+                phase="failed",
+                attempt=attempt + 1,
+                max_retries=max_retries,
+                model=current_model,
+                reason=_retry_reason(e),
+                error=str(e),
+            )
             logger.warning(f"LLM call failed (attempt {attempt + 1}/{total_attempts}): {e}")
 
             # Emit retry event
@@ -738,6 +802,31 @@ async def resilient_call(
 
             # Exponential backoff
             await asyncio.sleep(2**attempt)
+        else:
+            _notify_provider_attempt(
+                attempt_callback,
+                retry_id=retry_id,
+                phase="succeeded",
+                attempt=attempt + 1,
+                max_retries=max_retries,
+                model=current_model,
+                reason="completed",
+            )
+            if attempt > 0:
+                if current_messages is not messages:
+                    messages[:] = current_messages
+                _emit_retry_event(
+                    event_callback,
+                    retry_id=retry_id,
+                    subtype="resilience_retry_succeeded",
+                    phase="succeeded",
+                    reason="retry_succeeded",
+                    attempt=attempt + 1,
+                    max_retries=max_retries,
+                    model=current_model,
+                    compaction_checkpoint_id=compaction_checkpoint_id,
+                )
+            return response.content
 
     raise AssertionError("retry loop exited without returning or raising")
 
@@ -749,6 +838,7 @@ def resilient_sync_call(
     compress_fn: Callable[[list[Message]], list[Message]] | None = None,
     max_retries: int = 3,
     event_callback: AgentEventCallback | None = None,
+    attempt_callback: ProviderAttemptCallback | None = None,
     **llm_kwargs: Any,
 ) -> Response:
     """Use the same correlated contract; ``max_retries`` is additional retries."""
@@ -767,24 +857,27 @@ def resilient_sync_call(
     compaction_checkpoint_id: str | None = None
 
     for attempt in range(total_attempts):
+        _notify_provider_attempt(
+            attempt_callback,
+            retry_id=retry_id,
+            phase="started",
+            attempt=attempt + 1,
+            max_retries=max_retries,
+            model=current_model,
+        )
         try:
             response = active_llm.chat(messages=current_messages, **llm_kwargs)
-            if attempt > 0:
-                if current_messages is not messages:
-                    messages[:] = current_messages
-                _emit_retry_event(
-                    event_callback,
-                    retry_id=retry_id,
-                    subtype="resilience_retry_succeeded",
-                    phase="succeeded",
-                    reason="retry_succeeded",
-                    attempt=attempt + 1,
-                    max_retries=max_retries,
-                    model=current_model,
-                    compaction_checkpoint_id=compaction_checkpoint_id,
-                )
-            return response
         except Exception as exc:
+            _notify_provider_attempt(
+                attempt_callback,
+                retry_id=retry_id,
+                phase="failed",
+                attempt=attempt + 1,
+                max_retries=max_retries,
+                model=current_model,
+                reason=_retry_reason(exc),
+                error=str(exc),
+            )
             _emit_retry_event(
                 event_callback,
                 retry_id=retry_id,
@@ -896,5 +989,30 @@ def resilient_sync_call(
                             to_model=fallback_model,
                         )
                         continue
+        else:
+            _notify_provider_attempt(
+                attempt_callback,
+                retry_id=retry_id,
+                phase="succeeded",
+                attempt=attempt + 1,
+                max_retries=max_retries,
+                model=current_model,
+                reason="completed",
+            )
+            if attempt > 0:
+                if current_messages is not messages:
+                    messages[:] = current_messages
+                _emit_retry_event(
+                    event_callback,
+                    retry_id=retry_id,
+                    subtype="resilience_retry_succeeded",
+                    phase="succeeded",
+                    reason="retry_succeeded",
+                    attempt=attempt + 1,
+                    max_retries=max_retries,
+                    model=current_model,
+                    compaction_checkpoint_id=compaction_checkpoint_id,
+                )
+            return response
 
     raise AssertionError("retry loop exited without returning or raising")

@@ -21,6 +21,7 @@ from .resilience.retry import (
     resilient_streaming_call,
     resilient_sync_call,
 )
+from .run_integrity import RunAuthority
 from .session import Session, SessionEntry
 from .tools import Tool, ToolResult
 from .tools.registry import ToolRegistry
@@ -56,6 +57,7 @@ class Agent:
         session: Session | None = None,
         ui: Any | None = None,
         tool_adapter: Callable[[Tool], Tool | None] | None = None,
+        run_authority: RunAuthority | None = None,
     ):
         """Initialize agent.
 
@@ -79,6 +81,7 @@ class Agent:
             session: Optional durable session attached by the host application
             ui: Optional host UI used for turn and diagnostic rendering
             tool_adapter: Optional host policy that can transform or reject tools
+            run_authority: Optional fail-closed durable run evidence collaborator
         """
         self.name = name
         self.llm = llm or LLM()
@@ -105,6 +108,7 @@ class Agent:
         self.session = session
         self.ui = ui
         self.tool_adapter = tool_adapter
+        self.run_authority = run_authority
 
         # Use enhanced ToolRegistry from tools/registry.py
         self.registry = ToolRegistry()
@@ -543,6 +547,7 @@ class Agent:
             profile_manager=self.profile_manager,
             max_retries=max_retries,
             event_callback=self._handle_resilience_event,
+            attempt_callback=self._record_provider_attempt,
         )
         summary_outcome, summary_finish_reason = self._response_outcome(response)
         if summary_outcome is not TurnOutcome.COMPLETED:
@@ -631,6 +636,11 @@ class Agent:
             elif data.get("phase") == "exhausted":
                 self._pending_overflow_compactions.pop(retry_id, None)
         emit(self.event_callback, event)
+
+    def _record_provider_attempt(self, data: dict[str, Any]) -> None:
+        """Persist provider dispatch facts directly when run authority is enabled."""
+        if self.run_authority is not None:
+            self.run_authority.record_provider_attempt(data)
 
     def _emit_agent_end(self, *, success: bool, error: str | None = None) -> None:
         """Emit a terminal agent_end event for the current run."""
@@ -736,6 +746,7 @@ class Agent:
                     compress_fn=self.compress_fn,
                     max_retries=max_retries,
                     event_callback=self._handle_resilience_event,
+                    attempt_callback=self._record_provider_attempt,
                     tools=tools_schema,
                 )
             except Exception as e:
@@ -932,6 +943,7 @@ class Agent:
                     compress_fn=self.compress_fn,
                     max_retries=max_retries,
                     event_callback=self._handle_resilience_event,
+                    attempt_callback=self._record_provider_attempt,
                     tools=tools_schema,
                 ):
                     if cancel and cancel.is_set():
@@ -1355,6 +1367,7 @@ class Agent:
                     compress_fn=self.compress_fn,
                     max_retries=max_retries,
                     event_callback=self._handle_resilience_event,
+                    attempt_callback=self._record_provider_attempt,
                     tools=tools_schema,
                 ):
                     if cancel and cancel.is_set():

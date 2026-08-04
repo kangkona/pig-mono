@@ -1,5 +1,15 @@
 """Durable run authority, evidence, replay, and recovery contracts."""
 
+from .adapters import (
+    ActiveRunContext,
+    RunAuthority,
+    compaction_payload,
+    permission_denial_payload,
+    retry_observation_payload,
+    tool_audit_payload,
+    turn_outcome_status,
+    usage_record_payload,
+)
 from .kernel import apply_evidence, replay, transition_run
 from .models import (
     SCHEMA_VERSION,
@@ -34,6 +44,7 @@ from .store import (
 
 __all__ = [
     "SCHEMA_VERSION",
+    "ActiveRunContext",
     "Attempt",
     "AttemptStatus",
     "ConcurrencyConflictError",
@@ -47,6 +58,7 @@ __all__ = [
     "RecoveryClassification",
     "RecoveryDecision",
     "Run",
+    "RunAuthority",
     "RunSnapshot",
     "RunStatus",
     "RunStoreError",
@@ -54,12 +66,18 @@ __all__ = [
     "Turn",
     "apply_evidence",
     "canonical_json",
+    "compaction_payload",
     "content_digest",
     "new_attempt_id",
     "new_evidence_id",
     "new_operation_id",
     "new_run_id",
     "new_turn_id",
+    "permission_denial_payload",
     "replay",
+    "retry_observation_payload",
+    "tool_audit_payload",
     "transition_run",
+    "turn_outcome_status",
+    "usage_record_payload",
 ]

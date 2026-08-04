@@ -48,6 +48,7 @@ from .run_integrity import (
     RecoveryClassification,
     RecoveryDecision,
     Run,
+    RunAuthority,
     RunSnapshot,
     RunStatus,
     RunStoreError,
@@ -107,6 +108,7 @@ __all__ = [
     "ResilienceExhaustedError",
     # Durable run integrity
     "Run",
+    "RunAuthority",
     "RunStatus",
     "RunSnapshot",
     "Turn",
