@@ -24,13 +24,23 @@ from .models import (
     new_run_id,
     new_turn_id,
 )
+from .store import (
+    ConcurrencyConflictError,
+    IdempotencyConflictError,
+    IntegrityVerificationError,
+    RunStoreError,
+    SQLiteRunStore,
+)
 
 __all__ = [
     "SCHEMA_VERSION",
     "Attempt",
     "AttemptStatus",
+    "ConcurrencyConflictError",
     "Evidence",
     "EvidenceType",
+    "IdempotencyConflictError",
+    "IntegrityVerificationError",
     "Operation",
     "OperationKind",
     "OperationStatus",
@@ -39,6 +49,8 @@ __all__ = [
     "Run",
     "RunSnapshot",
     "RunStatus",
+    "RunStoreError",
+    "SQLiteRunStore",
     "Turn",
     "apply_evidence",
     "canonical_json",

@@ -37,8 +37,11 @@ from .resilience.retry import (
 from .run_integrity import (
     Attempt,
     AttemptStatus,
+    ConcurrencyConflictError,
     Evidence,
     EvidenceType,
+    IdempotencyConflictError,
+    IntegrityVerificationError,
     Operation,
     OperationKind,
     OperationStatus,
@@ -47,6 +50,8 @@ from .run_integrity import (
     Run,
     RunSnapshot,
     RunStatus,
+    RunStoreError,
+    SQLiteRunStore,
     Turn,
 )
 from .session import Session, SessionEntry, SessionTree
@@ -110,10 +115,15 @@ __all__ = [
     "OperationStatus",
     "Attempt",
     "AttemptStatus",
+    "ConcurrencyConflictError",
     "Evidence",
     "EvidenceType",
+    "IdempotencyConflictError",
+    "IntegrityVerificationError",
     "RecoveryClassification",
     "RecoveryDecision",
+    "RunStoreError",
+    "SQLiteRunStore",
     # Token counting
     "count_tokens",
     "UsageKind",

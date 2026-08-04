@@ -123,6 +123,18 @@ def apply_evidence(snapshot: RunSnapshot | None, evidence: Evidence) -> RunSnaps
         raise ValueError("A run can only have one run_created event")
     if evidence.type is EvidenceType.RUN_TRANSITIONED:
         target = RunStatus(str(payload["status"]))
+        if target is RunStatus.COMPLETED and any(
+            item.status is not OperationStatus.COMPLETED for item in operations.values()
+        ):
+            raise ValueError("A completed run cannot contain unfinished operations")
+        uncertain = [
+            item
+            for item in operations.values()
+            if item.status is OperationStatus.OUTCOME_UNKNOWN
+            or (item.dispatch_recorded and not item.receipt_recorded)
+        ]
+        if uncertain and target.is_terminal and target is not RunStatus.OUTCOME_UNKNOWN:
+            raise ValueError("A run with unconfirmed operation effects must end as outcome_unknown")
         run = transition_run(run, target, occurred_at=evidence.occurred_at)
         if target.is_terminal:
             run = run.model_copy(update={"terminal_evidence_id": evidence.id})
