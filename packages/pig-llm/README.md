@@ -38,13 +38,18 @@ The `openai` extra also covers Azure OpenAI, OpenRouter, xAI, Cerebras,
 Perplexity, DeepSeek, and Together because those adapters share the OpenAI SDK.
 Selecting a provider without its extra fails with the exact installation command.
 
+Set the provider credential in the host environment, such as
+`OPENAI_API_KEY`. Credentials can also be supplied by an embedding host, but
+examples avoid placing secret values in source code. Every `LLM` instance
+requires an explicit model.
+
 ## Quick Start
 
 ```python
 from pig_llm import LLM
 
-# Initialize with API key
-llm = LLM(provider="openai", api_key="sk-...")
+# Reads OPENAI_API_KEY from the environment
+llm = LLM(provider="openai", model="gpt-4o-mini")
 
 # Simple completion
 response = llm.complete("What is the meaning of life?")
@@ -88,7 +93,7 @@ from pig_llm import LLM, Config
 
 config = Config(
     provider="openai",
-    model="gpt-4",
+    model="gpt-4o-mini",
     temperature=0.7,
     max_tokens=1000,
     timeout=30,
@@ -99,48 +104,70 @@ llm = LLM(config=config)
 
 ## Provider-Specific Examples
 
+Provider model IDs evolve independently of `pig-llm`. The examples below read
+the host-selected model ID from environment variables while `pig-llm` resolves
+the standard provider credential variable.
+
 ### Amazon Bedrock
 ```python
+import os
+
 # Uses AWS credentials from environment
-llm = LLM(provider="bedrock", api_key="us-east-1")  # region as api_key
-response = llm.complete("Hello", model="anthropic.claude-3-sonnet-20240229-v1:0")
+llm = LLM(
+    provider="bedrock",
+    model=os.environ["BEDROCK_MODEL"],
+    api_key=os.getenv("AWS_REGION", "us-east-1"),  # Legacy region field
+)
+response = llm.complete("Hello")
 ```
 
 ### xAI (Grok)
 ```python
-llm = LLM(provider="xai", api_key="xai-...")
-response = llm.complete("What's happening?", model="grok-beta")
+import os
+
+llm = LLM(provider="xai", model=os.environ["XAI_MODEL"])
+response = llm.complete("What's happening?")
 ```
 
 ### Cerebras
 ```python
-llm = LLM(provider="cerebras", api_key="csk-...")
-response = llm.complete("Fast inference!", model="llama3.1-8b")
+import os
+
+llm = LLM(provider="cerebras", model=os.environ["CEREBRAS_MODEL"])
+response = llm.complete("Fast inference!")
 ```
 
 ### Cohere
 ```python
-llm = LLM(provider="cohere", api_key="...")
-response = llm.complete("Hello", model="command-r-plus")
+import os
+
+llm = LLM(provider="cohere", model=os.environ["COHERE_MODEL"])
+response = llm.complete("Hello")
 ```
 
 ### Perplexity
 ```python
-llm = LLM(provider="perplexity", api_key="pplx-...")
-response = llm.complete("What's the latest news?", model="llama-3.1-sonar-large-128k-online")
+import os
+
+llm = LLM(provider="perplexity", model=os.environ["PERPLEXITY_MODEL"])
+response = llm.complete("What's the latest news?")
 # Citations available in response.metadata["citations"]
 ```
 
 ### DeepSeek
 ```python
-llm = LLM(provider="deepseek", api_key="...")
-response = llm.complete("写一段Python代码", model="deepseek-chat")
+import os
+
+llm = LLM(provider="deepseek", model=os.environ["DEEPSEEK_MODEL"])
+response = llm.complete("写一段Python代码")
 ```
 
 ### Together AI
 ```python
-llm = LLM(provider="together", api_key="...")
-response = llm.complete("Hello", model="meta-llama/Llama-3-70b-chat-hf")
+import os
+
+llm = LLM(provider="together", model=os.environ["TOGETHER_MODEL"])
+response = llm.complete("Hello")
 ```
 
 ## License

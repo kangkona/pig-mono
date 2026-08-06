@@ -14,8 +14,9 @@ and a terminal UI built on the `pig-tui` platform layer.
 - 🛠️ **Refactoring**: Automated code refactoring
 - 🐚 **Shell Integration**: Execute shell commands
 - 💬 **Interactive Chat**: Conversational interface
-- 🔄 **Resilience**: Automatic API key rotation and fallback (NEW in v0.0.4)
-- 💰 **Cost Tracking**: Track LLM and tool usage costs (NEW in v0.0.4)
+- 🔄 **In-process Resilience**: Retry, configured credential-profile rotation,
+  and model fallback
+- 💰 **Cost Tracking**: Track LLM and tool usage costs
 
 ## Architecture
 
@@ -45,6 +46,8 @@ pip install pig-coding-agent "pig-llm[openai]"
 
 Replace `openai` with the `pig-llm` provider extra you use. Provider SDKs are
 optional so installing the coding-agent package alone does not pull every SDK.
+Set the matching provider credential in the host environment, such as
+`OPENAI_API_KEY`, and select an explicit model.
 
 ## Quick Start
 
@@ -63,8 +66,10 @@ from pig_llm import LLM
 
 runtime = create_agent_session(
     workspace=Path.cwd(),
-    llm=LLM(provider="openai"),
-    project_trust=True,
+    llm=LLM(provider="openai", model="gpt-4o-mini"),
+    project_trust=False,
+    enable_extensions=False,
+    enable_skills=False,
     permission_policy=PermissionPolicy.unattended(),
     run_ledger_path=Path(".agents/runs.sqlite3"),
     run_owner_id="my-python-host",
@@ -85,6 +90,13 @@ their raw values. Provider calls and tool effects fail closed when their durable
 boundary cannot be recorded. Leaving out `run_ledger_path` preserves the
 existing in-process SDK behavior and creates no ledger.
 
+Passing `run_ledger_path` is an explicit host decision to create and update that
+SQLite file. `PermissionPolicy.unattended()` governs model-requested tool
+effects such as file writes and shell commands; it does not suppress the ledger
+write the host requested. Likewise, `project_trust=False` keeps project-local
+configuration, instructions, skills, and extensions disabled. A host should set
+`project_trust=True` only after making its own trust decision.
+
 ### Start Interactive Session
 
 ```bash
@@ -92,7 +104,7 @@ existing in-process SDK behavior and creates no ledger.
 pig
 
 # With specific model
-pig --model gpt-4
+pig --model gpt-4o-mini
 
 # In a specific directory
 pig --path /path/to/project
@@ -170,7 +182,7 @@ Create `.agents/config.json`:
 ```json
 {
   "provider": "openai",
-  "model": "gpt-4",
+  "model": "gpt-4o-mini",
   "temperature": 0.7,
   "auto_compact": true,
   "auto_compact_threshold": 0.85,
@@ -202,11 +214,15 @@ Inside the agent:
 /usage      - Show usage statistics
 ```
 
-## Resilience Features (v0.0.4)
+## In-process Resilience
 
-The agent now supports automatic resilience for production stability:
+The agent can retry requests, rotate among configured credential profiles, and
+select configured fallback models within the current host process. This is
+request resilience, not durable credential authority: it does not own token
+refresh, isolate credential use across hosts, or durably classify provider/model
+availability and its provenance.
 
-### API Key Rotation
+### Credential Profile Rotation
 
 Set multiple API keys for automatic rotation on rate limits:
 
@@ -219,7 +235,7 @@ export ANTHROPIC_API_KEY_2=sk-ant-...
 ```
 
 The agent will automatically:
-- Rotate to next available key on rate limits
+- Rotate to the next available configured profile on rate limits
 - Apply per-failure-type cooldowns (AUTH=5min, RATE_LIMIT=1min, etc.)
 - Fall back to alternative models on context overflow
 
@@ -249,7 +265,7 @@ Profiles:
 pig --no-resilience
 ```
 
-## Cost Tracking (v0.0.4)
+## Cost Tracking
 
 Track LLM and tool usage costs automatically:
 

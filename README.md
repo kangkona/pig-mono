@@ -17,8 +17,9 @@ later run-integrity roadmap is already complete.
 
 ## What 0.2.0 provides
 
-- A provider/model runtime with credential resolution, capability metadata,
-  refreshable model catalogs, and provider-scoped failure handling.
+- A provider/model runtime with environment- and host-supplied credential
+  resolution, capability metadata, refreshable model catalogs, and
+  provider-scoped failure handling.
 - Sync and async agent loops with streaming, cancellation, tool execution,
   steering messages, follow-up messages, and structured turn outcomes.
 - Tree-backed sessions with branch-local tool activation and durable compaction
@@ -119,6 +120,10 @@ JSON, RPC, piped-input, and default SDK routes fail closed instead of silently
 performing side effects.
 
 ## Embed a session in Python
+
+Set `OPENAI_API_KEY` in the host environment. `LLM` requires an explicit model;
+credential resolution here is process-local provider configuration, not the
+durable credential authority described in the roadmap.
 
 ```python
 from pig_coding_agent import create_agent_session
