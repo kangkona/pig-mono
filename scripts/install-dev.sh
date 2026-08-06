@@ -19,7 +19,7 @@ cd "$REPO_ROOT"
 mkdir -p "$VENVS_DIR" "$BIN_DIR"
 
 # All local library packages (installed as editable into every venv)
-LOCAL_PKGS="-e packages/pig-llm -e packages/pig-tui -e packages/pig-agent-core"
+LOCAL_PKGS=(-e "packages/pig-llm[all]" -e packages/pig-tui -e packages/pig-agent-core)
 
 install_pkg() {
     local name="$1"
@@ -35,7 +35,7 @@ install_pkg() {
 
     # Install the package + all local deps
     uv pip install --python "$venv_dir/bin/python" \
-        -e "$pkg_path" $LOCAL_PKGS --quiet
+        -e "$pkg_path" "${LOCAL_PKGS[@]}" --quiet
 
     # Symlink CLI entry points
     for cli_name in "$@"; do

@@ -35,12 +35,17 @@ later run-integrity roadmap is already complete.
 - Strict repository type checking and a release pipeline that verifies tag,
   package, import, dependency, and published-artifact facts.
 
-## What is not yet provided
+## What remains after the opt-in R1 runtime
 
-The current runtime does not yet provide a durable `Run` authority, an
-append-only operation/evidence ledger, crash recovery with an explicit
-`outcome_unknown` state, process isolation, transport-neutral async hosting,
-MCP/ACP adapters, or governed multi-agent workers. These are sequenced in the
+The post-`0.2.0` workspace now includes an opt-in local `Run` authority, an
+append-only SQLite operation/evidence ledger, recovery classification, and an
+explicit `outcome_unknown` state. The published `0.2.0` artifacts did not
+include that work, and the ledger is not enabled unless an embedding host
+supplies `run_ledger_path`.
+
+The runtime still does not provide process isolation, transport-neutral async
+hosting, MCP/ACP adapters, governed multi-agent workers, credential authority,
+or request-level context provenance. These are sequenced in the
 [runtime roadmap](docs/roadmap.md), with the accepted direction recorded in
 [ADR-001](docs/decisions/ADR-001-python-runtime-and-run-integrity.md).
 
@@ -64,10 +69,16 @@ Install only the surfaces an application needs:
 
 ```bash
 python -m pip install pig-llm pig-agent-core
-python -m pip install pig-coding-agent
-python -m pip install pig-web-ui
-python -m pip install "pig-messenger[slack]"
+python -m pip install "pig-llm[openai]" pig-coding-agent
+python -m pip install "pig-llm[anthropic]" pig-web-ui
+python -m pip install "pig-llm[google]" "pig-messenger[slack]"
 ```
+
+`pig-llm` keeps provider SDKs out of its default install. Add one of the
+`openai`, `anthropic`, `google`, `groq`, `mistral`, `bedrock`, or `cohere`
+extras, or use `pig-llm[all]` for a full provider development environment.
+The `openai` extra also powers Azure OpenAI, OpenRouter, xAI, Cerebras,
+Perplexity, DeepSeek, and Together because those adapters use the OpenAI SDK.
 
 For a source checkout:
 
@@ -149,8 +160,9 @@ Model/provider boundary
 
 - `pig-llm` owns provider construction, model metadata, credentials, and model
   capability facts.
-- `pig-agent-core` owns agent/session/tool behavior. It does not yet own the
-  durable `Run` ledger described in the roadmap.
+- `pig-agent-core` owns agent/session/tool behavior and the opt-in local R1
+  `RunAuthority`/`SQLiteRunStore`. Session history remains a separate
+  conversation projection rather than the run ledger.
 - Application packages own host UX and policy decisions. SDK hosts must make
   trust and side-effect authority explicit.
 

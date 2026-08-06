@@ -38,6 +38,17 @@ def test_release_metadata_rejects_a_different_tag() -> None:
         verify_release.verify_metadata(repo_root, "v0.2.1")
 
 
+def test_release_verifier_rejects_provider_sdk_in_pig_llm_base() -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    metadata = verify_release.load_package_metadata(repo_root)["pig-llm"]
+    metadata["dependencies"] = (*metadata["dependencies"], "openai>=1.12.0")
+
+    errors = verify_release.verify_pig_llm_topology(metadata)
+
+    assert errors
+    assert "provider-neutral core" in errors[0]
+
+
 def test_pypi_payload_requires_exact_filenames_and_digests() -> None:
     expected = {
         "pig_llm-0.2.0-py3-none-any.whl": "wheel-digest",

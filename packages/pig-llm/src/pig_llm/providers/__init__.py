@@ -1,35 +1,47 @@
-"""Provider implementations."""
+"""Provider implementations, imported only when explicitly requested."""
 
+import importlib
 from typing import Any
 
+from .._extras import missing_provider_dependency, provider_sdk_is_available
 from ._base import Provider
 
-# Import providers with graceful fallback for missing dependencies.
-# Each provider's SDK is optional — only the ones you use need to be installed.
+_PROVIDER_EXPORTS = {
+    "AnthropicProvider": ("anthropic", "anthropic"),
+    "AzureOpenAIProvider": ("azure", "azure"),
+    "BedrockProvider": ("bedrock", "bedrock"),
+    "CerebrasProvider": ("cerebras", "cerebras"),
+    "CohereProvider": ("cohere", "cohere"),
+    "DeepSeekProvider": ("deepseek", "deepseek"),
+    "GoogleProvider": ("google", "google"),
+    "GroqProvider": ("groq", "groq"),
+    "MistralProvider": ("mistral", "mistral"),
+    "OpenAIProvider": ("openai", "openai"),
+    "OpenRouterProvider": ("openrouter", "openrouter"),
+    "PerplexityProvider": ("perplexity", "perplexity"),
+    "TogetherProvider": ("together", "together"),
+    "XAIProvider": ("xai", "xai"),
+}
 
 
-def _try_import(name: str, module: str, attr: str) -> Any:
-    try:
-        mod = __import__(f"pig_llm.providers.{module}", fromlist=[attr])
-        return getattr(mod, attr)
-    except (ImportError, ModuleNotFoundError):
-        return None
+def __getattr__(name: str) -> Any:
+    """Load one provider implementation without importing unrelated SDKs."""
+    provider_export = _PROVIDER_EXPORTS.get(name)
+    if provider_export is None:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    module_name, provider_id = provider_export
+    if not provider_sdk_is_available(provider_id):
+        raise missing_provider_dependency(provider_id)
+    module = importlib.import_module(f".{module_name}", package=__name__)
+    value = getattr(module, name)
+    globals()[name] = value
+    return value
 
 
-OpenAIProvider = _try_import("openai", "openai", "OpenAIProvider")
-AnthropicProvider = _try_import("anthropic", "anthropic", "AnthropicProvider")
-GoogleProvider = _try_import("google", "google", "GoogleProvider")
-AzureOpenAIProvider = _try_import("azure", "azure", "AzureOpenAIProvider")
-GroqProvider = _try_import("groq", "groq", "GroqProvider")
-MistralProvider = _try_import("mistral", "mistral", "MistralProvider")
-OpenRouterProvider = _try_import("openrouter", "openrouter", "OpenRouterProvider")
-BedrockProvider = _try_import("bedrock", "bedrock", "BedrockProvider")
-XAIProvider = _try_import("xai", "xai", "XAIProvider")
-CerebrasProvider = _try_import("cerebras", "cerebras", "CerebrasProvider")
-CohereProvider = _try_import("cohere", "cohere", "CohereProvider")
-PerplexityProvider = _try_import("perplexity", "perplexity", "PerplexityProvider")
-DeepSeekProvider = _try_import("deepseek", "deepseek", "DeepSeekProvider")
-TogetherProvider = _try_import("together", "together", "TogetherProvider")
+def __dir__() -> list[str]:
+    """Expose lazy provider classes to introspection and documentation tools."""
+    return sorted({*globals(), *_PROVIDER_EXPORTS})
+
 
 __all__ = [
     "Provider",

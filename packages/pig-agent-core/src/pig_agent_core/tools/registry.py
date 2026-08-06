@@ -5,6 +5,7 @@ import inspect
 import json
 import threading
 import time
+import uuid
 from collections.abc import Awaitable, Callable
 from typing import Any, cast
 
@@ -15,6 +16,8 @@ from .base import CancelledError, ToolResult
 from .contracts import prepare_tool_schema
 from .metrics import ToolMetricsCollector
 from .schemas import PARALLEL_SAFE_TOOLS, TOOL_PERMISSIONS
+
+ToolExecutionCallback = Callable[[dict[str, Any]], None]
 
 
 class RegistrationError(Exception):
@@ -41,6 +44,7 @@ class ToolRegistry:
         self,
         audit_log: ToolAuditLog | None = None,
         metrics: ToolMetricsCollector | None = None,
+        execution_callback: ToolExecutionCallback | None = None,
     ) -> None:
         """Initialize tool registry.
 
@@ -51,6 +55,7 @@ class ToolRegistry:
             metrics: Optional metrics collector. When provided, each
                 ``execute()`` call records call count, success rate, and
                 duration statistics. Defaults to None (no metrics).
+            execution_callback: Optional fail-closed durable execution boundary
         """
         self._handlers: dict[str, Callable] = {}
         self._preflights: dict[str, Callable[[dict[str, Any]], Any]] = {}
@@ -64,6 +69,37 @@ class ToolRegistry:
         self._confirmed_tools: set[str] = set()  # Write tools that have been confirmed
         self._audit_log: ToolAuditLog | None = audit_log
         self._metrics: ToolMetricsCollector | None = metrics
+        self._execution_callback = execution_callback
+
+    def _notify_execution(
+        self,
+        *,
+        execution_id: str,
+        phase: str,
+        tool_name: str,
+        args: dict[str, Any],
+        attempt: int | None = None,
+        max_retries: int = 0,
+        ok: bool | None = None,
+        error: str | None = None,
+        reason: str | None = None,
+    ) -> None:
+        """Call the durable tool boundary directly so failures propagate."""
+        if self._execution_callback is None:
+            return
+        self._execution_callback(
+            {
+                "execution_id": execution_id,
+                "phase": phase,
+                "tool_name": tool_name,
+                "args": args,
+                "attempt": attempt,
+                "max_retries": max_retries,
+                "ok": ok,
+                "error": error,
+                "reason": reason,
+            }
+        )
 
     def register(
         self,
@@ -398,6 +434,9 @@ class ToolRegistry:
             ToolResult with execution outcome
         """
         name = tool_call.function.name
+        root_execution_id = getattr(tool_call, "id", None)
+        if not isinstance(root_execution_id, str) or not root_execution_id:
+            root_execution_id = uuid.uuid4().hex
         try:
             args = json.loads(tool_call.function.arguments)
         except (json.JSONDecodeError, TypeError):
@@ -413,6 +452,7 @@ class ToolRegistry:
 
         _t0 = time.monotonic()
         preflight_result = await self._run_preflight(name, args)
+        primary_execution_id = f"{root_execution_id}:{name}"
 
         # Human authorization and other preflight work finish before the
         # execution budget starts. A slow confirmation must not leave a timed-
@@ -420,9 +460,30 @@ class ToolRegistry:
         if preflight_result is not None:
             preflight_handled = True
             result = preflight_result
+            self._notify_execution(
+                execution_id=primary_execution_id,
+                phase="created",
+                tool_name=name,
+                args=args,
+            )
         else:
             preflight_handled = False
-            result = await self._execute_tool(name, args, user_id, meta, cancel)
+            result = await self._execute_tool(
+                name,
+                args,
+                user_id,
+                meta,
+                cancel,
+                execution_id=primary_execution_id,
+            )
+        self._notify_execution(
+            execution_id=primary_execution_id,
+            phase="completed",
+            tool_name=name,
+            args=args,
+            ok=result.ok,
+            error=result.error,
+        )
         _duration = time.monotonic() - _t0
 
         # If primary tool failed, try fallbacks
@@ -432,15 +493,43 @@ class ToolRegistry:
                 if cancel and cancel.is_set():
                     return ToolResult(ok=False, error="Cancelled during fallback execution")
 
+                fallback_execution_id = f"{root_execution_id}:fallback:{fallback_name}"
                 fallback_preflight = await self._run_preflight(fallback_name, args)
                 if fallback_preflight is not None:
                     # Authorization and validation decisions are authoritative;
                     # never bypass them by moving to another fallback.
                     result = fallback_preflight
+                    self._notify_execution(
+                        execution_id=fallback_execution_id,
+                        phase="created",
+                        tool_name=fallback_name,
+                        args=args,
+                    )
+                    self._notify_execution(
+                        execution_id=fallback_execution_id,
+                        phase="completed",
+                        tool_name=fallback_name,
+                        args=args,
+                        ok=result.ok,
+                        error=result.error,
+                    )
                     break
 
                 fallback_result = await self._execute_tool(
-                    fallback_name, args, user_id, meta, cancel
+                    fallback_name,
+                    args,
+                    user_id,
+                    meta,
+                    cancel,
+                    execution_id=fallback_execution_id,
+                )
+                self._notify_execution(
+                    execution_id=fallback_execution_id,
+                    phase="completed",
+                    tool_name=fallback_name,
+                    args=args,
+                    ok=fallback_result.ok,
+                    error=fallback_result.error,
                 )
                 if fallback_result.ok:
                     # Add metadata about fallback usage
@@ -497,10 +586,12 @@ class ToolRegistry:
         *,
         user_id: str = "default",
         meta: dict[str, Any] | None = None,
+        execution_id: str | None = None,
     ) -> ToolResult:
         """Execute a tool synchronously for the legacy Agent.run() path."""
         args = args or {}
         meta = meta or {}
+        execution_id = execution_id or f"{uuid.uuid4().hex}:{name}"
 
         if self.requires_confirmation(name):
             return ToolResult(
@@ -526,6 +617,19 @@ class ToolRegistry:
 
         activated_on_call = self._activate_deferred_tool(name)
 
+        self._notify_execution(
+            execution_id=execution_id,
+            phase="created",
+            tool_name=name,
+            args=args,
+        )
+        self._notify_execution(
+            execution_id=execution_id,
+            phase="started",
+            tool_name=name,
+            args=args,
+            attempt=1,
+        )
         try:
             signature = inspect.signature(handler)
             params = list(signature.parameters)
@@ -539,19 +643,47 @@ class ToolRegistry:
                 value = handler(args, user_id, meta, None)
             else:
                 value = handler(**args)
-            if isinstance(value, ToolResult):
-                return self._with_activation_anchor(name, value, activated_on_call)
-            return self._with_activation_anchor(
-                name,
-                ToolResult(ok=True, data=value),
-                activated_on_call,
-            )
         except Exception as exc:
-            return self._with_activation_anchor(
+            self._notify_execution(
+                execution_id=execution_id,
+                phase="failed",
+                tool_name=name,
+                args=args,
+                attempt=1,
+                error=str(exc),
+                reason="tool_error",
+            )
+            result = self._with_activation_anchor(
                 name,
                 ToolResult(ok=False, error=str(exc)),
                 activated_on_call,
             )
+        else:
+            self._notify_execution(
+                execution_id=execution_id,
+                phase="succeeded",
+                tool_name=name,
+                args=args,
+                attempt=1,
+                ok=value.ok if isinstance(value, ToolResult) else True,
+            )
+            if isinstance(value, ToolResult):
+                result = self._with_activation_anchor(name, value, activated_on_call)
+            else:
+                result = self._with_activation_anchor(
+                    name,
+                    ToolResult(ok=True, data=value),
+                    activated_on_call,
+                )
+        self._notify_execution(
+            execution_id=execution_id,
+            phase="completed",
+            tool_name=name,
+            args=args,
+            ok=result.ok,
+            error=result.error,
+        )
+        return result
 
     def _activate_deferred_tool(self, name: str) -> bool:
         """Activate a registered non-core tool called directly by a provider."""
@@ -579,6 +711,8 @@ class ToolRegistry:
         user_id: str,
         meta: dict[str, Any],
         cancel: asyncio.Event | None,
+        *,
+        execution_id: str,
     ) -> ToolResult:
         """Execute a single tool with timeout and retry.
 
@@ -592,6 +726,13 @@ class ToolRegistry:
         Returns:
             ToolResult from execution
         """
+        self._notify_execution(
+            execution_id=execution_id,
+            phase="created",
+            tool_name=name,
+            args=args,
+        )
+
         # A provider may call a deferred definition directly after native tool
         # search. Preserve that transition on the transcript, not only in this
         # registry instance.
@@ -615,6 +756,14 @@ class ToolRegistry:
             if cancel and cancel.is_set():
                 return with_activation(ToolResult(ok=False, error="Cancelled during execution"))
 
+            self._notify_execution(
+                execution_id=execution_id,
+                phase="started",
+                tool_name=name,
+                args=args,
+                attempt=attempt + 1,
+                max_retries=max_retries,
+            )
             try:
                 # Execute with timeout, racing against cancellation so an
                 # in-flight tool (e.g. a running shell command) is killed the
@@ -624,21 +773,61 @@ class ToolRegistry:
                     timeout,
                     cancel,
                 )
-                if isinstance(result, ToolResult):
-                    return with_activation(result)
-                return with_activation(ToolResult(ok=True, data=result))
             except asyncio.TimeoutError:
                 last_error = f"Tool execution timed out after {timeout}s"
+                self._notify_execution(
+                    execution_id=execution_id,
+                    phase="failed",
+                    tool_name=name,
+                    args=args,
+                    attempt=attempt + 1,
+                    max_retries=max_retries,
+                    error=last_error,
+                    reason="timeout",
+                )
                 if attempt < max_retries:
                     await asyncio.sleep(0.5 * (attempt + 1))  # Exponential backoff
                     continue
             except CancelledError:
+                self._notify_execution(
+                    execution_id=execution_id,
+                    phase="failed",
+                    tool_name=name,
+                    args=args,
+                    attempt=attempt + 1,
+                    max_retries=max_retries,
+                    error="Cancelled by user",
+                    reason="cancelled",
+                )
                 return with_activation(ToolResult(ok=False, error="Cancelled by user"))
             except Exception as e:
                 last_error = str(e)
+                self._notify_execution(
+                    execution_id=execution_id,
+                    phase="failed",
+                    tool_name=name,
+                    args=args,
+                    attempt=attempt + 1,
+                    max_retries=max_retries,
+                    error=last_error,
+                    reason="tool_error",
+                )
                 if attempt < max_retries:
                     await asyncio.sleep(0.5 * (attempt + 1))
                     continue
+            else:
+                self._notify_execution(
+                    execution_id=execution_id,
+                    phase="succeeded",
+                    tool_name=name,
+                    args=args,
+                    attempt=attempt + 1,
+                    max_retries=max_retries,
+                    ok=result.ok if isinstance(result, ToolResult) else True,
+                )
+                if isinstance(result, ToolResult):
+                    return with_activation(result)
+                return with_activation(ToolResult(ok=True, data=result))
 
         return with_activation(ToolResult(ok=False, error=last_error or "Unknown error"))
 
@@ -769,6 +958,8 @@ class ToolRegistry:
 
             for idx, result in zip(parallel_indices, parallel_results, strict=False):
                 if isinstance(result, Exception):
+                    if self._execution_callback is not None:
+                        raise result
                     results[idx] = ToolResult(ok=False, error=str(result))
                 elif isinstance(result, BaseException):
                     raise result

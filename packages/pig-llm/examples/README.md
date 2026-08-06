@@ -115,7 +115,7 @@ All providers return tool calls in a unified format:
 
 1. Install pig-llm:
 ```bash
-pip install pig-llm
+pip install "pig-llm[openai,anthropic,google]"
 ```
 
 2. Set your API keys:

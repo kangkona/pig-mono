@@ -15,9 +15,28 @@ Unified multi-provider LLM API for Python.
 
 ## Installation
 
+The base package contains the provider-neutral runtime only:
+
 ```bash
 pip install pig-llm
 ```
+
+Install the SDK for the provider family you use:
+
+```bash
+pip install "pig-llm[openai]"     # OpenAI and OpenAI-compatible providers
+pip install "pig-llm[anthropic]"
+pip install "pig-llm[google]"
+pip install "pig-llm[groq]"
+pip install "pig-llm[mistral]"
+pip install "pig-llm[bedrock]"
+pip install "pig-llm[cohere]"
+pip install "pig-llm[all]"        # All provider SDKs
+```
+
+The `openai` extra also covers Azure OpenAI, OpenRouter, xAI, Cerebras,
+Perplexity, DeepSeek, and Together because those adapters share the OpenAI SDK.
+Selecting a provider without its extra fails with the exact installation command.
 
 ## Quick Start
 

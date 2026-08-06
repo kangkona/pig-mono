@@ -17,8 +17,10 @@ Web UI components for AI chat interfaces with FastAPI backend.
 ## Installation
 
 ```bash
-pip install pig-web-ui
+pip install pig-web-ui "pig-llm[openai]"
 ```
+
+Replace `openai` with the `pig-llm` provider extra used by the application.
 
 ## Quick Start
 
@@ -204,7 +206,7 @@ pig-webui --agent-config agent.json
 FROM python:3.11-slim
 WORKDIR /app
 COPY . .
-RUN pip install pig-web-ui
+RUN pip install pig-web-ui "pig-llm[openai]"
 CMD ["pig-webui", "--host", "0.0.0.0"]
 ```
 

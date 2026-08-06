@@ -14,6 +14,7 @@ from collections.abc import Awaitable, Callable, Iterable, Mapping
 from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any, Literal, cast
 
+from ._extras import missing_provider_dependency, provider_sdk_is_available
 from ._models_generated import MODELS
 from .config import Config
 
@@ -283,7 +284,12 @@ class ModelRuntime:
             # Preserve the legacy OpenAI-compatible path: local gateways may
             # intentionally accept an empty key, and the provider SDK may also
             # resolve its own ambient OpenAI credential.
-            return _lazy_factory("openai", "OpenAIProvider")(config)
+            return _lazy_factory(
+                "openai",
+                "OpenAIProvider",
+                provider_id=config.provider,
+                extra="openai",
+            )(config)
         auth = self.get_auth(config.provider, config)
         if registration.requires_api_key and not auth.api_key:
             raise ValueError(f"No API key for provider: {config.provider}")
@@ -340,10 +346,19 @@ class ModelRuntime:
         return RefreshReport(updated=updated, errors=errors)
 
 
-def _lazy_factory(module_name: str, class_name: str) -> ProviderFactory:
+def _lazy_factory(
+    module_name: str,
+    class_name: str,
+    *,
+    provider_id: str,
+    extra: str | None = None,
+) -> ProviderFactory:
     def factory(config: Config) -> Provider:
+        if not provider_sdk_is_available(provider_id, extra=extra):
+            raise missing_provider_dependency(provider_id, extra=extra)
         module = importlib.import_module(f".providers.{module_name}", package="pig_llm")
-        return cast("Provider", getattr(module, class_name)(config))
+        provider_class = getattr(module, class_name)
+        return cast("Provider", provider_class(config))
 
     return factory
 
@@ -389,7 +404,7 @@ def create_default_runtime() -> ModelRuntime:
         runtime.register_provider(
             ProviderRegistration(
                 provider_id=provider_id,
-                factory=_lazy_factory(module_name, class_name),
+                factory=_lazy_factory(module_name, class_name, provider_id=provider_id),
                 models=_generated_models(provider_id),
                 api_key_env=api_key_env,
             )
@@ -397,7 +412,7 @@ def create_default_runtime() -> ModelRuntime:
     runtime.register_provider(
         ProviderRegistration(
             provider_id="bedrock",
-            factory=_lazy_factory("bedrock", "BedrockProvider"),
+            factory=_lazy_factory("bedrock", "BedrockProvider", provider_id="bedrock"),
             requires_api_key=False,
         )
     )
