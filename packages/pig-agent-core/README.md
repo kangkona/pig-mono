@@ -9,7 +9,8 @@ Agent runtime with tool calling, streaming, sessions, resilience, and observabil
 
 - 🤖 **Master Loop**: Async agent runtime with resilient LLM calls and automatic tool execution
 - 🔧 **Enhanced Tool System**: Handler-based tools with fallback mapping, confirmation gates, and parallel/sequential execution
-- 🛡️ **Resilience**: API key rotation with per-failure-type cooldowns, retry logic, and fallback models
+- 🛡️ **In-process Resilience**: Configured credential-profile rotation with
+  per-failure-type cooldowns, retry logic, and fallback models
 - 📊 **Observability**: Event emission, billing hooks, tool audit logging, and performance metrics
 - 💾 **Memory Protocols**: Pluggable conversation history storage (in-memory, Redis, database)
 - 🔄 **Context Management**: 3-level compression strategy (truncate → summarize → LLM-compress)
@@ -26,6 +27,9 @@ pip install pig-agent-core "pig-llm[openai]"
 Replace `openai` with the `pig-llm` provider extra used by the host. Installing
 `pig-agent-core` alone keeps the provider SDK surface empty.
 
+Set the provider credential in the host environment, such as
+`OPENAI_API_KEY`. Every `LLM` instance also requires an explicit model.
+
 ## Quick Start
 
 ### Basic Agent
@@ -37,7 +41,7 @@ from pig_llm import LLM
 # Create agent with enhanced features
 agent = Agent(
     name="Assistant",
-    llm=LLM(provider="openai"),
+    llm=LLM(provider="openai", model="gpt-4o-mini"),
     system_prompt="You are a helpful assistant.",
     max_rounds=10,  # Maximum conversation rounds
     verbose=True,  # Enable logging
@@ -57,14 +61,14 @@ from pig_llm import LLM
 # Create profile manager for API key rotation
 profile_manager = ProfileManager.from_env(
     env_prefix="OPENAI_API_KEY",  # Looks for OPENAI_API_KEY_1, _2, etc.
-    model="gpt-4",
-    fallback_models=["gpt-3.5-turbo"],
+    model="gpt-4o-mini",
+    fallback_models=["gpt-4o"],
 )
 
 # Create agent with resilience
 agent = Agent(
     name="ResilientAgent",
-    llm=LLM(provider="openai"),
+    llm=LLM(provider="openai", model="gpt-4o-mini"),
     profile_manager=profile_manager,  # Automatic key rotation
     max_rounds=15,
 )
@@ -118,7 +122,7 @@ registry.register_package(TOOL_SCHEMAS, HANDLERS, is_core=True)
 # Create agent with tools
 agent = Agent(
     name="ThinkingAgent",
-    llm=LLM(provider="openai"),
+    llm=LLM(provider="openai", model="gpt-4o-mini"),
 )
 agent.registry = registry
 
@@ -182,7 +186,11 @@ registry.register(
 
 ### Resilience System
 
-#### API Key Rotation
+This system manages retries and configured profiles inside one running host. It
+is not a durable credential authority and does not own token refresh,
+cross-host credential isolation, or provider/model availability provenance.
+
+#### Credential Profile Rotation
 
 ```python
 from pig_agent_core.resilience.profile import ProfileManager
@@ -190,14 +198,14 @@ from pig_agent_core.resilience.profile import ProfileManager
 # Create profile manager with multiple API keys
 profile_manager = ProfileManager.from_env(
     env_prefix="OPENAI_API_KEY",  # Looks for OPENAI_API_KEY_1, _2, etc.
-    model="gpt-4",
-    fallback_models=["gpt-3.5-turbo"],
+    model="gpt-4o-mini",
+    fallback_models=["gpt-4o"],
 )
 
 # Create agent with resilience
 agent = Agent(
     name="ResilientAgent",
-    llm=LLM(provider="openai"),
+    llm=LLM(provider="openai", model="gpt-4o-mini"),
     profile_manager=profile_manager,
 )
 
@@ -715,8 +723,8 @@ from pig_agent_core.observability.events import AgentEvent
 # Setup resilience
 profile_manager = ProfileManager.from_env(
     env_prefix="OPENAI_API_KEY",
-    model="gpt-4",
-    fallback_models=["gpt-3.5-turbo"],
+    model="gpt-4o-mini",
+    fallback_models=["gpt-4o"],
 )
 
 
@@ -733,7 +741,7 @@ def compress(messages):
 # Create agent
 agent = Agent(
     name="ProductionAgent",
-    llm=LLM(provider="openai"),
+    llm=LLM(provider="openai", model="gpt-4o-mini"),
     system_prompt="You are a helpful assistant.",
     profile_manager=profile_manager,
     event_callback=log_events,

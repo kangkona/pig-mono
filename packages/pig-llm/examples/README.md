@@ -30,8 +30,8 @@ weather_tool = {
     },
 }
 
-# Initialize LLM
-llm = LLM(provider="openai", api_key="your-api-key")
+# Reads OPENAI_API_KEY from the environment
+llm = LLM(provider="openai", model="gpt-4o-mini")
 
 # Make a request with tools
 response = llm.complete("What's the weather in San Francisco?", tools=[weather_tool])
@@ -71,28 +71,35 @@ All of the following providers support tool calling:
 ### 1. OpenAI
 
 ```python
-llm = LLM(provider="openai", api_key="sk-...")
+llm = LLM(provider="openai", model="gpt-4o-mini")
 response = llm.complete("What's the weather?", tools=[weather_tool])
 ```
 
 ### 2. Anthropic (Claude)
 
 ```python
-llm = LLM(provider="anthropic", api_key="sk-ant-...")
+llm = LLM(provider="anthropic", model="claude-3-5-haiku-latest")
 response = llm.complete("What's the weather?", tools=[weather_tool])
 ```
 
 ### 3. Google (Gemini)
 
 ```python
-llm = LLM(provider="google", api_key="...")
+llm = LLM(provider="google", model="gemini-2.5-flash")
 response = llm.complete("What's the weather?", tools=[weather_tool])
 ```
 
 ### 4. Custom OpenAI-Compatible Provider
 
 ```python
-llm = LLM(provider="my-custom-llm", api_key="...", base_url="https://api.custom.com/v1")
+import os
+
+llm = LLM(
+    provider="openai",
+    model=os.environ["CUSTOM_LLM_MODEL"],
+    api_key=os.environ["CUSTOM_LLM_API_KEY"],
+    base_url="https://api.custom.com/v1",
+)
 response = llm.complete("What's the weather?", tools=[weather_tool])
 ```
 

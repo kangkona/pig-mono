@@ -21,6 +21,8 @@ pip install pig-web-ui "pig-llm[openai]"
 ```
 
 Replace `openai` with the `pig-llm` provider extra used by the application.
+Set `OPENAI_API_KEY` in the host environment and pass an explicit model to
+`LLM`.
 
 ## Quick Start
 
@@ -32,7 +34,7 @@ from pig_llm import LLM
 
 # Create server
 server = ChatServer(
-    llm=LLM(provider="openai"),
+    llm=LLM(provider="openai", model="gpt-4o-mini"),
     title="My AI Assistant",
     port=8000,
 )
@@ -60,7 +62,7 @@ def get_time() -> str:
 
 # Create agent
 agent = Agent(
-    llm=LLM(),
+    llm=LLM(provider="openai", model="gpt-4o-mini"),
     tools=[get_time],
     system_prompt="You are a helpful assistant.",
 )
@@ -76,7 +78,7 @@ server.run()
 from pig_web_ui import ChatServer
 from fastapi import Request
 
-server = ChatServer(llm=LLM())
+server = ChatServer(llm=LLM(provider="openai", model="gpt-4o-mini"))
 
 
 @server.app.get("/custom")
@@ -109,7 +111,10 @@ curl -N http://localhost:8000/api/chat \
 ```python
 from pig_web_ui import ChatServer
 
-server = ChatServer(llm=LLM(), use_websocket=True)
+server = ChatServer(
+    llm=LLM(provider="openai", model="gpt-4o-mini"),
+    use_websocket=True,
+)
 server.run()
 ```
 
@@ -129,7 +134,7 @@ ws.onmessage = (event) => {
 
 ```python
 server = ChatServer(
-    llm=LLM(),
+    llm=LLM(provider="openai", model="gpt-4o-mini"),
     title="My Assistant",
     port=8000,
     host="0.0.0.0",
@@ -159,14 +164,17 @@ theme = {
     "message_assistant_bg": "#f0f0f0",
 }
 
-server = ChatServer(llm=LLM(), theme=theme)
+server = ChatServer(
+    llm=LLM(provider="openai", model="gpt-4o-mini"),
+    theme=theme,
+)
 ```
 
 ### Custom Templates
 
 ```python
 server = ChatServer(
-    llm=LLM(),
+    llm=LLM(provider="openai", model="gpt-4o-mini"),
     template_dir="./my_templates",
 )
 ```
@@ -192,7 +200,7 @@ Create `my_templates/chat.html`:
 pig-webui
 
 # Specify model and port
-pig-webui --model gpt-4 --port 8080
+pig-webui --model gpt-4o-mini --port 8080
 
 # With agent configuration
 pig-webui --agent-config agent.json
